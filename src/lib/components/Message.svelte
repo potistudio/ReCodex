@@ -1,0 +1,110 @@
+<script lang="ts">
+	import { marked } from "marked";
+	import DOMPurify from "dompurify";
+	import { openUrl } from "@tauri-apps/plugin-opener";
+	import { isTauri } from "@tauri-apps/api/core";
+	import {
+		Check,
+		Copy,
+		Terminal,
+		FileDiff,
+		ChevronRight,
+		Sparkles,
+	} from "@lucide/svelte";
+	import { Button } from "$lib/components/ui/button";
+	import type { Item } from "$lib/types";
+	let { item }: { item: Item } = $props();
+	let copied = $state(false);
+	let copyError = $state("");
+	const text = $derived(
+		item.type === "userMessage"
+			? (item.content?.map((part) => part.text ?? "").join("\n") ?? "")
+			: (item.text ?? ""),
+	);
+	const html = $derived(
+		DOMPurify.sanitize(marked.parse(text, { async: false }) as string, {
+			FORBID_TAGS: ["img", "style"],
+			FORBID_ATTR: ["style"],
+		}),
+	);
+	async function copy() {
+		try {
+			await navigator.clipboard.writeText(text);
+			copied = true;
+			setTimeout(() => (copied = false), 1800);
+		} catch {
+			copyError = "Could not copy to clipboard";
+		}
+	}
+	function link(event: MouseEvent) {
+		const anchor = (event.target as HTMLElement).closest("a");
+		if (!anchor) return;
+		event.preventDefault();
+		if (/^https?:\/\//.test(anchor.href)) {
+			if (isTauri()) void openUrl(anchor.href).catch(() => {});
+			else window.open(anchor.href, "_blank", "noopener,noreferrer");
+		}
+	}
+</script>
+
+{#if item.type === "userMessage"}
+	<div class="user-message"><div>{text}</div></div>
+{:else if item.type === "agentMessage" || item.type === "plan"}
+	<article class="assistant-message">
+		<div class="message-author">
+			<span class="mini-mark">⌘</span> ReCodex {#if item.type === "plan"}<span
+					class="muted">· Plan</span
+				>{/if}
+		</div>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div class="markdown" onclick={link}>{@html html}</div>
+		{#if text}<Button
+				variant="ghost"
+				size="icon-xs"
+				aria-label="Copy message"
+				title={copyError || "Copy message"}
+				onclick={copy}
+				>{#if copied}<Check />{:else}<Copy />{/if}</Button
+			>{/if}
+	</article>
+{:else if item.type === "commandExecution"}
+	<details class="tool-item">
+		<summary
+			><Terminal size={15} /><span class="truncate">{item.command}</span
+			><span class="tool-status"
+				>{item.status === "inProgress" ? "Running" : item.status}</span
+			><ChevronRight size={13} /></summary
+		>
+		<pre>{item.aggregatedOutput || "Waiting for output…"}</pre>
+	</details>
+{:else if item.type === "fileChange"}
+	<details class="tool-item">
+		<summary
+			><FileDiff size={15} /><span
+				>Changed {item.changes?.length ?? 0} files</span
+			><span class="tool-status">{item.status}</span><ChevronRight
+				size={13}
+			/></summary
+		>
+		{#each item.changes ?? [] as change}<div class="diff-name">
+				{change.path} <span class="muted">{change.kind.type}</span>
+			</div>
+			<pre class="diff">{change.diff}</pre>{/each}
+	</details>
+{:else if item.type === "reasoning"}
+	{#if item.summary?.length}<details class="tool-item reasoning">
+			<summary
+				><Sparkles size={15} />Thinking<ChevronRight
+					size={13}
+				/></summary
+			>
+			<p>{item.summary.join("\n")}</p>
+		</details>{/if}
+{:else}
+	<div class="activity">
+		<Sparkles size={14} /><span>{item.tool ?? item.type}</span><span
+			>{item.status ?? ""}</span
+		>
+	</div>
+{/if}
