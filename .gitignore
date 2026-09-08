@@ -13,3 +13,7 @@ node_modules/
 
 # Personal references
 refs/
+build/
+.codex-protocol/
+test-results/
+playwright-report/
