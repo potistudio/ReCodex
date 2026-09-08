@@ -1,5 +1,15 @@
 # macOS dummy file
 .DS_Store
 
+# Node.js dependencies
+node_modules/
+
+# Artifacts
+.svelte-kit/
+
+# Environment variables
+.env
+!.env.example
+
 # Personal references
 refs/
