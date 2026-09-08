@@ -1,4 +1,5 @@
 mod server;
+mod workspace;
 use serde_json::{json, Value};
 use tauri::{Emitter, Manager, State};
 use tokio::sync::RwLock;
@@ -58,11 +59,19 @@ async fn server_respond(
 pub fn run() {
     let app = tauri::Builder::default()
         .manage(Connection::default())
+        .manage(workspace::Workspace::default())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             server_connect,
             server_request,
             server_respond,
+            workspace::projects_load,
+            workspace::project_save,
+            workspace::project_remove,
+            workspace::files_list,
+            workspace::file_read,
+            workspace::file_save
         ])
         .build(tauri::generate_context!())
         .expect("Could not start ReCodex");
