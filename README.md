@@ -57,7 +57,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib live_handshake_and_model_l
 cargo test --manifest-path src-tauri/Cargo.toml --lib live_chat_turn -- --ignored
 ```
 
-Format frontend changes with `pnpm format` and Rust changes with `cargo fmt --manifest-path src-tauri/Cargo.toml`.
+Biome handles frontend formatting and linting. Use `pnpm format`, `pnpm format:check`, and `pnpm lint` for frontend changes; use `cargo fmt --manifest-path src-tauri/Cargo.toml` for Rust changes.
 
 ## Architecture and scope
 

@@ -1,6 +1,0 @@
-node_modules
-build
-.svelte-kit
-src-tauri/target
-pnpm-lock.yaml
-.codex-protocol
