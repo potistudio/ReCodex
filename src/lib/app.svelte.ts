@@ -34,9 +34,7 @@ export class App {
 	logs = $state<string[]>([]);
 	fileRevision = $state(0);
 	busy = $derived(this.sending || this.activeTurn !== null || this.loading);
-	selectedModel = $derived(
-		this.models.find((model) => model.model === this.model),
-	);
+	selectedModel = $derived(this.models.find((model) => model.model === this.model));
 	private unlisten?: UnlistenFn;
 	private disposed = false;
 
@@ -51,10 +49,7 @@ export class App {
 	async init() {
 		if (!isTauri()) return;
 		await this.guard(async () => {
-			const unlisten = await listen<ServerEvent>(
-				"codex-event",
-				({ payload }) => this.onEvent(payload),
-			);
+			const unlisten = await listen<ServerEvent>("codex-event", ({ payload }) => this.onEvent(payload));
 			if (this.disposed) {
 				unlisten();
 				return;
@@ -62,10 +57,7 @@ export class App {
 			this.unlisten = unlisten;
 			this.projects = await invoke<Project[]>("projects_load");
 			const saved = localStorage.getItem("recodex-project");
-			this.project =
-				this.projects.find((project) => project.path === saved) ??
-				this.projects[0] ??
-				null;
+			this.project = this.projects.find((project) => project.path === saved) ?? this.projects[0] ?? null;
 			await this.connect();
 		});
 	}
@@ -82,8 +74,7 @@ export class App {
 			const models: Model[] = [];
 			let cursor: string | null = null;
 			do {
-				const page: { data: Model[]; nextCursor: string | null } =
-					await rpc("model/list", { cursor });
+				const page: { data: Model[]; nextCursor: string | null } = await rpc("model/list", { cursor });
 				models.push(...page.data.filter((model) => !model.hidden));
 				cursor = page.nextCursor;
 			} while (cursor);
@@ -111,18 +102,13 @@ export class App {
 	}
 	async login() {
 		await this.guard(async () => {
-			const result = await rpc<{ authUrl: string }>(
-				"account/login/start",
-				{ type: "chatgpt" },
-			);
+			const result = await rpc<{ authUrl: string }>("account/login/start", { type: "chatgpt" });
 			await openUrl(result.authUrl);
 		});
 	}
 	selectModel(model: string) {
 		this.model = model;
-		this.effort =
-			this.models.find((entry) => entry.model === model)
-				?.defaultReasoningEffort ?? "";
+		this.effort = this.models.find((entry) => entry.model === model)?.defaultReasoningEffort ?? "";
 		localStorage.setItem("recodex-model", model);
 	}
 	async loadThreads(more = false) {
@@ -131,25 +117,17 @@ export class App {
 			return;
 		}
 		const projectPath = this.project.path;
-		const result = await rpc<{ data: Thread[]; nextCursor: string | null }>(
-			"thread/list",
-			{
-				cwd: projectPath,
-				limit: 50,
-				sortKey: "updated_at",
-				cursor: more ? this.cursor : null,
-			},
-		);
+		const result = await rpc<{ data: Thread[]; nextCursor: string | null }>("thread/list", {
+			cwd: projectPath,
+			limit: 50,
+			sortKey: "updated_at",
+			cursor: more ? this.cursor : null,
+		});
 		if (this.project?.path !== projectPath) return;
 		this.threads = more
 			? [
 					...this.threads,
-					...result.data.filter(
-						(thread) =>
-							!this.threads.some(
-								(entry) => entry.id === thread.id,
-							),
-					),
+					...result.data.filter((thread) => !this.threads.some((entry) => entry.id === thread.id)),
 				]
 			: result.data;
 		this.cursor = result.nextCursor;
@@ -174,8 +152,7 @@ export class App {
 			if (!path) return;
 			this.projects = await invoke<Project[]>("project_save", { path });
 			await this.chooseProject(
-				this.projects.find((project) => project.path === path) ??
-					this.projects[this.projects.length - 1],
+				this.projects.find((project) => project.path === path) ?? this.projects[this.projects.length - 1],
 			);
 		});
 	}
@@ -187,15 +164,15 @@ export class App {
 				path,
 				name: name.trim(),
 			});
-			this.project =
-				this.projects.find((project) => project.path === path) ?? null;
+			this.project = this.projects.find((project) => project.path === path) ?? null;
 		});
 	}
 	async removeProject() {
-		if (!this.project || this.busy) return;
+		const project = this.project;
+		if (!project || this.busy) return;
 		await this.guard(async () => {
 			this.projects = await invoke<Project[]>("project_remove", {
-				path: this.project!.path,
+				path: project.path,
 			});
 			this.newChat();
 			this.project = null;
@@ -226,18 +203,14 @@ export class App {
 			});
 			this.thread = result.thread;
 			this.items = result.thread.turns.flatMap((turn) => turn.items);
-			if (this.models.some((model) => model.model === result.model))
-				this.selectModel(result.model);
+			if (this.models.some((model) => model.model === result.model)) this.selectModel(result.model);
 			if (result.reasoningEffort) this.effort = result.reasoningEffort;
-			this.activeTurn =
-				result.thread.turns.find((turn) => turn.status === "inProgress")
-					?.id ?? null;
+			this.activeTurn = result.thread.turns.find((turn) => turn.status === "inProgress")?.id ?? null;
 		});
 		this.loading = false;
 	}
 	async send(text: string): Promise<boolean> {
-		if (!text.trim() || !this.project || !this.connected || this.busy)
-			return false;
+		if (!text.trim() || !this.project || !this.connected || this.busy) return false;
 		this.sending = true;
 		this.error = "";
 		const pendingId = `pending-${crypto.randomUUID()}`;
@@ -266,8 +239,7 @@ export class App {
 				effort: this.effort || null,
 			});
 			// A very short turn may already have completed before the request resolves.
-			if (!this.completedTurns.has(result.turn.id))
-				this.activeTurn = result.turn.id;
+			if (!this.completedTurns.has(result.turn.id)) this.activeTurn = result.turn.id;
 			if (!this.thread.preview) this.thread.preview = text;
 			await this.guard(() => this.loadThreads());
 			return true;
@@ -281,20 +253,20 @@ export class App {
 	}
 	private completedTurns = new Set<string>();
 	async stop() {
-		if (this.thread && this.activeTurn)
+		const thread = this.thread;
+		const turnId = this.activeTurn;
+		if (thread && turnId)
 			await this.guard(() =>
 				rpc("turn/interrupt", {
-					threadId: this.thread!.id,
-					turnId: this.activeTurn,
+					threadId: thread.id,
+					turnId,
 				}),
 			);
 	}
 	async respond(event: ServerEvent, result: unknown) {
 		await this.guard(async () => {
 			await invoke("server_respond", { id: event.id, result });
-			this.approvals = this.approvals.filter(
-				(entry) => entry.id !== event.id,
-			);
+			this.approvals = this.approvals.filter((entry) => entry.id !== event.id);
 		});
 	}
 	private onEvent(event: ServerEvent) {
@@ -310,12 +282,8 @@ export class App {
 			this.logs = [...this.logs.slice(-49), params.message ?? ""];
 			return;
 		}
-		if (
-			method === "account/login/completed" ||
-			method === "account/updated"
-		) {
-			if (params.success === false)
-				this.error = params.error?.message ?? "Sign in failed";
+		if (method === "account/login/completed" || method === "account/updated") {
+			if (params.success === false) this.error = params.error?.message ?? "Sign in failed";
 			else void this.guard(() => this.readAccount());
 			return;
 		}
@@ -343,29 +311,22 @@ export class App {
 			return;
 		}
 		if (method === "serverRequest/resolved")
-			this.approvals = this.approvals.filter(
-				(entry) => entry.id !== params.requestId,
-			);
+			this.approvals = this.approvals.filter((entry) => entry.id !== params.requestId);
 		if (!params.threadId || params.threadId !== this.thread?.id) return;
 		this.items = updateItems(this.items, event);
-		if (method === "turn/started" && params.turn)
-			this.activeTurn = params.turn.id;
+		if (method === "turn/started" && params.turn) this.activeTurn = params.turn.id;
 		if (method === "turn/completed" && params.turn) {
-			this.completedTurns.add(params.turn.id);
+			const turn = params.turn;
+			this.completedTurns.add(turn.id);
 			this.activeTurn = null;
-			this.approvals = this.approvals.filter(
-				(entry) => entry.params.turnId !== params.turn!.id,
-			);
-			if (params.turn.error) this.error = params.turn.error.message;
+			this.approvals = this.approvals.filter((entry) => entry.params.turnId !== turn.id);
+			if (turn.error) this.error = turn.error.message;
 			this.fileRevision += 1;
 			void this.loadThreads().catch((error) => {
 				if (!this.error) this.error = String(error);
 			});
 		}
-		if (method === "error")
-			this.error =
-				params.error?.message ?? "The turn encountered an error.";
-		if (method === "item/completed" && params.item?.type === "fileChange")
-			this.fileRevision += 1;
+		if (method === "error") this.error = params.error?.message ?? "The turn encountered an error.";
+		if (method === "item/completed" && params.item?.type === "fileChange") this.fileRevision += 1;
 	}
 }

@@ -4,13 +4,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	font-family:
-		"Inter Variable",
-		Inter,
-		-apple-system,
-		BlinkMacSystemFont,
-		"Segoe UI",
-		sans-serif;
+	font-family: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 	color: #282927;
 	background: #fcfcfa;
 	font-synthesis: none;
@@ -1090,6 +1084,7 @@
 	.welcome {
 		padding-block: 30px;
 	}
+	/* biome-ignore lint/style/noDescendingSpecificity: The mobile fallback repeats the hidden state for all layouts. */
 	.composer-footnote > span:last-child {
 		display: none;
 	}
@@ -1151,7 +1146,9 @@
 	*,
 	*::before,
 	*::after {
+		/* biome-ignore lint/complexity/noImportantStyles: Reduced-motion preferences must override component animations. */
 		animation: none !important;
+		/* biome-ignore lint/complexity/noImportantStyles: Reduced-motion preferences must override component transitions. */
 		transition: none !important;
 	}
 }
