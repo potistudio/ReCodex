@@ -330,6 +330,23 @@
 	gap: 12px;
 	align-items: center;
 }
+.rate-limit-indicator {
+	display: flex;
+	align-items: baseline;
+	gap: 5px;
+	padding: 5px 8px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	font-size: 10px;
+	line-height: 1;
+	color: var(--muted-foreground);
+	white-space: nowrap;
+}
+.rate-limit-indicator strong {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--foreground);
+}
 .model-trigger {
 	display: flex;
 	gap: 9px;

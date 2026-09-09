@@ -365,6 +365,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	});
 	await page.goto("/");
 	await expect(page.getByText("Codex connected", { exact: true })).toBeVisible();
+	await expect(page.getByLabel("Codex rate-limit allowance")).toContainText("39% left");
 	await page.getByRole("button", { name: "Model A", exact: true }).click();
 	await page.getByRole("menuitem", { name: /Model B/ }).click();
 	await page.getByRole("textbox", { name: "Message Codex" }).fill("Explain this project");

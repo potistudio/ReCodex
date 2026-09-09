@@ -338,6 +338,19 @@ function shortcuts(event: KeyboardEvent) {
 				>
 			</div>
 			<div class="topbar-right">
+				<span
+					class="rate-limit-indicator"
+					role="status"
+					title="Remaining Codex rate-limit allowance"
+					aria-label="Codex rate-limit allowance"
+				>
+					<span>Rate limit</span>
+					<strong
+						>{app.rateLimits?.rateLimits.primary
+							? `${remainingPercent(app.rateLimits.rateLimits.primary.usedPercent)}% left`
+							: "—"}</strong
+					>
+				</span>
 				{#if app.project}
 					<span class="project-breadcrumb"><Folder size={14} />{app.project.name}</span
 					><Button
