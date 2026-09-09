@@ -82,7 +82,7 @@ impl Server {
         server
             .request(
                 "initialize",
-                json!({"clientInfo":{"name":"recodex","title":"ReCodex","version":"0.1.0"}}),
+                json!({"clientInfo":{"name":"recodex","title":"ReCodex","version":"0.0.1-alpha"}}),
             )
             .await?;
         server.write(json!({"method":"initialized"})).await?;
