@@ -23,8 +23,12 @@ export class App {
 	models = $state<Model[]>([]);
 	model = $state("");
 	effort = $state("");
-	activeTurn = $state<string | null>(null);
-	approvals = $state<ServerEvent[]>([]);
+	private itemsByThread = $state<Record<string, Item[]>>({});
+	private activeTurnsByThread = $state<Record<string, string>>({});
+	private approvalsByThread = $state<Record<string, ServerEvent[]>>({});
+	private configurationsByThread = $state<Record<string, { model: string; effort: string }>>({});
+	activeTurn = $derived(this.thread ? (this.activeTurnsByThread[this.thread.id] ?? null) : null);
+	approvals = $derived(this.thread ? (this.approvalsByThread[this.thread.id] ?? []) : []);
 	account = $state<{
 		type: string;
 		email?: string;
@@ -38,6 +42,7 @@ export class App {
 	private unlisten?: UnlistenFn;
 	private disposed = false;
 	private alternativeTurnIds = new Set<string>();
+	private navigationRevision = 0;
 
 	async guard(action: () => Promise<unknown>) {
 		this.error = "";
@@ -183,14 +188,14 @@ export class App {
 		});
 	}
 	newChat() {
-		if (this.busy) return;
+		this.navigationRevision += 1;
 		this.thread = null;
 		this.items = [];
 		this.error = "";
-		this.approvals = [];
 	}
 	async resume(thread: Thread) {
-		if (this.busy) return;
+		if (this.loading) return;
+		const navigationRevision = ++this.navigationRevision;
 		this.loading = true;
 		await this.guard(async () => {
 			const result = await rpc<{
@@ -202,11 +207,24 @@ export class App {
 				approvalPolicy: "on-request",
 				sandbox: "workspace-write",
 			});
+			const items = this.mergeLoadedItems(
+				result.thread.turns.flatMap((turn) => turn.items),
+				this.itemsByThread[result.thread.id] ?? [],
+			);
+			this.setThreadItems(result.thread.id, items);
+			const configuration = this.configurationsByThread[result.thread.id] ?? {
+				model: result.model,
+				effort: result.reasoningEffort ?? "",
+			};
+			if (!this.configurationsByThread[result.thread.id])
+				this.setThreadConfiguration(result.thread.id, configuration);
+			const activeTurn = result.thread.turns.find((turn) => turn.status === "inProgress")?.id;
+			if (activeTurn) this.setActiveTurn(result.thread.id, activeTurn);
+			if (navigationRevision !== this.navigationRevision) return;
 			this.thread = result.thread;
-			this.items = result.thread.turns.flatMap((turn) => turn.items);
-			if (this.models.some((model) => model.model === result.model)) this.selectModel(result.model);
-			if (result.reasoningEffort) this.effort = result.reasoningEffort;
-			this.activeTurn = result.thread.turns.find((turn) => turn.status === "inProgress")?.id ?? null;
+			this.items = items;
+			if (this.models.some((model) => model.model === configuration.model)) this.selectModel(configuration.model);
+			this.effort = configuration.effort;
 		});
 		this.loading = false;
 	}
@@ -215,38 +233,47 @@ export class App {
 		this.sending = true;
 		this.error = "";
 		const pendingId = `pending-${crypto.randomUUID()}`;
+		let thread = this.thread;
 		try {
-			if (!this.thread) {
+			const project = this.project;
+			const navigationRevision = this.navigationRevision;
+			if (!thread) {
 				const result = await rpc<{ thread: Thread }>("thread/start", {
-					cwd: this.project.path,
+					cwd: project.path,
 					model: this.model || null,
 					approvalPolicy: "on-request",
 					sandbox: "workspace-write",
 				});
-				this.thread = result.thread;
+				thread = result.thread;
+				if (navigationRevision === this.navigationRevision && !this.thread) this.thread = thread;
 			}
-			this.items = [
-				...this.items,
+			this.setThreadItems(thread.id, [
+				...(this.itemsByThread[thread.id] ?? []),
 				{
 					id: pendingId,
 					type: "userMessage",
 					content: [{ type: "text", text }],
 				},
-			];
+			]);
+			this.setThreadConfiguration(thread.id, { model: this.model, effort: this.effort });
 			const result = await rpc<{ turn: Turn }>("turn/start", {
-				threadId: this.thread.id,
+				threadId: thread.id,
 				input: [{ type: "text", text }],
 				model: this.model || null,
 				effort: this.effort || null,
 			});
 			// A very short turn may already have completed before the request resolves.
-			if (!this.completedTurns.has(result.turn.id)) this.activeTurn = result.turn.id;
-			if (!this.thread.preview) this.thread.preview = text;
+			if (!this.completedTurns.has(result.turn.id)) this.setActiveTurn(thread.id, result.turn.id);
+			if (!thread.preview) thread.preview = text;
 			await this.guard(() => this.loadThreads());
 			return true;
 		} catch (error) {
 			this.error = String(error);
-			this.items = this.items.filter((item) => item.id !== pendingId);
+			if (thread)
+				this.setThreadItems(
+					thread.id,
+					(this.itemsByThread[thread.id] ?? []).filter((item) => item.id !== pendingId),
+				);
 			return false;
 		} finally {
 			this.sending = false;
@@ -267,7 +294,12 @@ export class App {
 	async respond(event: ServerEvent, result: unknown) {
 		await this.guard(async () => {
 			await invoke("server_respond", { id: event.id, result });
-			this.approvals = this.approvals.filter((entry) => entry.id !== event.id);
+			const threadId = event.params.threadId;
+			if (threadId)
+				this.setApprovals(
+					threadId,
+					(this.approvalsByThread[threadId] ?? []).filter((entry) => entry.id !== event.id),
+				);
 		});
 	}
 	async requestAlternative(event: ServerEvent) {
@@ -279,8 +311,8 @@ export class App {
 		const { method, params } = event;
 		if (method === "recodex/disconnected") {
 			this.connected = false;
-			this.activeTurn = null;
-			this.approvals = [];
+			this.activeTurnsByThread = {};
+			this.approvalsByThread = {};
 			this.error = "Codex disconnected. Reconnect to continue.";
 			return;
 		}
@@ -302,7 +334,8 @@ export class App {
 					"item/permissions/requestApproval",
 				].includes(method)
 			) {
-				this.approvals = [...this.approvals, event];
+				if (params.threadId)
+					this.setApprovals(params.threadId, [...(this.approvalsByThread[params.threadId] ?? []), event]);
 			} else {
 				void this.guard(() =>
 					invoke("server_respond", {
@@ -317,15 +350,23 @@ export class App {
 			return;
 		}
 		if (method === "serverRequest/resolved")
-			this.approvals = this.approvals.filter((entry) => entry.id !== params.requestId);
-		if (!params.threadId || params.threadId !== this.thread?.id) return;
-		this.items = updateItems(this.items, event);
-		if (method === "turn/started" && params.turn) this.activeTurn = params.turn.id;
+			for (const [threadId, approvals] of Object.entries(this.approvalsByThread))
+				this.setApprovals(
+					threadId,
+					approvals.filter((entry) => entry.id !== params.requestId),
+				);
+		if (!params.threadId) return;
+		const threadId = params.threadId;
+		this.setThreadItems(threadId, updateItems(this.itemsByThread[threadId] ?? [], event));
+		if (method === "turn/started" && params.turn) this.setActiveTurn(threadId, params.turn.id);
 		if (method === "turn/completed" && params.turn) {
 			const turn = params.turn;
 			this.completedTurns.add(turn.id);
-			this.activeTurn = null;
-			this.approvals = this.approvals.filter((entry) => entry.params.turnId !== turn.id);
+			this.clearActiveTurn(threadId, turn.id);
+			this.setApprovals(
+				threadId,
+				(this.approvalsByThread[threadId] ?? []).filter((entry) => entry.params.turnId !== turn.id),
+			);
 			const shouldRequestAlternative = this.alternativeTurnIds.delete(turn.id) && turn.status === "completed";
 			if (turn.error) this.error = turn.error.message;
 			this.fileRevision += 1;
@@ -333,11 +374,81 @@ export class App {
 				if (!this.error) this.error = String(error);
 			});
 			if (shouldRequestAlternative)
-				void this.send(
+				void this.sendToThread(
+					threadId,
 					"The user declined the previous permission request. Continue with an alternative that stays within the current permissions, and do not request that permission again. If no alternative is viable, explain the blocker and the smallest safe next step.",
 				);
 		}
 		if (method === "error") this.error = params.error?.message ?? "The turn encountered an error.";
 		if (method === "item/completed" && params.item?.type === "fileChange") this.fileRevision += 1;
+	}
+	isThreadRunning(threadId: string) {
+		return this.activeTurnsByThread[threadId] !== undefined;
+	}
+	private setThreadItems(threadId: string, items: Item[]) {
+		this.itemsByThread = { ...this.itemsByThread, [threadId]: items };
+		if (this.thread?.id === threadId) this.items = items;
+	}
+	private setActiveTurn(threadId: string, turnId: string) {
+		this.activeTurnsByThread = { ...this.activeTurnsByThread, [threadId]: turnId };
+	}
+	private clearActiveTurn(threadId: string, turnId: string) {
+		if (this.activeTurnsByThread[threadId] !== turnId) return;
+		const { [threadId]: _, ...activeTurns } = this.activeTurnsByThread;
+		this.activeTurnsByThread = activeTurns;
+	}
+	private setApprovals(threadId: string, approvals: ServerEvent[]) {
+		this.approvalsByThread = { ...this.approvalsByThread, [threadId]: approvals };
+	}
+	private setThreadConfiguration(threadId: string, configuration: { model: string; effort: string }) {
+		this.configurationsByThread = { ...this.configurationsByThread, [threadId]: configuration };
+	}
+	private mergeLoadedItems(loaded: Item[], cached: Item[]) {
+		const cachedById = new Map(cached.map((item) => [item.id, item]));
+		const items = loaded.map((item) => {
+			const previous = cachedById.get(item.id);
+			cachedById.delete(item.id);
+			return previous
+				? {
+						...item,
+						...(item.text === undefined && previous.text !== undefined ? { text: previous.text } : {}),
+						...(item.aggregatedOutput === undefined && previous.aggregatedOutput !== undefined
+							? { aggregatedOutput: previous.aggregatedOutput }
+							: {}),
+					}
+				: item;
+		});
+		return [...items, ...cachedById.values()];
+	}
+	private async sendToThread(threadId: string, text: string) {
+		if (!this.connected) return;
+		const pendingId = `pending-${crypto.randomUUID()}`;
+		this.setThreadItems(threadId, [
+			...(this.itemsByThread[threadId] ?? []),
+			{
+				id: pendingId,
+				type: "userMessage",
+				content: [{ type: "text", text }],
+			},
+		]);
+		try {
+			const configuration = this.configurationsByThread[threadId] ?? {
+				model: this.model,
+				effort: this.effort,
+			};
+			const result = await rpc<{ turn: Turn }>("turn/start", {
+				threadId,
+				input: [{ type: "text", text }],
+				model: configuration.model || null,
+				effort: configuration.effort || null,
+			});
+			if (!this.completedTurns.has(result.turn.id)) this.setActiveTurn(threadId, result.turn.id);
+		} catch (error) {
+			this.setThreadItems(
+				threadId,
+				(this.itemsByThread[threadId] ?? []).filter((item) => item.id !== pendingId),
+			);
+			this.error = String(error);
+		}
 	}
 }

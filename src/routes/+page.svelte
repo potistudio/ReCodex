@@ -167,7 +167,7 @@ function shortcuts(event: KeyboardEvent) {
 				>
 			</div>
 			<nav class="primary-nav" aria-label="Workspace">
-				<button type="button" onclick={() => app.newChat()} disabled={app.busy}>
+				<button type="button" onclick={() => app.newChat()} disabled={!app.connected || app.loading}>
 					<SquarePen size={18} /><span>New chat</span><kbd>Ctrl ⇧ O</kbd>
 				</button>
 				<button type="button" onclick={() => (searchOpen = !searchOpen)}>
@@ -222,7 +222,7 @@ function shortcuts(event: KeyboardEvent) {
 					<button
 						type="button"
 						class:selected={app.thread?.id === thread.id}
-						disabled={app.busy || !app.connected}
+						disabled={app.loading || !app.connected}
 						onclick={() => {
 							followBottom = true;
 							void app.resume(thread);
@@ -234,6 +234,9 @@ function shortcuts(event: KeyboardEvent) {
 								thread.preview ||
 								"Untitled chat"}</span
 						>
+						{#if app.isThreadRunning(thread.id) && app.thread?.id !== thread.id}
+							<LoaderCircle class="spin thread-running" size={14} aria-hidden="true" />
+						{/if}
 					</button>
 				{/each}
 				{#if !filteredThreads.length}
@@ -570,9 +573,7 @@ function shortcuts(event: KeyboardEvent) {
 				<pre>{app.logs.join("\n")}</pre>
 			</details>
 		{/if}
-		<div class="settings-version">
-			<Code2 size={14} />ReCodex <span>0.0.1-alpha</span>
-		</div></Dialog.Content
+		<div class="settings-version"><Code2 size={14} />ReCodex <span>0.0.1-alpha</span></div></Dialog.Content
 	></Dialog.Root
 >
 <Dialog.Root bind:open={renameOpen}

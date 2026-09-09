@@ -33,6 +33,14 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 			updatedAt: 1,
 			turns: [],
 		};
+		const backgroundThread = {
+			id: "thread-2",
+			name: "Background conversation",
+			preview: "Background conversation",
+			cwd: "C:/example",
+			updatedAt: 0,
+			turns: [],
+		};
 		const emit = (payload: unknown) => callbacks.get(listener)?.({ event: "codex-event", payload });
 		host.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
 		host.__TAURI_INTERNALS__ = {
@@ -142,15 +150,19 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 						},
 						requiresOpenaiAuth: true,
 					};
-				if (args.method === "thread/list") return { data: [thread], nextCursor: null };
+				if (args.method === "thread/list") return { data: [thread, backgroundThread], nextCursor: null };
 				if (args.method === "thread/start") {
 					host.startParams = args.params;
 					return { thread };
 				}
-				if (args.method === "thread/resume")
+				if (args.method === "thread/resume") {
+					const resumedThread =
+						(args.params as { threadId: string }).threadId === backgroundThread.id
+							? backgroundThread
+							: thread;
 					return {
 						thread: {
-							...thread,
+							...resumedThread,
 							turns: [
 								{
 									id: "old-turn",
@@ -159,7 +171,10 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 										{
 											id: "old-answer",
 											type: "agentMessage",
-											text: "Restored conversation",
+											text:
+												resumedThread.id === backgroundThread.id
+													? "Background conversation"
+													: "Restored conversation",
 										},
 									],
 								},
@@ -167,13 +182,23 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 						},
 						model: "model-a",
 					};
+				}
 				if (args.method === "turn/start") {
 					turnCount += 1;
 					const turnId = `turn-${turnCount}`;
 					host.turnParams = args.params;
 					host.turnInputs = [...((host.turnInputs as unknown[] | undefined) ?? []), args.params];
 					setTimeout(() => {
-						if (turnCount !== 1) return;
+						if (turnId !== "turn-1") {
+							emit({
+								method: "turn/completed",
+								params: {
+									threadId: thread.id,
+									turn: { id: turnId, status: "completed", items: [] },
+								},
+							});
+							return;
+						}
 						emit({
 							method: "item/started",
 							params: {
@@ -240,12 +265,17 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await page.getByRole("textbox", { name: "Message Codex" }).fill("Explain this project");
 	await page.getByRole("button", { name: "Send message", exact: true }).click();
 	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
+	await page.getByRole("button", { name: "Background conversation", exact: true }).click();
+	await expect(page.locator(".markdown")).toContainText("Background conversation");
+	await expect(page.getByRole("button", { name: "New chat" })).toBeEnabled();
+	await page.getByRole("button", { name: "Explain this project", exact: true }).click();
+	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
 	await expect(page.locator(".tool-item.running")).toContainText("Running");
 	await expect(page.locator(".tool-item.running pre")).toContainText("Checking types…");
 	await expect(page.getByRole("button", { name: "Decline", exact: true })).toBeVisible();
 	await page.getByRole("button", { name: "Ask for another approach" }).click();
 	await expect(page.locator(".tool-item")).toContainText("Completed");
-	await expect(page.locator(".markdown")).toContainText("This is a SvelteKit project.");
+	await expect(page.getByText("This is a SvelteKit project.", { exact: true })).toBeVisible();
 	await expect(page.locator(".user-message")).toHaveCount(2);
 	expect(await page.evaluate(() => (window as unknown as { turnParams: { model: string } }).turnParams.model)).toBe(
 		"model-b",
@@ -279,6 +309,6 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(page.getByRole("button", { name: "Renamed project", exact: true })).toBeVisible();
 	await page.getByRole("button", { name: /New chat/ }).click();
 	await page.getByRole("button", { name: "Explain this project", exact: true }).click();
-	await expect(page.locator(".markdown")).toContainText("Restored conversation");
+	await expect(page.getByText("Restored conversation", { exact: true })).toBeVisible();
 	expect(errors).toEqual([]);
 });
