@@ -13,7 +13,9 @@ let copyError = $state("");
 let commandExpanded = $state(false);
 let commandOutput = $state<HTMLPreElement>();
 const text = $derived(
-	item.type === "userMessage" ? (item.content?.map((part) => part.text ?? "").join("\n") ?? "") : (item.text ?? ""),
+	item.type === "userMessage"
+		? (item.content?.map((part) => (typeof part === "string" ? "" : (part.text ?? ""))).join("\n") ?? "")
+		: (item.text ?? ""),
 );
 const html = $derived(
 	DOMPurify.sanitize(marked.parse(text, { async: false }) as string, {
@@ -111,14 +113,7 @@ $effect(() => {
 			<pre class="diff">{change.diff}</pre>
 		{/each}
 	</details>
-{:else if item.type === "reasoning"}
-	{#if item.summary?.length}
-		<details class="tool-item reasoning">
-			<summary><Sparkles size={15} />Thinking<ChevronRight size={13} /></summary>
-			<p>{item.summary.join("\n")}</p>
-		</details>
-	{/if}
-{:else}
+{:else if item.type !== "reasoning"}
 	<div class="activity">
 		<Sparkles size={14} /><span>{item.tool ?? item.type}</span><span>{item.status ?? ""}</span>
 	</div>

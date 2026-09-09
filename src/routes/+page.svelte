@@ -36,6 +36,7 @@ import * as Dialog from "$lib/components/ui/dialog";
 import * as Dropdown from "$lib/components/ui/dropdown-menu";
 import { Input } from "$lib/components/ui/input";
 import type { Project } from "$lib/types";
+import { workingState } from "$lib/working";
 
 const app = new App();
 let draft = $state("");
@@ -51,6 +52,7 @@ let dark = $state(false);
 let chatScroll = $state<HTMLDivElement>();
 let composer = $state<HTMLTextAreaElement>();
 let followBottom = $state(true);
+const activeWork = $derived(workingState(app.items, app.approvals.length > 0, app.thinkingLabel));
 const filteredThreads = $derived(
 	app.threads.filter((thread) => (thread.name || thread.preview).toLowerCase().includes(search.toLowerCase())),
 );
@@ -413,10 +415,10 @@ function shortcuts(event: KeyboardEvent) {
 							{#if app.activeTurn || app.sending}
 								<div class="working">
 									<span class="working-dot"></span>
-									{app
-										.approvals.length
-										? "Waiting for your input"
-										: "Working on it…"}
+									<span>{activeWork.label}</span>
+									{#if activeWork.detail}
+										<span class="working-detail">{activeWork.detail}</span>
+									{/if}
 								</div>
 							{/if}
 							{#each app.approvals as event (event.id)}

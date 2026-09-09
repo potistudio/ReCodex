@@ -772,6 +772,12 @@
 	background: #829573;
 	animation: pulse 1.5s infinite;
 }
+.working-detail {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--foreground);
+}
 .approval-card {
 	border: 1px solid var(--ring);
 	border-radius: 15px;

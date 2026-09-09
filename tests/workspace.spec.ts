@@ -236,44 +236,86 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 							},
 						});
 						emit({
-							method: "item/agentMessage/delta",
+							method: "item/reasoning/summaryTextDelta",
 							params: {
 								threadId: thread.id,
-								itemId: "answer-1",
-								delta: "This is a ",
+								itemId: "reasoning-1",
+								summaryIndex: 0,
+								delta: "**Reviewing ",
 							},
 						});
-						emit({
-							method: "item/started",
-							params: {
-								threadId: thread.id,
-								item: {
-									id: "command-1",
-									type: "commandExecution",
-									command: "pnpm check",
-									status: "inProgress",
+						setTimeout(() => {
+							emit({
+								method: "item/reasoning/summaryTextDelta",
+								params: {
+									threadId: thread.id,
+									itemId: "reasoning-1",
+									summaryIndex: 0,
+									delta: "the project**",
 								},
-							},
-						});
-						emit({
-							method: "item/commandExecution/outputDelta",
-							params: {
-								threadId: thread.id,
-								itemId: "command-1",
-								delta: "Checking types…\n",
-							},
-						});
-						emit({
-							id: 42,
-							method: "item/commandExecution/requestApproval",
-							params: {
-								threadId: thread.id,
-								turnId,
-								command: "pnpm check",
-								reason: "Validate the project",
-								availableDecisions: ["accept"],
-							},
-						});
+							});
+							setTimeout(() => {
+								emit({
+									method: "item/reasoning/summaryTextDelta",
+									params: {
+										threadId: thread.id,
+										itemId: "reasoning-1",
+										summaryIndex: 1,
+										delta: "**Assessing ",
+									},
+								});
+								emit({
+									method: "item/reasoning/summaryTextDelta",
+									params: {
+										threadId: thread.id,
+										itemId: "reasoning-1",
+										summaryIndex: 1,
+										delta: "dependencies**",
+									},
+								});
+								setTimeout(() => {
+									emit({
+										method: "item/agentMessage/delta",
+										params: {
+											threadId: thread.id,
+											itemId: "answer-1",
+											delta: "This is a ",
+										},
+									});
+									emit({
+										method: "item/started",
+										params: {
+											threadId: thread.id,
+											item: {
+												id: "command-1",
+												type: "commandExecution",
+												command: "pnpm check",
+												status: "inProgress",
+											},
+										},
+									});
+									emit({
+										method: "item/commandExecution/outputDelta",
+										params: {
+											threadId: thread.id,
+											itemId: "command-1",
+											delta: "Checking types…\n",
+										},
+									});
+									emit({
+										id: 42,
+										method: "item/commandExecution/requestApproval",
+										params: {
+											threadId: thread.id,
+											turnId,
+											command: "pnpm check",
+											reason: "Validate the project",
+											availableDecisions: ["accept"],
+										},
+									});
+								}, 1000);
+							}, 50);
+						}, 50);
 					}, 20);
 					return {
 						turn: { id: turnId, status: "inProgress", items: [] },
@@ -289,6 +331,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await page.getByRole("menuitem", { name: /Model B/ }).click();
 	await page.getByRole("textbox", { name: "Message Codex" }).fill("Explain this project");
 	await page.getByRole("button", { name: "Send message", exact: true }).click();
+	await expect(page.getByText("Assessing dependencies", { exact: true })).toBeVisible();
 	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
 	await page.getByRole("button", { name: "Background conversation", exact: true }).click();
 	await expect(page.locator(".markdown")).toContainText("Background conversation");
@@ -305,9 +348,16 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(page.locator(".tool-item")).toContainText("Completed");
 	await expect(page.getByText("This is a SvelteKit project.", { exact: true })).toBeVisible();
 	await expect(page.locator(".user-message")).toHaveCount(2);
-	expect(await page.evaluate(() => (window as unknown as { turnParams: { model: string } }).turnParams.model)).toBe(
-		"model-b",
-	);
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { turnParams: { model: string; summary: string } }).turnParams.model,
+		),
+	).toBe("model-b");
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { turnParams: { model: string; summary: string } }).turnParams.summary,
+		),
+	).toBe("concise");
 	expect(await page.evaluate(() => (window as unknown as { approvalResult: unknown }).approvalResult)).toEqual({
 		decision: "decline",
 	});

@@ -21,7 +21,6 @@ export interface Item {
 	type: string;
 	text?: string;
 	content?: { type: string; text?: string }[];
-	summary?: string[];
 	command?: string;
 	aggregatedOutput?: string;
 	status?: string;
@@ -58,6 +57,7 @@ export interface ServerEvent {
 		turnId?: string;
 		itemId?: string;
 		delta?: string;
+		summaryIndex?: number;
 		output?: string;
 		item?: Item;
 		turn?: Turn;
