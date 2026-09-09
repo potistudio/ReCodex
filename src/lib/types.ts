@@ -57,6 +57,7 @@ export interface ServerEvent {
 		turnId?: string;
 		itemId?: string;
 		delta?: string;
+		output?: string;
 		item?: Item;
 		turn?: Turn;
 		thread?: Thread;

@@ -55,4 +55,42 @@ describe("app-server item stream", () => {
 		expect(result[1].aggregatedOutput).toBeUndefined();
 		expect(items[0].aggregatedOutput).toBeUndefined();
 	});
+	it("keeps streamed command output when its lifecycle item is refreshed", () => {
+		let items: Item[] = [
+			{
+				id: "command-1",
+				type: "commandExecution",
+				command: "pnpm check",
+				status: "inProgress",
+			},
+		];
+		items = updateItems(items, {
+			method: "item/commandExecution/outputDelta",
+			params: { itemId: "command-1", delta: "Checking…\n" },
+		});
+		items = updateItems(items, {
+			method: "item/completed",
+			params: {
+				item: {
+					id: "command-1",
+					type: "commandExecution",
+					command: "pnpm check",
+					status: "completed",
+				},
+			},
+		});
+		expect(items[0]).toMatchObject({ status: "completed", aggregatedOutput: "Checking…\n" });
+	});
+	it("shows output that arrives before the command item", () => {
+		const items = updateItems([], {
+			method: "item/commandExecution/outputDelta",
+			params: { itemId: "command-1", delta: "Checking…\n" },
+		});
+		expect(items[0]).toMatchObject({
+			id: "command-1",
+			type: "commandExecution",
+			status: "inProgress",
+			aggregatedOutput: "Checking…\n",
+		});
+	});
 });

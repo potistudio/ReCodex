@@ -10,6 +10,8 @@ import type { Item } from "$lib/types";
 let { item }: { item: Item } = $props();
 let copied = $state(false);
 let copyError = $state("");
+let commandExpanded = $state(false);
+let commandOutput = $state<HTMLPreElement>();
 const text = $derived(
 	item.type === "userMessage" ? (item.content?.map((part) => part.text ?? "").join("\n") ?? "") : (item.text ?? ""),
 );
@@ -37,6 +39,23 @@ function link(event: MouseEvent) {
 		else window.open(anchor.href, "_blank", "noopener,noreferrer");
 	}
 }
+function commandIsRunning(status?: string) {
+	return status === "inProgress" || status === "in_progress";
+}
+function commandStatus(status?: string) {
+	if (commandIsRunning(status)) return "Running";
+	if (status === "completed") return "Completed";
+	if (status === "failed") return "Failed";
+	if (status === "cancelled") return "Cancelled";
+	return status || "Starting";
+}
+$effect(() => {
+	if (commandIsRunning(item.status)) commandExpanded = true;
+});
+$effect(() => {
+	item.aggregatedOutput;
+	if (commandOutput) commandOutput.scrollTop = commandOutput.scrollHeight;
+});
 </script>
 
 {#if item.type === "userMessage"}
@@ -71,13 +90,13 @@ function link(event: MouseEvent) {
 		{/if}
 	</article>
 {:else if item.type === "commandExecution"}
-	<details class="tool-item">
+	<details class="tool-item" class:running={commandIsRunning(item.status)} bind:open={commandExpanded}>
 		<summary>
-			<Terminal size={15} /><span class="truncate">{item.command}</span
-			><span class="tool-status">{item.status === "inProgress" ? "Running" : item.status}</span>
+			<Terminal size={15} /><span class="truncate">{item.command || "Command starting…"}</span
+			><span class="tool-status">{commandStatus(item.status)}</span>
 			<ChevronRight size={13} />
 		</summary>
-		<pre>{item.aggregatedOutput || "Waiting for output…"}</pre>
+		<pre bind:this={commandOutput} aria-live="polite">{item.aggregatedOutput || "Waiting for output…"}</pre>
 	</details>
 {:else if item.type === "fileChange"}
 	<details class="tool-item">

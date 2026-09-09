@@ -22,6 +22,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 		const callbacks = new Map<number, (event: unknown) => void>();
 		let listener = 0;
 		let callbackId = 0;
+		let turnCount = 0;
 		let file = "export const answer = 41;\n";
 		let projects = [{ name: "Example project", path: "C:/example" }];
 		const thread = {
@@ -71,6 +72,18 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 				if (command === "plugin:dialog|confirm") return true;
 				if (command === "server_respond") {
 					host.approvalResult = args.result;
+					emit({
+						method: "item/completed",
+						params: {
+							threadId: thread.id,
+							item: {
+								id: "command-1",
+								type: "commandExecution",
+								command: "pnpm check",
+								status: "completed",
+							},
+						},
+					});
 					emit({
 						method: "item/completed",
 						params: {
@@ -155,8 +168,12 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 						model: "model-a",
 					};
 				if (args.method === "turn/start") {
+					turnCount += 1;
+					const turnId = `turn-${turnCount}`;
 					host.turnParams = args.params;
+					host.turnInputs = [...((host.turnInputs as unknown[] | undefined) ?? []), args.params];
 					setTimeout(() => {
+						if (turnCount !== 1) return;
 						emit({
 							method: "item/started",
 							params: {
@@ -177,18 +194,39 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 							},
 						});
 						emit({
+							method: "item/started",
+							params: {
+								threadId: thread.id,
+								item: {
+									id: "command-1",
+									type: "commandExecution",
+									command: "pnpm check",
+									status: "inProgress",
+								},
+							},
+						});
+						emit({
+							method: "item/commandExecution/outputDelta",
+							params: {
+								threadId: thread.id,
+								itemId: "command-1",
+								delta: "Checking types…\n",
+							},
+						});
+						emit({
 							id: 42,
 							method: "item/commandExecution/requestApproval",
 							params: {
 								threadId: thread.id,
-								turnId: "turn-1",
+								turnId,
 								command: "pnpm check",
 								reason: "Validate the project",
+								availableDecisions: ["accept"],
 							},
 						});
 					}, 20);
 					return {
-						turn: { id: "turn-1", status: "inProgress", items: [] },
+						turn: { id: turnId, status: "inProgress", items: [] },
 					};
 				}
 				throw new Error(`Unexpected method: ${args.method}`);
@@ -202,15 +240,31 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await page.getByRole("textbox", { name: "Message Codex" }).fill("Explain this project");
 	await page.getByRole("button", { name: "Send message", exact: true }).click();
 	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
-	await page.getByRole("button", { name: "Allow once" }).click();
+	await expect(page.locator(".tool-item.running")).toContainText("Running");
+	await expect(page.locator(".tool-item.running pre")).toContainText("Checking types…");
+	await expect(page.getByRole("button", { name: "Decline", exact: true })).toBeVisible();
+	await page.getByRole("button", { name: "Ask for another approach" }).click();
+	await expect(page.locator(".tool-item")).toContainText("Completed");
 	await expect(page.locator(".markdown")).toContainText("This is a SvelteKit project.");
-	await expect(page.locator(".user-message")).toHaveCount(1);
+	await expect(page.locator(".user-message")).toHaveCount(2);
 	expect(await page.evaluate(() => (window as unknown as { turnParams: { model: string } }).turnParams.model)).toBe(
 		"model-b",
 	);
 	expect(await page.evaluate(() => (window as unknown as { approvalResult: unknown }).approvalResult)).toEqual({
-		decision: "accept",
+		decision: "decline",
 	});
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() => (window as unknown as { turnInputs?: { input?: { text?: string }[] }[] }).turnInputs?.length ?? 0,
+			),
+		)
+		.toBe(2);
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { turnInputs: { input: { text?: string }[] }[] }).turnInputs[1].input[0].text,
+		),
+	).toContain("The user declined the previous permission request");
 	await page.getByRole("button", { name: "Files", exact: true }).click();
 	await page.getByRole("button", { name: "main.ts", exact: true }).click();
 	await page.getByRole("textbox", { name: "Edit main.ts" }).fill("export const answer = 42;\n");
