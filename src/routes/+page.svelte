@@ -109,6 +109,12 @@ async function addProject() {
 		await app.addProject();
 	}
 }
+async function relocateProject() {
+	if (await canLeaveFiles()) {
+		fileDirty = false;
+		await app.relocateProject();
+	}
+}
 async function removeProject() {
 	if (!(await canLeaveFiles())) return;
 	if (
@@ -324,6 +330,7 @@ function shortcuts(event: KeyboardEvent) {
 									renameOpen = true;
 								}}
 								><Pencil size={14} />Rename project</Dropdown.Item
+							><Dropdown.Item onclick={relocateProject}>Change working directory</Dropdown.Item
 							><Dropdown.Item onclick={removeProject}>Remove project</Dropdown.Item></Dropdown.Content
 						></Dropdown.Root
 					>

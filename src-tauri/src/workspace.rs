@@ -7,9 +7,12 @@ use std::{
 use tauri::{Manager, State};
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Project {
     pub path: String,
     pub name: String,
+    #[serde(default)]
+    pub history_paths: Vec<String>,
 }
 #[derive(Default)]
 pub struct Workspace(pub Mutex<Vec<Project>>);
@@ -74,7 +77,11 @@ pub fn project_save(
     if let Some(project) = updated.iter_mut().find(|p| p.path == path) {
         project.name = name;
     } else {
-        updated.push(Project { path, name });
+        updated.push(Project {
+            path,
+            name,
+            history_paths: Vec::new(),
+        });
     }
     persist(&app, &updated)?;
     *projects = updated;
@@ -95,6 +102,58 @@ pub fn project_remove(
     persist(&app, &updated)?;
     *projects = updated;
     Ok(projects.clone())
+}
+fn relocate_project(
+    projects: &mut Vec<Project>,
+    source_path: &str,
+    destination_path: String,
+) -> Result<Project, String> {
+    let mut source_index = projects
+        .iter()
+        .position(|project| project.path == source_path)
+        .ok_or("Open this project first")?;
+    if source_path == destination_path {
+        return Ok(projects[source_index].clone());
+    }
+    if let Some(destination_index) = projects
+        .iter()
+        .position(|project| project.path == destination_path)
+    {
+        projects.remove(destination_index);
+        if destination_index < source_index {
+            source_index -= 1;
+        }
+    }
+    let project = &mut projects[source_index];
+    if !project.history_paths.contains(&project.path) {
+        project.history_paths.push(project.path.clone());
+    }
+    project.path = destination_path;
+    let current_path = project.path.clone();
+    project.history_paths.retain(|path| path != &current_path);
+    Ok(projects[source_index].clone())
+}
+#[tauri::command]
+pub fn project_relocate(
+    app: tauri::AppHandle,
+    state: State<Workspace>,
+    source_path: String,
+    destination_path: String,
+) -> Result<Project, String> {
+    let root = fs::canonicalize(&destination_path).map_err(|e| e.to_string())?;
+    if !root.is_dir() {
+        return Err("Choose a directory".into());
+    }
+    let destination_path = root
+        .to_string_lossy()
+        .trim_start_matches("\\\\?\\")
+        .to_owned();
+    let mut projects = state.0.lock().unwrap();
+    let mut updated = projects.clone();
+    let project = relocate_project(&mut updated, &source_path, destination_path)?;
+    persist(&app, &updated)?;
+    *projects = updated;
+    Ok(project)
 }
 fn resolve(root: &Path, relative: &str) -> Result<PathBuf, String> {
     if Path::new(relative).is_absolute() {
@@ -201,5 +260,26 @@ mod tests {
         save_text(&file, "new", "original").unwrap();
         assert_eq!(read_text(&file).unwrap(), "new");
         fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn relocating_a_project_preserves_its_name_and_deduplicates_the_destination() {
+        let mut projects = vec![
+            Project {
+                name: "Current project".into(),
+                path: "C:\\source".into(),
+                history_paths: Vec::new(),
+            },
+            Project {
+                name: "Existing project".into(),
+                path: "C:\\destination".into(),
+                history_paths: Vec::new(),
+            },
+        ];
+        let project =
+            relocate_project(&mut projects, "C:\\source", "C:\\destination".into()).unwrap();
+        assert_eq!(project.name, "Current project");
+        assert_eq!(project.path, "C:\\destination");
+        assert_eq!(project.history_paths, ["C:\\source"]);
+        assert_eq!(projects.len(), 1);
     }
 }

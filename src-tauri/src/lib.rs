@@ -68,6 +68,7 @@ pub fn run() {
             server_respond,
             workspace::projects_load,
             workspace::project_save,
+            workspace::project_relocate,
             workspace::project_remove,
             workspace::files_list,
             workspace::file_read,

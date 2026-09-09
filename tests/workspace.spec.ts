@@ -24,7 +24,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 		let callbackId = 0;
 		let turnCount = 0;
 		let file = "export const answer = 41;\n";
-		let projects = [{ name: "Example project", path: "C:/example" }];
+		let projects = [{ name: "Example project", path: "C:/example", historyPaths: [] as string[] }];
 		const thread = {
 			id: "thread-1",
 			name: null,
@@ -63,6 +63,20 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 					}));
 					return projects;
 				}
+				if (command === "project_relocate") {
+					host.relocateParams = args;
+					const sourcePath = (args.sourcePath as string) ?? "";
+					const destinationPath = (args.destinationPath as string) ?? "";
+					const project = projects.find((entry) => entry.path === sourcePath);
+					if (!project) throw new Error("Open this project first");
+					project.historyPaths.push(project.path);
+					project.path = destinationPath;
+					project.historyPaths = project.historyPaths.filter((path) => path !== destinationPath);
+					projects = projects.filter(
+						(entry, index, entries) => index === entries.findIndex((item) => item.path === entry.path),
+					);
+					return project;
+				}
 				if (command === "files_list")
 					return [
 						{
@@ -78,6 +92,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 					return;
 				}
 				if (command === "plugin:dialog|confirm") return true;
+				if (command === "plugin:dialog|open") return "D:/relocated-working-directory";
 				if (command === "server_respond") {
 					host.approvalResult = args.result;
 					emit({
@@ -150,7 +165,13 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 						},
 						requiresOpenaiAuth: true,
 					};
-				if (args.method === "thread/list") return { data: [thread, backgroundThread], nextCursor: null };
+				if (args.method === "thread/list") {
+					host.threadListCwds = [
+						...((host.threadListCwds as string[] | undefined) ?? []),
+						(args.params as { cwd: string }).cwd,
+					];
+					return { data: [thread, backgroundThread], nextCursor: null };
+				}
 				if (args.method === "thread/start") {
 					host.startParams = args.params;
 					return { thread };
@@ -314,6 +335,18 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await page.getByRole("textbox", { name: "Project name" }).fill("Renamed project");
 	await page.getByRole("button", { name: "Save name" }).click();
 	await expect(page.getByRole("button", { name: "Renamed project", exact: true })).toBeVisible();
+	await page.evaluate(() => ((window as unknown as { threadListCwds: string[] }).threadListCwds = []));
+	await page.getByRole("button", { name: "Project options" }).click();
+	await page.getByRole("menuitem", { name: "Change working directory" }).click();
+	expect(await page.evaluate(() => (window as unknown as { relocateParams: unknown }).relocateParams)).toEqual({
+		sourcePath: "C:/example",
+		destinationPath: "D:/relocated-working-directory",
+	});
+	expect(await page.evaluate(() => (window as unknown as { threadListCwds: string[] }).threadListCwds)).toEqual([
+		"D:/relocated-working-directory",
+		"C:/example",
+	]);
+	await expect(page.getByRole("button", { name: "Explain this project", exact: true })).toBeVisible();
 	await page.getByRole("button", { name: /New chat/ }).click();
 	await page.getByRole("button", { name: "Explain this project", exact: true }).click();
 	await expect(page.getByText("Restored conversation", { exact: true })).toBeVisible();

@@ -1,6 +1,7 @@
 export interface Project {
 	name: string;
 	path: string;
+	historyPaths: string[];
 }
 export interface Model {
 	id: string;

@@ -122,21 +122,26 @@ export class App {
 			this.threads = [];
 			return;
 		}
-		const projectPath = this.project.path;
-		const result = await rpc<{ data: Thread[]; nextCursor: string | null }>("thread/list", {
-			cwd: projectPath,
-			limit: 50,
-			sortKey: "updated_at",
-			cursor: more ? this.cursor : null,
-		});
-		if (this.project?.path !== projectPath) return;
+		const project = this.project;
+		const paths = [...new Set([project.path, ...project.historyPaths])];
+		const results = await Promise.all(
+			paths.map((cwd, index) =>
+				rpc<{ data: Thread[]; nextCursor: string | null }>("thread/list", {
+					cwd,
+					limit: 50,
+					sortKey: "updated_at",
+					cursor: more && index === 0 ? this.cursor : null,
+				}),
+			),
+		);
+		if (this.project?.path !== project.path) return;
+		const threads = results.flatMap((result) => result.data);
 		this.threads = more
-			? [
-					...this.threads,
-					...result.data.filter((thread) => !this.threads.some((entry) => entry.id === thread.id)),
-				]
-			: result.data;
-		this.cursor = result.nextCursor;
+			? [...this.threads, ...threads.filter((thread) => !this.threads.some((entry) => entry.id === thread.id))]
+			: [...new Map(threads.map((thread) => [thread.id, thread])).values()].sort(
+					(a, b) => b.updatedAt - a.updatedAt,
+				);
+		this.cursor = results[0].nextCursor;
 	}
 	async chooseProject(project: Project) {
 		if (this.busy) return;
@@ -171,6 +176,24 @@ export class App {
 				name: name.trim(),
 			});
 			this.project = this.projects.find((project) => project.path === path) ?? null;
+		});
+	}
+	async relocateProject() {
+		const project = this.project;
+		if (!isTauri() || !project || this.busy) return;
+		await this.guard(async () => {
+			const path = await open({
+				directory: true,
+				multiple: false,
+				title: "Choose a working directory",
+			});
+			if (!path || path === project.path) return;
+			const relocated = await invoke<Project>("project_relocate", {
+				sourcePath: project.path,
+				destinationPath: path,
+			});
+			this.projects = await invoke<Project[]>("projects_load");
+			await this.chooseProject(relocated);
 		});
 	}
 	async removeProject() {
