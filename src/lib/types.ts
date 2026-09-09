@@ -48,6 +48,21 @@ export interface ThreadTokenUsage {
 	last: TokenUsageBreakdown;
 	modelContextWindow: number | null;
 }
+export interface RateLimitWindow {
+	usedPercent: number;
+	windowDurationMins: number | null;
+	resetsAt: number | null;
+}
+export interface RateLimitSnapshot {
+	limitId: string | null;
+	limitName: string | null;
+	primary: RateLimitWindow | null;
+	secondary: RateLimitWindow | null;
+}
+export interface RateLimits {
+	rateLimits: RateLimitSnapshot;
+	rateLimitsByLimitId: Record<string, RateLimitSnapshot | undefined> | null;
+}
 export interface Thread {
 	id: string;
 	name: string | null;

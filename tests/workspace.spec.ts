@@ -193,6 +193,16 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 						},
 						requiresOpenaiAuth: true,
 					};
+				if (args.method === "account/rateLimits/read")
+					return {
+						rateLimits: {
+							limitId: "codex",
+							limitName: "Codex",
+							primary: { usedPercent: 61, windowDurationMins: 10080, resetsAt: 1789355330 },
+							secondary: null,
+						},
+						rateLimitsByLimitId: null,
+					};
 				if (args.method === "thread/list") {
 					host.threadListCwds = [
 						...((host.threadListCwds as string[] | undefined) ?? []),
@@ -377,6 +387,11 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(page.getByText("This is a SvelteKit project.", { exact: true })).toBeVisible();
 	await expect(page.locator(".thread-list").getByText("1,000 tokens", { exact: true })).toBeVisible();
 	await expect(page.locator(".assistant-message").getByText(/1,000 tokens/)).toBeVisible();
+	await page.locator(".account-button").click();
+	await expect(
+		page.getByRole("region", { name: "Rate limits" }).getByText("39% remaining", { exact: true }),
+	).toBeVisible();
+	await page.getByRole("button", { name: "Close" }).click();
 	await expect(page.locator(".user-message")).toHaveCount(2);
 	expect(
 		await page.evaluate(

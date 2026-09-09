@@ -35,8 +35,8 @@ import { Button } from "$lib/components/ui/button";
 import * as Dialog from "$lib/components/ui/dialog";
 import * as Dropdown from "$lib/components/ui/dropdown-menu";
 import { Input } from "$lib/components/ui/input";
-import type { Project } from "$lib/types";
-import { formatTokenCount } from "$lib/usage";
+import type { Project, RateLimitSnapshot, RateLimitWindow } from "$lib/types";
+import { formatResetTime, formatTokenCount, formatUsageWindow, remainingPercent } from "$lib/usage";
 import { workingState } from "$lib/working";
 
 const app = new App();
@@ -58,6 +58,20 @@ const filteredThreads = $derived(
 	app.threads.filter((thread) => (thread.name || thread.preview).toLowerCase().includes(search.toLowerCase())),
 );
 const ready = $derived(app.connected && !!app.project && (!app.requiresAuth || !!app.account));
+const rateLimitSnapshots = $derived.by(() => {
+	const rateLimits = app.rateLimits;
+	if (!rateLimits) return [];
+	const snapshots = [rateLimits.rateLimits, ...Object.values(rateLimits.rateLimitsByLimitId ?? {})].filter(
+		(snapshot): snapshot is RateLimitSnapshot => Boolean(snapshot),
+	);
+	return [...new Map(snapshots.map((snapshot) => [snapshot.limitId ?? "default", snapshot])).values()];
+});
+function rateLimitName(snapshot: RateLimitSnapshot) {
+	return snapshot.limitName ?? snapshot.limitId ?? "Codex";
+}
+function rateLimitWindows(snapshot: RateLimitSnapshot): RateLimitWindow[] {
+	return [snapshot.primary, snapshot.secondary].filter((window): window is RateLimitWindow => window !== null);
+}
 onMount(() => {
 	dark = localStorage.getItem("recodex-theme") === "dark";
 	void app.init();
@@ -270,7 +284,14 @@ function shortcuts(event: KeyboardEvent) {
 				{/if}
 			</div>
 			<div class="sidebar-footer">
-				<button type="button" class="account-button" onclick={() => (settingsOpen = true)}>
+				<button
+					type="button"
+					class="account-button"
+					onclick={() => {
+						settingsOpen = true;
+						void app.readRateLimits().catch(() => {});
+					}}
+				>
 					<span class="avatar">{app.account?.email?.[0]?.toUpperCase() || "R"}</span
 					><span
 						><strong
@@ -576,6 +597,34 @@ function shortcuts(event: KeyboardEvent) {
 				<span class="account-plan">{app.account.planType || app.account.type}</span>
 			{/if}
 		</div>
+		<section class="rate-limit-panel" aria-label="Rate limits">
+			<div>
+				<strong>Rate limits</strong>
+				<small>Remaining allowance from your signed-in Codex account.</small>
+			</div>
+			{#if rateLimitSnapshots.length}
+				<div class="rate-limit-list">
+					{#each rateLimitSnapshots as snapshot (snapshot.limitId ?? "default")}
+						{#each rateLimitWindows(snapshot) as window, index (`${snapshot.limitId ?? "default"}-${index}`)}
+							<div class="rate-limit-row">
+								<span
+									><strong>{rateLimitName(snapshot)}</strong
+									><small>{formatUsageWindow(window)}</small></span
+								>
+								<span class="rate-limit-value"
+									><strong>{remainingPercent(window.usedPercent)}% remaining</strong>
+									<small
+										>{formatResetTime(window.resetsAt) ? `Resets ${formatResetTime(window.resetsAt)}` : "Reset unavailable"}</small
+									></span
+								>
+							</div>
+						{/each}
+					{/each}
+				</div>
+			{:else}
+				<p>Rate-limit details are unavailable for this account.</p>
+			{/if}
+		</section>
 		<p class="settings-note">
 			ReCodex uses your installed Codex CLI and its sign-in. If Codex is not found, set
 			<code>RECODEX_CODEX_PATH</code>

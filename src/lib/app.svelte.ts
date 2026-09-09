@@ -3,7 +3,17 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { updateItems } from "./conversation";
-import type { Item, Model, Project, ServerEvent, Thread, ThreadTokenUsage, TokenUsageBreakdown, Turn } from "./types";
+import type {
+	Item,
+	Model,
+	Project,
+	RateLimits,
+	ServerEvent,
+	Thread,
+	ThreadTokenUsage,
+	TokenUsageBreakdown,
+	Turn,
+} from "./types";
 
 export const rpc = <T>(method: string, params: Record<string, unknown> = {}) =>
 	invoke<T>("server_request", { method, params });
@@ -39,6 +49,7 @@ export class App {
 		planType?: string;
 	} | null>(null);
 	requiresAuth = $state(true);
+	rateLimits = $state<RateLimits | null>(null);
 	logs = $state<string[]>([]);
 	fileRevision = $state(0);
 	busy = $derived(this.sending || this.activeTurn !== null || this.loading);
@@ -96,7 +107,7 @@ export class App {
 					models[0]?.model ??
 					"",
 			);
-			await this.readAccount();
+			await Promise.all([this.readAccount(), this.readRateLimits()]);
 			await this.loadThreads();
 			if (this.thread) await this.resume(this.thread);
 		});
@@ -109,6 +120,9 @@ export class App {
 		}>("account/read");
 		this.account = result.account;
 		this.requiresAuth = result.requiresOpenaiAuth;
+	}
+	async readRateLimits() {
+		this.rateLimits = await rpc<RateLimits>("account/rateLimits/read");
 	}
 	async login() {
 		await this.guard(async () => {
@@ -351,6 +365,10 @@ export class App {
 		if (method === "account/login/completed" || method === "account/updated") {
 			if (params.success === false) this.error = params.error?.message ?? "Sign in failed";
 			else void this.guard(() => this.readAccount());
+			return;
+		}
+		if (method === "account/rateLimits/updated") {
+			void this.readRateLimits().catch(() => {});
 			return;
 		}
 		if (event.id !== undefined) {
