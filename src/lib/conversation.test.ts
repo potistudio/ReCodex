@@ -93,4 +93,18 @@ describe("app-server item stream", () => {
 			aggregatedOutput: "Checking…\n",
 		});
 	});
+	it("keeps a streamed assistant message associated with its turn", () => {
+		let items = updateItems([], {
+			method: "item/agentMessage/delta",
+			params: { turnId: "turn-1", itemId: "assistant-1", delta: "Hello" },
+		});
+		items = updateItems(items, {
+			method: "item/completed",
+			params: {
+				turnId: "turn-1",
+				item: { id: "assistant-1", type: "agentMessage", text: "Hello" },
+			},
+		});
+		expect(items[0]).toMatchObject({ turnId: "turn-1", text: "Hello" });
+	});
 });

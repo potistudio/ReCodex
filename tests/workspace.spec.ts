@@ -96,9 +96,36 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 				if (command === "server_respond") {
 					host.approvalResult = args.result;
 					emit({
+						method: "thread/tokenUsage/updated",
+						params: {
+							threadId: thread.id,
+							turnId: "turn-1",
+							tokenUsage: {
+								total: {
+									totalTokens: 1000,
+									inputTokens: 600,
+									cachedInputTokens: 400,
+									cacheWriteInputTokens: 0,
+									outputTokens: 200,
+									reasoningOutputTokens: 200,
+								},
+								last: {
+									totalTokens: 1000,
+									inputTokens: 600,
+									cachedInputTokens: 400,
+									cacheWriteInputTokens: 0,
+									outputTokens: 200,
+									reasoningOutputTokens: 200,
+								},
+								modelContextWindow: 272000,
+							},
+						},
+					});
+					emit({
 						method: "item/completed",
 						params: {
 							threadId: thread.id,
+							turnId: "turn-1",
 							item: {
 								id: "command-1",
 								type: "commandExecution",
@@ -111,6 +138,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 						method: "item/completed",
 						params: {
 							threadId: thread.id,
+							turnId: "turn-1",
 							item: {
 								id: "answer-1",
 								type: "agentMessage",
@@ -347,6 +375,8 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await page.getByRole("button", { name: "Ask for another approach" }).click();
 	await expect(page.locator(".tool-item")).toContainText("Completed");
 	await expect(page.getByText("This is a SvelteKit project.", { exact: true })).toBeVisible();
+	await expect(page.locator(".thread-list").getByText("1,000 tokens", { exact: true })).toBeVisible();
+	await expect(page.locator(".assistant-message").getByText(/1,000 tokens/)).toBeVisible();
 	await expect(page.locator(".user-message")).toHaveCount(2);
 	expect(
 		await page.evaluate(
@@ -396,9 +426,9 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 		"D:/relocated-working-directory",
 		"C:/example",
 	]);
-	await expect(page.getByRole("button", { name: "Explain this project", exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: /^Explain this project/ })).toBeVisible();
 	await page.getByRole("button", { name: /New chat/ }).click();
-	await page.getByRole("button", { name: "Explain this project", exact: true }).click();
+	await page.getByRole("button", { name: /^Explain this project/ }).click();
 	await expect(page.getByText("Restored conversation", { exact: true })).toBeVisible();
 	expect(errors).toEqual([]);
 });

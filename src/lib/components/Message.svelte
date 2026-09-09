@@ -5,9 +5,10 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { Button } from "$lib/components/ui/button";
-import type { Item } from "$lib/types";
+import type { Item, TokenUsageBreakdown } from "$lib/types";
+import { formatTokenCount } from "$lib/usage";
 
-let { item }: { item: Item } = $props();
+let { item, tokenUsage = null }: { item: Item; tokenUsage?: TokenUsageBreakdown | null } = $props();
 let copied = $state(false);
 let copyError = $state("");
 let commandExpanded = $state(false);
@@ -67,6 +68,9 @@ $effect(() => {
 		<div class="message-author">
 			<span class="mini-mark">⌘</span>
 			ReCodex
+			{#if item.type === "agentMessage" && tokenUsage}
+				<span class="message-token-usage">· {formatTokenCount(tokenUsage.totalTokens)} tokens</span>
+			{/if}
 			{#if item.type === "plan"}
 				<span class="muted">· Plan</span>
 			{/if}

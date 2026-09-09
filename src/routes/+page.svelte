@@ -36,6 +36,7 @@ import * as Dialog from "$lib/components/ui/dialog";
 import * as Dropdown from "$lib/components/ui/dropdown-menu";
 import { Input } from "$lib/components/ui/input";
 import type { Project } from "$lib/types";
+import { formatTokenCount } from "$lib/usage";
 import { workingState } from "$lib/working";
 
 const app = new App();
@@ -237,11 +238,15 @@ function shortcuts(event: KeyboardEvent) {
 						}}
 						title={thread.name || thread.preview}
 					>
-						<span class="truncate"
-							>{thread.name ||
-								thread.preview ||
-								"Untitled chat"}</span
-						>
+						<span class="thread-summary">
+							<span class="truncate">{thread.name || thread.preview || "Untitled chat"}</span>
+							{#if app.tokenUsageFor(thread.id)}
+								<small title="Total tokens reported by Codex for this session"
+									>{formatTokenCount(app.tokenUsageFor(thread.id).total.totalTokens)}
+									tokens</small
+								>
+							{/if}
+						</span>
 						{#if app.isThreadRunning(thread.id) && app.thread?.id !== thread.id}
 							<LoaderCircle class="spin thread-running" size={14} aria-hidden="true" />
 						{/if}
@@ -277,7 +282,7 @@ function shortcuts(event: KeyboardEvent) {
 								? "Connecting…"
 								: app.connected
 									? "Codex connected"
-									: "Not connected"}</small
+								: "Not connected"}</small
 						></span
 					><Settings2 size={17} />
 				</button>
@@ -410,7 +415,7 @@ function shortcuts(event: KeyboardEvent) {
 					{:else}
 						<div class="messages">
 							{#each app.items as item (item.id)}
-								<Message {item} />
+								<Message {item} tokenUsage={item.turnId ? app.tokenUsageForTurn(item.turnId) : null} />
 							{/each}
 							{#if app.activeTurn || app.sending}
 								<div class="working">

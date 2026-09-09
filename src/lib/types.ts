@@ -18,6 +18,7 @@ export interface Model {
 }
 export interface Item {
 	id: string;
+	turnId?: string;
 	type: string;
 	text?: string;
 	content?: { type: string; text?: string }[];
@@ -33,6 +34,19 @@ export interface Turn {
 	items: Item[];
 	status: string;
 	error?: { message: string } | null;
+}
+export interface TokenUsageBreakdown {
+	totalTokens: number;
+	inputTokens: number;
+	cachedInputTokens: number;
+	cacheWriteInputTokens: number;
+	outputTokens: number;
+	reasoningOutputTokens: number;
+}
+export interface ThreadTokenUsage {
+	total: TokenUsageBreakdown;
+	last: TokenUsageBreakdown;
+	modelContextWindow: number | null;
 }
 export interface Thread {
 	id: string;
@@ -61,6 +75,7 @@ export interface ServerEvent {
 		output?: string;
 		item?: Item;
 		turn?: Turn;
+		tokenUsage?: ThreadTokenUsage;
 		thread?: Thread;
 		requestId?: number | string;
 		message?: string;

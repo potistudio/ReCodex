@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { updateItems } from "./conversation";
-import type { Item, Model, Project, ServerEvent, Thread, Turn } from "./types";
+import type { Item, Model, Project, ServerEvent, Thread, ThreadTokenUsage, TokenUsageBreakdown, Turn } from "./types";
 
 export const rpc = <T>(method: string, params: Record<string, unknown> = {}) =>
 	invoke<T>("server_request", { method, params });
@@ -28,6 +28,8 @@ export class App {
 	private approvalsByThread = $state<Record<string, ServerEvent[]>>({});
 	private thinkingLabelsByThread = $state<Record<string, { itemId: string; summaryIndex: number; text: string }>>({});
 	private configurationsByThread = $state<Record<string, { model: string; effort: string }>>({});
+	private tokenUsageByThread = $state<Record<string, ThreadTokenUsage>>({});
+	private tokenUsageByTurn = $state<Record<string, TokenUsageBreakdown>>({});
 	activeTurn = $derived(this.thread ? (this.activeTurnsByThread[this.thread.id] ?? null) : null);
 	approvals = $derived(this.thread ? (this.approvalsByThread[this.thread.id] ?? []) : []);
 	thinkingLabel = $derived(this.thread ? (this.thinkingLabelsByThread[this.thread.id]?.text ?? "") : "");
@@ -383,6 +385,10 @@ export class App {
 				);
 		if (!params.threadId) return;
 		const threadId = params.threadId;
+		if (method === "thread/tokenUsage/updated" && params.tokenUsage) {
+			this.setThreadTokenUsage(threadId, params.turnId, params.tokenUsage);
+			return;
+		}
 		if (method === "item/reasoning/summaryTextDelta" && params.itemId) {
 			this.updateThinkingLabel(threadId, params.itemId, params.summaryIndex ?? 0, params.delta ?? "");
 			return;
@@ -426,6 +432,12 @@ export class App {
 	isThreadRunning(threadId: string) {
 		return this.activeTurnsByThread[threadId] !== undefined;
 	}
+	tokenUsageFor(threadId: string) {
+		return this.tokenUsageByThread[threadId] ?? null;
+	}
+	tokenUsageForTurn(turnId: string) {
+		return this.tokenUsageByTurn[turnId] ?? null;
+	}
 	private selectRunningThread(thread: Thread) {
 		const items = this.itemsByThread[thread.id];
 		if (!this.isThreadRunning(thread.id) || !items) return false;
@@ -465,6 +477,10 @@ export class App {
 	}
 	private setThreadConfiguration(threadId: string, configuration: { model: string; effort: string }) {
 		this.configurationsByThread = { ...this.configurationsByThread, [threadId]: configuration };
+	}
+	private setThreadTokenUsage(threadId: string, turnId: string | undefined, tokenUsage: ThreadTokenUsage) {
+		this.tokenUsageByThread = { ...this.tokenUsageByThread, [threadId]: tokenUsage };
+		if (turnId) this.tokenUsageByTurn = { ...this.tokenUsageByTurn, [turnId]: tokenUsage.last };
 	}
 	private applyThreadConfiguration(threadId: string) {
 		const configuration = this.configurationsByThread[threadId];
