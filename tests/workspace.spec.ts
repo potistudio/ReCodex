@@ -156,6 +156,10 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 					return { thread };
 				}
 				if (args.method === "thread/resume") {
+					host.resumeThreadIds = [
+						...((host.resumeThreadIds as string[] | undefined) ?? []),
+						(args.params as { threadId: string }).threadId,
+					];
 					const resumedThread =
 						(args.params as { threadId: string }).threadId === backgroundThread.id
 							? backgroundThread
@@ -270,6 +274,9 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(page.getByRole("button", { name: "New chat" })).toBeEnabled();
 	await page.getByRole("button", { name: "Explain this project", exact: true }).click();
 	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
+	expect(await page.evaluate(() => (window as unknown as { resumeThreadIds: string[] }).resumeThreadIds)).toEqual([
+		"thread-2",
+	]);
 	await expect(page.locator(".tool-item.running")).toContainText("Running");
 	await expect(page.locator(".tool-item.running pre")).toContainText("Checking types…");
 	await expect(page.getByRole("button", { name: "Decline", exact: true })).toBeVisible();

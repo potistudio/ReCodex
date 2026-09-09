@@ -194,6 +194,7 @@ export class App {
 		this.error = "";
 	}
 	async resume(thread: Thread) {
+		if (this.selectRunningThread(thread)) return;
 		if (this.loading) return;
 		const navigationRevision = ++this.navigationRevision;
 		this.loading = true;
@@ -223,8 +224,7 @@ export class App {
 			if (navigationRevision !== this.navigationRevision) return;
 			this.thread = result.thread;
 			this.items = items;
-			if (this.models.some((model) => model.model === configuration.model)) this.selectModel(configuration.model);
-			this.effort = configuration.effort;
+			this.applyThreadConfiguration(result.thread.id);
 		});
 		this.loading = false;
 	}
@@ -385,6 +385,15 @@ export class App {
 	isThreadRunning(threadId: string) {
 		return this.activeTurnsByThread[threadId] !== undefined;
 	}
+	private selectRunningThread(thread: Thread) {
+		const items = this.itemsByThread[thread.id];
+		if (!this.isThreadRunning(thread.id) || !items) return false;
+		this.navigationRevision += 1;
+		this.thread = thread;
+		this.items = items;
+		this.applyThreadConfiguration(thread.id);
+		return true;
+	}
 	private setThreadItems(threadId: string, items: Item[]) {
 		this.itemsByThread = { ...this.itemsByThread, [threadId]: items };
 		if (this.thread?.id === threadId) this.items = items;
@@ -402,6 +411,12 @@ export class App {
 	}
 	private setThreadConfiguration(threadId: string, configuration: { model: string; effort: string }) {
 		this.configurationsByThread = { ...this.configurationsByThread, [threadId]: configuration };
+	}
+	private applyThreadConfiguration(threadId: string) {
+		const configuration = this.configurationsByThread[threadId];
+		if (!configuration) return;
+		if (this.models.some((model) => model.model === configuration.model)) this.selectModel(configuration.model);
+		this.effort = configuration.effort;
 	}
 	private mergeLoadedItems(loaded: Item[], cached: Item[]) {
 		const cachedById = new Map(cached.map((item) => [item.id, item]));
