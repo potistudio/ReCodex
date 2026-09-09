@@ -454,7 +454,7 @@ function shortcuts(event: KeyboardEvent) {
 							{#if app.activeTurn || app.sending}
 								<div class="working">
 									<span class="working-dot"></span>
-									<span>{activeWork.label}</span>
+									<span class="working-label">{activeWork.label}</span>
 									{#if activeWork.detail}
 										<span class="working-detail">{activeWork.detail}</span>
 									{/if}

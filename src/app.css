@@ -789,6 +789,21 @@
 	background: #829573;
 	animation: pulse 1.5s infinite;
 }
+.working-label {
+	display: inline-block;
+	background: linear-gradient(
+		110deg,
+		var(--muted-foreground) 35%,
+		var(--foreground) 50%,
+		var(--muted-foreground) 65%
+	);
+	background-position: 150% 0;
+	background-size: 250% 100%;
+	background-clip: text;
+	-webkit-background-clip: text;
+	color: transparent;
+	animation: thinking-shine 2.8s ease-in-out infinite;
+}
 .working-detail {
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -1121,6 +1136,11 @@
 @keyframes pulse {
 	50% {
 		opacity: 0.35;
+	}
+}
+@keyframes thinking-shine {
+	to {
+		background-position: -50% 0;
 	}
 }
 @media (max-width: 1100px) {
