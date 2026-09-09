@@ -3,4 +3,4 @@
 ## Development
 
 - MUST format changed files
-- SHOULD make separate commits by logical unit.
+- SHOULD commit separately by logical unit.
