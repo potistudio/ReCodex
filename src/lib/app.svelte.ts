@@ -37,6 +37,7 @@ export class App {
 	selectedModel = $derived(this.models.find((model) => model.model === this.model));
 	private unlisten?: UnlistenFn;
 	private disposed = false;
+	private alternativeTurnIds = new Set<string>();
 
 	async guard(action: () => Promise<unknown>) {
 		this.error = "";
@@ -269,6 +270,11 @@ export class App {
 			this.approvals = this.approvals.filter((entry) => entry.id !== event.id);
 		});
 	}
+	async requestAlternative(event: ServerEvent) {
+		const turnId = event.params.turnId;
+		if (turnId) this.alternativeTurnIds.add(turnId);
+		await this.respond(event, { decision: "decline" });
+	}
 	private onEvent(event: ServerEvent) {
 		const { method, params } = event;
 		if (method === "recodex/disconnected") {
@@ -320,11 +326,16 @@ export class App {
 			this.completedTurns.add(turn.id);
 			this.activeTurn = null;
 			this.approvals = this.approvals.filter((entry) => entry.params.turnId !== turn.id);
+			const shouldRequestAlternative = this.alternativeTurnIds.delete(turn.id) && turn.status === "completed";
 			if (turn.error) this.error = turn.error.message;
 			this.fileRevision += 1;
 			void this.loadThreads().catch((error) => {
 				if (!this.error) this.error = String(error);
 			});
+			if (shouldRequestAlternative)
+				void this.send(
+					"The user declined the previous permission request. Continue with an alternative that stays within the current permissions, and do not request that permission again. If no alternative is viable, explain the blocker and the smallest safe next step.",
+				);
 		}
 		if (method === "error") this.error = params.error?.message ?? "The turn encountered an error.";
 		if (method === "item/completed" && params.item?.type === "fileChange") this.fileRevision += 1;

@@ -7,9 +7,11 @@ import type { ServerEvent } from "$lib/types";
 let {
 	event,
 	respond,
+	requestAlternative,
 }: {
 	event: ServerEvent;
 	respond: (event: ServerEvent, result: unknown) => Promise<void>;
+	requestAlternative: (event: ServerEvent) => Promise<void>;
 } = $props();
 let answers = $state<Record<string, string>>({});
 let submitting = $state(false);
@@ -17,9 +19,17 @@ const questions = $derived(event.params.questions ?? []);
 const userInput = $derived(event.method === "item/tool/requestUserInput");
 const permissions = $derived(event.method === "item/permissions/requestApproval");
 const allowed = $derived(event.params.availableDecisions);
+const canAccept = $derived(!allowed || allowed.includes("accept") || permissions);
+const canAcceptForSession = $derived(allowed?.includes("acceptForSession"));
 async function submit(result: unknown) {
 	submitting = true;
 	await respond(event, result);
+	submitting = false;
+}
+
+async function declineAndRequestAlternative() {
+	submitting = true;
+	await requestAlternative(event);
 	submitting = false;
 }
 </script>
@@ -92,20 +102,19 @@ async function submit(result: unknown) {
 		>
 	{:else}
 		<div class="approval-actions">
-			{#if !allowed || allowed.includes("decline") || permissions}
-				<Button
-					variant="outline"
-					disabled={submitting}
-					onclick={() =>
-						submit(
-							permissions
-								? { permissions: {}, scope: "turn" }
-								: { decision: "decline" },
-						)}
-					>Decline</Button
+			<Button
+				variant="outline"
+				disabled={submitting}
+				onclick={() =>
+					submit(permissions ? { permissions: {}, scope: "turn" } : { decision: "decline" })}
+				>Decline</Button
+			>
+			{#if !permissions}
+				<Button variant="outline" disabled={submitting} onclick={declineAndRequestAlternative}
+					>Ask for another approach</Button
 				>
 			{/if}
-			{#if !allowed || allowed.includes("accept") || permissions}
+			{#if canAccept}
 				<Button
 					disabled={submitting}
 					onclick={() =>
@@ -120,9 +129,9 @@ async function submit(result: unknown) {
 					>Allow once</Button
 				>
 			{/if}
-			{#if allowed && !allowed.includes("accept") && !allowed.includes("decline")}
-				<Button variant="outline" disabled={submitting} onclick={() => submit({ decision: "cancel" })}
-					>Cancel</Button
+			{#if canAcceptForSession}
+				<Button disabled={submitting} onclick={() => submit({ decision: "acceptForSession" })}
+					>Allow for session</Button
 				>
 			{/if}
 		</div>

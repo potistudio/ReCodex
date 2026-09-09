@@ -413,7 +413,8 @@ function shortcuts(event: KeyboardEvent) {
 								<Approval
 									{event}
 									respond={(event, result) =>
-										app.respond(event, result)}
+									app.respond(event, result)}
+									requestAlternative={(event) => app.requestAlternative(event)}
 								/>
 							{/each}
 						</div>
