@@ -594,7 +594,7 @@
 				<pre>{app.logs.join("\n")}</pre>
 			</details>{/if}
 		<div class="settings-version">
-			<Code2 size={14} />ReCodex <span>0.1.0</span>
+			<Code2 size={14} />ReCodex <span>0.0.1-alpha</span>
 		</div></Dialog.Content
 	></Dialog.Root
 >
