@@ -321,6 +321,14 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 										},
 									});
 									emit({
+										method: "item/agentMessage/delta",
+										params: {
+											threadId: thread.id,
+											itemId: "answer-1",
+											delta: "SvelteKit",
+										},
+									});
+									emit({
 										method: "item/started",
 										params: {
 											threadId: thread.id,
@@ -372,6 +380,8 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await page.getByRole("button", { name: "Send message", exact: true }).click();
 	await expect(page.getByText("Assessing dependencies", { exact: true })).toBeVisible();
 	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
+	await expect(page.locator(".message-append").filter({ hasText: "This is a" })).toBeVisible();
+	await expect(page.locator(".message-append")).toHaveCount(2);
 	await page.getByRole("button", { name: "Background conversation", exact: true }).click();
 	await expect(page.locator(".markdown")).toContainText("Background conversation");
 	await expect(page.getByRole("button", { name: "New chat" })).toBeEnabled();

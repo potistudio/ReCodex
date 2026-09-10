@@ -13,7 +13,13 @@ function mergeItem(previous: Item | undefined, item: Item): Item {
 export function updateItems(items: Item[], event: ServerEvent): Item[] {
 	const { method, params } = event;
 	if ((method === "item/started" || method === "item/updated" || method === "item/completed") && params.item) {
-		const item = { ...params.item, ...(params.turnId ? { turnId: params.turnId } : {}) };
+		const item = {
+			...params.item,
+			...(params.turnId ? { turnId: params.turnId } : {}),
+			...(method === "item/completed" && params.item.type === "agentMessage"
+				? { streaming: false, streamSegments: [] }
+				: {}),
+		};
 		const index = items.findIndex((entry) => entry.id === item.id);
 		if (index < 0)
 			return [
@@ -32,6 +38,8 @@ export function updateItems(items: Item[], event: ServerEvent): Item[] {
 					...(params.turnId ? { turnId: params.turnId } : {}),
 					type: "agentMessage",
 					text: params.delta ?? "",
+					streaming: true,
+					streamSegments: [params.delta ?? ""],
 				},
 			];
 		return items.map((entry, i) =>
@@ -40,6 +48,8 @@ export function updateItems(items: Item[], event: ServerEvent): Item[] {
 						...entry,
 						...(params.turnId ? { turnId: params.turnId } : {}),
 						text: (entry.text ?? "") + (params.delta ?? ""),
+						streaming: true,
+						streamSegments: [...(entry.streamSegments ?? []), params.delta ?? ""],
 					}
 				: entry,
 		);

@@ -25,6 +25,8 @@ export interface Item {
 	command?: string;
 	aggregatedOutput?: string;
 	status?: string;
+	streaming?: boolean;
+	streamSegments?: string[];
 	changes?: { path: string; kind: { type: string }; diff: string }[];
 	tool?: string;
 	server?: string;

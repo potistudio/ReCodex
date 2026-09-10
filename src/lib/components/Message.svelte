@@ -75,11 +75,19 @@ $effect(() => {
 				<span class="muted">· Plan</span>
 			{/if}
 		</div>
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<!-- biome-ignore lint/a11y/noStaticElementInteractions: Delegates clicks from rendered markdown links. -->
-		<!-- biome-ignore lint/a11y/useKeyWithClickEvents: Keyboard activation is provided by the rendered markdown links. -->
-		<div class="markdown" onclick={link}>{@html html}</div>
+		{#if item.streaming}
+			<div class="markdown streaming-markdown">
+				{#each item.streamSegments ?? [] as segment, index (index)}
+					<span class="message-append">{segment}</span>
+				{/each}
+			</div>
+		{:else}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- biome-ignore lint/a11y/noStaticElementInteractions: Delegates clicks from rendered markdown links. -->
+			<!-- biome-ignore lint/a11y/useKeyWithClickEvents: Keyboard activation is provided by the rendered markdown links. -->
+			<div class="markdown" onclick={link}>{@html html}</div>
+		{/if}
 		{#if text}
 			<Button
 				variant="ghost"

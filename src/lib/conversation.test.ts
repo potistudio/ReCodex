@@ -28,6 +28,8 @@ describe("app-server item stream", () => {
 			});
 		expect(items).toHaveLength(2);
 		expect(items[1].text).toBe("Hi there");
+		expect(items[1].streaming).toBe(true);
+		expect(items[1].streamSegments).toEqual(["Hi", " there"]);
 		items = updateItems(items, {
 			method: "item/completed",
 			params: {
@@ -40,6 +42,8 @@ describe("app-server item stream", () => {
 		});
 		expect(items).toHaveLength(2);
 		expect(items[1].text).toBe("Hi there!");
+		expect(items[1].streaming).toBe(false);
+		expect(items[1].streamSegments).toEqual([]);
 		expect(items[0].id).toBe("user-1");
 	});
 	it("keeps interleaved command output associated with its item", () => {
