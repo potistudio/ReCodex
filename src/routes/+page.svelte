@@ -52,7 +52,9 @@ let projectName = $state("");
 let dark = $state(false);
 let chatScroll = $state<HTMLDivElement>();
 let composer = $state<HTMLTextAreaElement>();
-let followBottom = $state(true);
+let scrollMode = $state<"follow" | "free">("follow");
+let manualScroll = false;
+let wheelTimer: ReturnType<typeof setTimeout> | undefined;
 const activeWork = $derived(workingState(app.items, app.approvals.length > 0, app.thinkingLabel));
 const filteredThreads = $derived(
 	app.threads.filter((thread) => (thread.name || thread.preview).toLowerCase().includes(search.toLowerCase())),
@@ -85,17 +87,79 @@ $effect(() => {
 	app.items;
 	app.activeTurn;
 	app.approvals;
-	if (followBottom && app.items.length)
+	if (scrollMode === "follow" && app.items.length)
 		void tick().then(() => {
 			if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight;
 		});
 });
+function updateScrollMode() {
+	if (!chatScroll || !manualScroll) return;
+	scrollMode = chatScroll.scrollHeight - chatScroll.scrollTop - chatScroll.clientHeight < 100 ? "follow" : "free";
+}
+function beginWheelScroll() {
+	manualScroll = true;
+	if (wheelTimer) clearTimeout(wheelTimer);
+	wheelTimer = setTimeout(() => {
+		manualScroll = false;
+	}, 150);
+}
+function trackManualScroll(node: HTMLElement) {
+	const beginPointerScroll = () => {
+		manualScroll = true;
+	};
+	const endPointerScroll = () => {
+		manualScroll = false;
+	};
+	node.addEventListener("wheel", beginWheelScroll, { passive: true });
+	node.addEventListener("pointerdown", beginPointerScroll);
+	node.addEventListener("touchstart", beginPointerScroll, { passive: true });
+	window.addEventListener("pointerup", endPointerScroll);
+	window.addEventListener("touchend", endPointerScroll);
+	return {
+		destroy() {
+			if (wheelTimer) clearTimeout(wheelTimer);
+			node.removeEventListener("wheel", beginWheelScroll);
+			node.removeEventListener("pointerdown", beginPointerScroll);
+			node.removeEventListener("touchstart", beginPointerScroll);
+			window.removeEventListener("pointerup", endPointerScroll);
+			window.removeEventListener("touchend", endPointerScroll);
+		},
+	};
+}
+function followLatest() {
+	scrollMode = "follow";
+	void tick().then(() => chatScroll?.scrollTo({ behavior: "smooth", top: chatScroll.scrollHeight }));
+}
+function centerLatestUserMessage() {
+	if (!chatScroll) return;
+	const messages = chatScroll.querySelectorAll<HTMLElement>(".user-message");
+	const message = messages[messages.length - 1];
+	if (!message) return;
+	const scrollBounds = chatScroll.getBoundingClientRect();
+	const messageBounds = message.getBoundingClientRect();
+	chatScroll.scrollTo({
+		behavior: "auto",
+		top: Math.max(
+			0,
+			chatScroll.scrollTop +
+				messageBounds.top -
+				scrollBounds.top -
+				(chatScroll.clientHeight - messageBounds.height) / 2,
+		),
+	});
+}
 async function send() {
 	const text = draft.trim();
 	if (!text) return;
+	const wasFollowing = scrollMode === "follow";
 	draft = "";
-	followBottom = true;
-	if (!(await app.send(text))) draft = text;
+	if (!(await app.send(text))) {
+		draft = text;
+	} else if (wasFollowing) {
+		scrollMode = "free";
+		await tick();
+		centerLatestUserMessage();
+	}
 	await tick();
 	composer?.focus();
 }
@@ -104,6 +168,10 @@ function inputKey(event: KeyboardEvent) {
 		event.preventDefault();
 		if (ready && !app.busy) void send();
 	}
+}
+function useSuggestion(prompt: string) {
+	draft = prompt;
+	composer?.focus();
 }
 async function canLeaveFiles() {
 	return (
@@ -118,8 +186,13 @@ async function chooseProject(project: Project) {
 	if (app.project?.path === project.path || app.busy) return;
 	if (await canLeaveFiles()) {
 		fileDirty = false;
+		scrollMode = "follow";
 		await app.chooseProject(project);
 	}
+}
+function newChat() {
+	scrollMode = "follow";
+	app.newChat();
 }
 async function addProject() {
 	if (await canLeaveFiles()) {
@@ -151,7 +224,7 @@ function shortcuts(event: KeyboardEvent) {
 	}
 	if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "o") {
 		event.preventDefault();
-		app.newChat();
+		newChat();
 	}
 }
 </script>
@@ -182,7 +255,7 @@ function shortcuts(event: KeyboardEvent) {
 					class="brand"
 					onclick={(event) => {
 						event.preventDefault();
-						app.newChat();
+						newChat();
 					}}
 					><span class="brand-mark"><Code2 size={21} strokeWidth={2.1} /></span>ReCodex</a
 				><Button variant="ghost" size="icon" aria-label="Hide sidebar" onclick={() => (sidebar = false)}
@@ -190,7 +263,7 @@ function shortcuts(event: KeyboardEvent) {
 				>
 			</div>
 			<nav class="primary-nav" aria-label="Workspace">
-				<button type="button" onclick={() => app.newChat()} disabled={!app.connected || app.loading}>
+				<button type="button" onclick={newChat} disabled={!app.connected || app.loading}>
 					<SquarePen size={18} /><span>New chat</span><kbd>Ctrl ⇧ O</kbd>
 				</button>
 				<button type="button" onclick={() => (searchOpen = !searchOpen)}>
@@ -247,7 +320,7 @@ function shortcuts(event: KeyboardEvent) {
 						class:selected={app.thread?.id === thread.id}
 						disabled={app.loading || !app.connected}
 						onclick={() => {
-							followBottom = true;
+							scrollMode = "follow";
 							void app.resume(thread);
 						}}
 						title={thread.name || thread.preview}
@@ -399,76 +472,78 @@ function shortcuts(event: KeyboardEvent) {
 						>
 					</div>
 				{/if}
-				<div
-					class="chat-scroll"
-					bind:this={chatScroll}
-					onscroll={() => {
-						if (chatScroll)
-							followBottom =
-								chatScroll.scrollHeight -
-									chatScroll.scrollTop -
-									chatScroll.clientHeight <
-								100;
-					}}
-				>
-					{#if app.items.length === 0}
-						<div class="welcome">
-							<div class="welcome-eyebrow"><span></span>A little focus. A lot of possibility.</div>
-							<h1>What will you build?</h1>
-							<p>Bring an idea. Make it real.<br>Your code and conversations, in one quiet workspace.</p>
-							{#if !app.project}
-								<Button
-									variant="outline"
-									size="lg"
-									onclick={addProject}
-									disabled={!isTauri() || app.busy}
-									><FolderPlus size={16} />Open a project<ArrowUpRight size={14} /></Button
-								>
-							{:else}
-								<div class="workspace-pill">
-									<Folder size={14} /><span>{app.project.name}</span><span class="pill-dot"></span
-									><span>Ready to create</span>
-								</div>
-							{/if}
-							<div class="suggestions">
-								{#each [{ icon: Code2, title: "Explore the code", detail: "Find your way around", prompt: "Give me a concise overview of this project, its architecture, and where to start." }, { icon: Sparkles, title: "Build something", detail: "Start with a small idea", prompt: "Help me build a new feature in this project. First, ask me what I want to create." }, { icon: FileCode, title: "Make it better", detail: "A fresh pair of eyes", prompt: "Review this project for concrete bugs and suggest the most useful fixes before making changes." }] as suggestion}
-									<button
-										type="button"
-										onclick={() => {
-							draft = suggestion.prompt;
-											composer?.focus();
-										}}
+				<div class="chat-scroll-frame">
+					<div class="chat-scroll" bind:this={chatScroll} use:trackManualScroll onscroll={updateScrollMode}>
+						{#if app.items.length === 0}
+							<div class="welcome">
+								<div class="welcome-eyebrow"><span></span>A little focus. A lot of possibility.</div>
+								<h1>What will you build?</h1>
+								<p>
+									Bring an idea. Make it real.<br>Your code and conversations, in one quiet workspace.
+								</p>
+								{#if !app.project}
+									<Button
+										variant="outline"
+										size="lg"
+										onclick={addProject}
+										disabled={!isTauri() || app.busy}
+										><FolderPlus size={16} />Open a project<ArrowUpRight size={14} /></Button
 									>
-										<suggestion.icon size={20} strokeWidth={1.5} />
-										<strong>{suggestion.title}</strong><span>{suggestion.detail}</span>
-										<ArrowUpRight size={14} class="suggestion-arrow" />
-									</button>
-								{/each}
-							</div>
-						</div>
-					{:else}
-						<div class="messages">
-							{#each app.items as item (item.renderKey ?? item.id)}
-								<Message {item} tokenUsage={item.turnId ? app.tokenUsageForTurn(item.turnId) : null} />
-							{/each}
-							{#if app.activeTurn || app.sending}
-								<div class="working">
-									<span class="working-dot"></span>
-									<span class="working-label">{activeWork.label}</span>
-									{#if activeWork.detail}
-										<span class="working-detail">{activeWork.detail}</span>
-									{/if}
+								{:else}
+									<div class="workspace-pill">
+										<Folder size={14} /><span>{app.project.name}</span><span class="pill-dot"></span
+										><span>Ready to create</span>
+									</div>
+								{/if}
+								<div class="suggestions">
+									{#each [{ icon: Code2, title: "Explore the code", detail: "Find your way around", prompt: "Give me a concise overview of this project, its architecture, and where to start." }, { icon: Sparkles, title: "Build something", detail: "Start with a small idea", prompt: "Help me build a new feature in this project. First, ask me what I want to create." }, { icon: FileCode, title: "Make it better", detail: "A fresh pair of eyes", prompt: "Review this project for concrete bugs and suggest the most useful fixes before making changes." }] as suggestion}
+										<button type="button" onclick={() => useSuggestion(suggestion.prompt)}>
+											<suggestion.icon size={20} strokeWidth={1.5} />
+											<strong>{suggestion.title}</strong><span>{suggestion.detail}</span>
+											<ArrowUpRight size={14} class="suggestion-arrow" />
+										</button>
+									{/each}
 								</div>
-							{/if}
-							{#each app.approvals as event (event.id)}
-								<Approval
-									{event}
-									respond={(event, result) =>
-									app.respond(event, result)}
-									requestAlternative={(event) => app.requestAlternative(event)}
-								/>
-							{/each}
-						</div>
+							</div>
+						{:else}
+							<div class="messages">
+								{#each app.items as item (item.renderKey ?? item.id)}
+									<Message
+										{item}
+										tokenUsage={item.turnId ? app.tokenUsageForTurn(item.turnId) : null}
+									/>
+								{/each}
+								{#if app.activeTurn || app.sending}
+									<div class="working">
+										<span class="working-dot"></span>
+										<span class="working-label">{activeWork.label}</span>
+										{#if activeWork.detail}
+											<span class="working-detail">{activeWork.detail}</span>
+										{/if}
+									</div>
+								{/if}
+								{#each app.approvals as event (event.id)}
+									<Approval
+										{event}
+										respond={(event, result) => app.respond(event, result)}
+										requestAlternative={(event) => app.requestAlternative(event)}
+									/>
+								{/each}
+								{#if app.activeTurn || app.sending || scrollMode === "free"}
+									<div class="message-scroll-spacer" aria-hidden="true"></div>
+								{/if}
+							</div>
+						{/if}
+					</div>
+					{#if scrollMode === "free"}
+						<button
+							class="scroll-to-latest"
+							type="button"
+							aria-label="Scroll to latest"
+							onclick={followLatest}
+						>
+							<ChevronDown size={18} />
+						</button>
 					{/if}
 				</div>
 				<div class="composer-area">

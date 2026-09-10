@@ -1,7 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+const hideCssStudio = "css-studio-panel { display: none !important; }";
+
 test("browser preview, suggestions, and theme", async ({ page }) => {
 	await page.goto("/");
+	await page.addStyleTag({ content: hideCssStudio });
 	await expect(page.getByRole("heading", { name: "What will you build?" })).toBeVisible();
 	await expect(page.getByText("Browser preview ·", { exact: false })).toBeVisible();
 	await page.getByRole("button", { name: "Explore the code" }).click();
@@ -372,6 +375,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 		};
 	});
 	await page.goto("/");
+	await page.addStyleTag({ content: `${hideCssStudio} .messages { padding-top: 1200px !important; }` });
 	await expect(page.getByText("Codex connected", { exact: true })).toBeVisible();
 	await expect(page.getByLabel("Codex rate-limit allowance")).toContainText("39% left");
 	await page.getByRole("button", { name: "Model A", exact: true }).click();
@@ -379,6 +383,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await page.getByRole("textbox", { name: "Message Codex" }).fill("Explain this project");
 	await page.getByRole("button", { name: "Send message", exact: true }).click();
 	await expect(page.locator(".user-message > .message-sent")).toBeVisible();
+	await expect(page.getByRole("button", { name: "Scroll to latest" })).toBeVisible();
 	await expect(page.getByText("Assessing dependencies", { exact: true })).toBeVisible();
 	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
 	await expect(page.locator(".message-append").filter({ hasText: "This is a" })).toBeVisible();
@@ -394,9 +399,35 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(page.locator(".tool-item.running")).toContainText("Running");
 	await expect(page.locator(".tool-item.running pre")).toContainText("Checking types…");
 	await expect(page.getByRole("button", { name: "Decline", exact: true })).toBeVisible();
+	await page.locator(".chat-scroll").evaluate((element) => {
+		const message = element.querySelector<HTMLElement>(".user-message");
+		if (!message) throw new Error("User message not found");
+		element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -100 }));
+		element.scrollTop += message.getBoundingClientRect().top - element.getBoundingClientRect().top - 80;
+	});
+	await expect
+		.poll(() =>
+			page.locator(".chat-scroll").evaluate((element) => {
+				const message = element.querySelector<HTMLElement>(".user-message");
+				return message ? message.getBoundingClientRect().top - element.getBoundingClientRect().top : null;
+			}),
+		)
+		.toBeCloseTo(80, 0);
 	await page.getByRole("button", { name: "Ask for another approach" }).click();
 	await expect(page.locator(".tool-item")).toContainText("Completed");
 	await expect(page.getByText("This is a SvelteKit project.", { exact: true })).toBeVisible();
+	await expect
+		.poll(() =>
+			page.locator(".chat-scroll").evaluate((element) => {
+				const message = element.querySelector<HTMLElement>(".user-message");
+				return message ? message.getBoundingClientRect().top - element.getBoundingClientRect().top : null;
+			}),
+		)
+		.toBeCloseTo(80, 0);
+	await expect(page.locator(".message-scroll-spacer")).toBeVisible();
+	await page.getByRole("button", { name: "Scroll to latest" }).click();
+	await expect(page.getByRole("button", { name: "Scroll to latest" })).toBeHidden();
+	await expect(page.locator(".message-scroll-spacer")).toBeHidden();
 	await expect(page.locator(".thread-list").getByText("1,000 tokens", { exact: true })).toBeVisible();
 	await expect(page.locator(".assistant-message").getByText(/1,000 tokens/)).toBeVisible();
 	await page.locator(".account-button").click();
