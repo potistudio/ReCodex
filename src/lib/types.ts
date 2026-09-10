@@ -18,6 +18,7 @@ export interface Model {
 }
 export interface Item {
 	id: string;
+	renderKey?: string;
 	turnId?: string;
 	type: string;
 	text?: string;

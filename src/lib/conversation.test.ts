@@ -30,6 +30,7 @@ describe("app-server item stream", () => {
 		expect(items[1].text).toBe("Hi there");
 		expect(items[1].streaming).toBe(true);
 		expect(items[1].streamSegments).toEqual(["Hi", " there"]);
+		expect(items[0].renderKey).toBe("pending-1");
 		items = updateItems(items, {
 			method: "item/completed",
 			params: {

@@ -292,6 +292,7 @@ export class App {
 				...(this.itemsByThread[thread.id] ?? []),
 				{
 					id: pendingId,
+					renderKey: pendingId,
 					type: "userMessage",
 					content: [{ type: "text", text }],
 				},
@@ -530,6 +531,7 @@ export class App {
 			...(this.itemsByThread[threadId] ?? []),
 			{
 				id: pendingId,
+				renderKey: pendingId,
 				type: "userMessage",
 				content: [{ type: "text", text }],
 			},

@@ -378,6 +378,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await page.getByRole("menuitem", { name: /Model B/ }).click();
 	await page.getByRole("textbox", { name: "Message Codex" }).fill("Explain this project");
 	await page.getByRole("button", { name: "Send message", exact: true }).click();
+	await expect(page.locator(".user-message.message-sent")).toBeVisible();
 	await expect(page.getByText("Assessing dependencies", { exact: true })).toBeVisible();
 	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
 	await expect(page.locator(".message-append").filter({ hasText: "This is a" })).toBeVisible();

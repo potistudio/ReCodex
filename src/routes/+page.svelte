@@ -448,7 +448,7 @@ function shortcuts(event: KeyboardEvent) {
 						</div>
 					{:else}
 						<div class="messages">
-							{#each app.items as item (item.id)}
+							{#each app.items as item (item.renderKey ?? item.id)}
 								<Message {item} tokenUsage={item.turnId ? app.tokenUsageForTurn(item.turnId) : null} />
 							{/each}
 							{#if app.activeTurn || app.sending}

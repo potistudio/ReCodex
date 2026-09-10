@@ -21,11 +21,14 @@ export function updateItems(items: Item[], event: ServerEvent): Item[] {
 				: {}),
 		};
 		const index = items.findIndex((entry) => entry.id === item.id);
-		if (index < 0)
+		if (index < 0) {
+			const pendingMessage =
+				item.type === "userMessage" ? items.find((entry) => entry.id.startsWith("pending-")) : undefined;
 			return [
-				...items.filter((entry) => !(entry.id.startsWith("pending-") && item.type === "userMessage")),
-				item,
+				...items.filter((entry) => entry !== pendingMessage),
+				...(pendingMessage ? [{ ...item, renderKey: pendingMessage.renderKey ?? pendingMessage.id }] : [item]),
 			];
+		}
 		return items.map((entry, i) => (i === index ? mergeItem(entry, item) : entry));
 	}
 	if (method === "item/agentMessage/delta" && params.itemId) {
