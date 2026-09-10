@@ -384,7 +384,16 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await page.getByRole("button", { name: "Send message", exact: true }).click();
 	await expect(page.locator(".user-message > .message-sent")).toBeVisible();
 	await expect(page.getByRole("button", { name: "Scroll to latest" })).toBeVisible();
-	await expect(page.getByText("Assessing dependencies", { exact: true })).toBeVisible();
+	await expect
+		.poll(async () => (await page.locator(".working-label-token-incoming").allTextContents()).join("").trimEnd())
+		.toBe("Reviewing");
+	expect((await page.locator(".working-label-token-outgoing").allTextContents()).join("").trimEnd()).toBe("Thinking");
+	expect(
+		await page
+			.locator(".working-label-token-incoming")
+			.first()
+			.evaluate((element) => getComputedStyle(element).animationName.includes("working-label-push-in")),
+	).toBe(true);
 	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
 	await expect(page.locator(".message-append").filter({ hasText: "This is a" })).toBeVisible();
 	await expect(page.locator(".message-append")).toHaveCount(2);

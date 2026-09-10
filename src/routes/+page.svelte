@@ -55,7 +55,15 @@ let composer = $state<HTMLTextAreaElement>();
 let scrollMode = $state<"follow" | "free">("follow");
 let manualScroll = false;
 let wheelTimer: ReturnType<typeof setTimeout> | undefined;
+let labelTransitionTimer: ReturnType<typeof setTimeout> | undefined;
+const labelTransitionDuration = 600;
 const activeWork = $derived(workingState(app.items, app.approvals.length > 0, app.thinkingLabel));
+let displayedWorkLabel = $state("");
+let outgoingWorkLabel = $state("");
+let pendingWorkLabels = $state<string[]>([]);
+const displayedWorkTokens = $derived(labelTokens(displayedWorkLabel));
+const outgoingWorkTokens = $derived(labelTokens(outgoingWorkLabel));
+const workTokenCount = $derived(Math.max(displayedWorkTokens.length, outgoingWorkTokens.length));
 const filteredThreads = $derived(
 	app.threads.filter((thread) => (thread.name || thread.preview).toLowerCase().includes(search.toLowerCase())),
 );
@@ -74,14 +82,50 @@ function rateLimitName(snapshot: RateLimitSnapshot) {
 function rateLimitWindows(snapshot: RateLimitSnapshot): RateLimitWindow[] {
 	return [snapshot.primary, snapshot.secondary].filter((window): window is RateLimitWindow => window !== null);
 }
+function labelTokens(label: string) {
+	return label.match(/\S+\s*/g) ?? [];
+}
+function startWorkLabelTransition(nextLabel: string) {
+	const previousLabel = displayedWorkLabel;
+	displayedWorkLabel = nextLabel;
+	if (!previousLabel) return;
+	outgoingWorkLabel = previousLabel;
+	labelTransitionTimer = setTimeout(() => {
+		outgoingWorkLabel = "";
+		labelTransitionTimer = undefined;
+		const [nextPendingLabel, ...remainingLabels] = pendingWorkLabels;
+		pendingWorkLabels = remainingLabels;
+		if (nextPendingLabel) startWorkLabelTransition(nextPendingLabel);
+	}, labelTransitionDuration);
+}
 onMount(() => {
 	dark = localStorage.getItem("recodex-theme") === "dark";
 	void app.init();
-	return () => app.dispose();
+	return () => {
+		if (labelTransitionTimer) clearTimeout(labelTransitionTimer);
+		app.dispose();
+	};
 });
 $effect(() => {
 	document.documentElement.classList.toggle("dark", dark);
 	localStorage.setItem("recodex-theme", dark ? "dark" : "light");
+});
+$effect(() => {
+	const nextLabel = activeWork.label;
+	if (!app.thinkingLabel) {
+		pendingWorkLabels = [];
+		if (labelTransitionTimer) clearTimeout(labelTransitionTimer);
+		labelTransitionTimer = undefined;
+		outgoingWorkLabel = "";
+		displayedWorkLabel = nextLabel;
+		return;
+	}
+	if (nextLabel === displayedWorkLabel || pendingWorkLabels.includes(nextLabel)) return;
+	if (outgoingWorkLabel) {
+		pendingWorkLabels = [...pendingWorkLabels, nextLabel];
+		return;
+	}
+	startWorkLabelTransition(nextLabel);
 });
 $effect(() => {
 	app.items;
@@ -516,7 +560,25 @@ function shortcuts(event: KeyboardEvent) {
 								{#if app.activeTurn || app.sending}
 									<div class="working">
 										<span class="working-dot"></span>
-										<span class="working-label">{activeWork.label}</span>
+										<span class="working-label">
+											{#each Array(workTokenCount) as _, index (index)}
+												<span class="working-label-token" style:--label-index={index}>
+													{#if outgoingWorkLabel}
+														<span
+															class="working-label-token-text working-label-token-outgoing"
+															>{outgoingWorkTokens[index] ?? "\u00a0"}</span
+														>
+													{/if}
+													{#key displayedWorkLabel}
+														<span
+															class="working-label-token-text"
+															class:working-label-token-incoming={outgoingWorkLabel}
+															>{displayedWorkTokens[index] ?? "\u00a0"}</span
+														>
+													{/key}
+												</span>
+											{/each}
+										</span>
 										{#if activeWork.detail}
 											<span class="working-detail">{activeWork.detail}</span>
 										{/if}
