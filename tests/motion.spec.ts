@@ -182,13 +182,13 @@ test("effort labels roll in the direction of the selected grade", async ({ page 
 	await slider.fill("3");
 	const raised = await sampleRoll();
 	const raisedTo = raised.find(({ label }) => label === "Extra high");
-	expect(raisedTo?.y).toBeLessThan(0);
+	expect(raisedTo?.y).toBeGreaterThan(0);
 
 	await page.waitForTimeout(200);
 	await slider.fill("1");
 	const lowered = await sampleRoll();
 	const loweredTo = lowered.find(({ label }) => label === "Medium");
-	expect(loweredTo?.y).toBeGreaterThan(0);
+	expect(loweredTo?.y).toBeLessThan(0);
 });
 
 test("model labels roll in the direction of the selected model", async ({ page }) => {
@@ -215,13 +215,13 @@ test("model labels roll in the direction of the selected model", async ({ page }
 	await chooseModel.click();
 	await page.getByRole("menuitemradio", { name: /Model B/ }).click();
 	const raised = await sampleRoll();
-	expect(raised.find(({ label }) => label === "Model B")?.y).toBeGreaterThan(0);
+	expect(raised.find(({ label }) => label === "Model B")?.y).toBeLessThan(0);
 
 	await page.waitForTimeout(200);
 	await chooseModel.click();
 	await page.getByRole("menuitemradio", { name: /Model A/ }).click();
 	const lowered = await sampleRoll();
-	expect(lowered.find(({ label }) => label === "Model A")?.y).toBeLessThan(0);
+	expect(lowered.find(({ label }) => label === "Model A")?.y).toBeGreaterThan(0);
 });
 
 test("the composer keeps its width while selecting and resizes on confirmation", async ({ page }) => {

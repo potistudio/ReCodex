@@ -54,11 +54,11 @@ const effortProgress = $derived(efforts.length > 1 ? effortIndex / (efforts.leng
 
 $effect.pre(() => {
 	if (previousEffortIndex !== undefined && effortIndex !== previousEffortIndex) {
-		effortRollDirection = Math.sign(previousEffortIndex - effortIndex);
+		effortRollDirection = Math.sign(effortIndex - previousEffortIndex);
 	}
 	previousEffortIndex = effortIndex;
 	if (previousModelIndex !== undefined && modelIndex !== previousModelIndex) {
-		modelRollDirection = Math.sign(modelIndex - previousModelIndex);
+		modelRollDirection = Math.sign(previousModelIndex - modelIndex);
 	}
 	previousModelIndex = modelIndex;
 });
