@@ -371,10 +371,10 @@
 	visibility: hidden;
 }
 .model-effort-popover {
-	--effort-accent: #6d6bdd;
-	width: min(420px, calc(100vw - 24px));
+	--effort-accent: #6665d8;
+	width: 320px;
 	max-width: calc(100vw - 24px);
-	padding: 12px 14px 11px;
+	padding: 10px 12px;
 	border: 1px solid rgb(255 255 255 / 50%);
 	border-radius: 18px;
 	corner-shape: round;
@@ -399,9 +399,9 @@
 .model-effort-summary {
 	display: grid;
 	grid-template-columns: 24px minmax(0, 1fr) 24px;
-	align-items: center;
+	align-items: start;
 	gap: 4px;
-	margin-bottom: 14px;
+	margin-bottom: 12px;
 }
 .model-effort-icon,
 .effort-reset {
@@ -450,16 +450,10 @@
 }
 .gear-selector {
 	display: grid;
-	grid-template-columns: 62px minmax(0, 1fr);
-	grid-template-rows: 30px 196px;
-	gap: 0 10px;
-	padding: 10px 12px 12px 8px;
-	border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
-	border-radius: 14px;
-	background:
-		radial-gradient(circle at 50% 25%, color-mix(in srgb, var(--effort-accent) 9%, transparent), transparent 55%),
-		color-mix(in srgb, var(--background) 54%, transparent);
-	box-shadow: inset 0 1px 1px rgb(255 255 255 / 35%);
+	grid-template-columns: 52px minmax(0, 1fr);
+	grid-template-rows: 24px 148px;
+	gap: 0 8px;
+	padding-right: 12px;
 }
 .gear-model-labels {
 	display: grid;
@@ -470,7 +464,7 @@
 .gear-model-labels span {
 	overflow: hidden;
 	padding: 0 4px;
-	font-size: 10px;
+	font-size: 9px;
 	font-weight: 550;
 	color: var(--muted-foreground);
 	text-align: center;
@@ -496,7 +490,7 @@
 .gear-gate {
 	position: relative;
 	grid-area: 2 / 2;
-	margin: 18px 20px;
+	margin: 14px 16px;
 	cursor: grab;
 	touch-action: none;
 }
@@ -511,18 +505,18 @@
 .gear-gate-lines {
 	position: absolute;
 	inset: 0;
-	overflow: visible;
+	overflow: hidden;
 }
 .gear-gate-lines line {
 	fill: none;
-	stroke: color-mix(in srgb, var(--foreground) 24%, transparent);
-	stroke-width: 3;
+	stroke: color-mix(in srgb, var(--foreground) 18%, transparent);
+	stroke-width: 2;
 	stroke-linecap: round;
 	vector-effect: non-scaling-stroke;
 }
 .gear-drag-surface {
 	position: absolute;
-	inset: -13px;
+	inset: -10px;
 	z-index: 1;
 	background: transparent;
 	cursor: inherit;
@@ -530,16 +524,16 @@
 .gear-position {
 	position: absolute;
 	z-index: 2;
-	width: 26px;
-	height: 26px;
+	width: 22px;
+	height: 22px;
 	border-radius: 50%;
 	background: radial-gradient(circle, color-mix(in srgb, var(--foreground) 28%, transparent) 0 2px, transparent 3px);
 	translate: -50% -50%;
 }
 .gear-position:hover,
 .gear-position:focus-visible {
-	background: color-mix(in srgb, var(--effort-accent) 14%, transparent);
-	outline: 1px solid color-mix(in srgb, var(--effort-accent) 40%, transparent);
+	background: color-mix(in srgb, var(--effort-accent) 8%, transparent);
+	outline: 1px solid color-mix(in srgb, var(--effort-accent) 28%, transparent);
 }
 .gear-position.active {
 	background: transparent;
@@ -549,52 +543,23 @@
 	z-index: 3;
 	left: calc(var(--gear-x) * 100%);
 	top: calc(var(--gear-y) * 100%);
-	width: 38px;
-	height: 38px;
+	width: 28px;
+	height: 28px;
 	pointer-events: none;
 	translate: -50% -50%;
 }
-.gear-lever::before {
-	position: absolute;
-	inset: -4px;
-	border: 1px solid color-mix(in srgb, var(--foreground) 18%, transparent);
-	border-radius: 50%;
-	background: color-mix(in srgb, var(--background) 60%, transparent);
-	box-shadow: 0 3px 8px #0002;
-	content: "";
-}
 .gear-knob {
 	position: relative;
-	display: grid;
-	place-items: center;
-	width: 38px;
-	height: 38px;
-	border: 1px solid rgb(255 255 255 / 45%);
+	display: block;
+	width: 28px;
+	height: 28px;
+	border: 1px solid #0000000a;
 	border-radius: 50%;
-	background:
-		radial-gradient(circle at 35% 28%, #ffffff30, transparent 28%),
-		linear-gradient(
-			145deg,
-			color-mix(in srgb, var(--effort-accent) 88%, #fff),
-			color-mix(in srgb, var(--effort-accent) 75%, #111)
-		);
-	box-shadow:
-		inset 0 -2px 4px #0003,
-		0 5px 11px #0004;
-	color: #fff;
-	font-size: 11px;
-	font-weight: 650;
-}
-.gear-knob span {
-	display: grid;
-	place-items: center;
-	width: 20px;
-	height: 20px;
-	border: 1px solid #ffffff45;
-	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 1px 3px #0000001f;
 }
 .gear-hint {
-	margin: 8px 0 0;
+	margin: 7px 0 0;
 	font-size: 9px;
 	color: var(--muted-foreground);
 	text-align: center;

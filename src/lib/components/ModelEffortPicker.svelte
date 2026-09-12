@@ -1,5 +1,5 @@
 <script lang="ts">
-import { ChevronDown, Gauge, RotateCcw } from "@lucide/svelte";
+import { ChevronDown, RotateCcw, Zap } from "@lucide/svelte";
 import { Popover } from "bits-ui";
 import { appear, rollIn, rollOut } from "$lib/motion";
 import type { Model } from "$lib/types";
@@ -201,7 +201,7 @@ function handleKeydown(event: KeyboardEvent) {
 			collisionPadding={12}
 		>
 			<div class="model-effort-summary">
-				<span class="model-effort-icon" aria-hidden="true"><Gauge size={16} /></span>
+				<span class="model-effort-icon" aria-hidden="true"><Zap size={15} fill="currentColor" /></span>
 				<div class="model-effort-current" aria-live="polite">
 					<span class="motion-copy effort-label-copy">
 						{#key selectedEffort}
@@ -304,7 +304,7 @@ function handleKeydown(event: KeyboardEvent) {
 						{/each}
 					{/each}
 					<span class="gear-lever" aria-hidden="true">
-						<span class="gear-knob"><span>{modelIndex + 1}</span></span>
+						<span class="gear-knob"></span>
 					</span>
 				</div>
 			</div>
