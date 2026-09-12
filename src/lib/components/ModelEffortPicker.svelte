@@ -2,7 +2,7 @@
 import { ChevronDown, ChevronRight, RotateCcw, Zap } from "@lucide/svelte";
 import { Popover } from "bits-ui";
 import * as Dropdown from "$lib/components/ui/dropdown-menu";
-import { appear } from "$lib/motion";
+import { appear, rollIn, rollOut } from "$lib/motion";
 import type { Model } from "$lib/types";
 
 let {
@@ -24,6 +24,8 @@ let triggerLabelElement = $state<HTMLSpanElement>();
 let triggerLabelBounds = $state<DOMRectReadOnly>();
 let triggerLabelWidth = $state<number>();
 let pointerProgress = $state<number | null>(null);
+let previousEffortIndex = $state<number>();
+let effortRollDirection = $state(1);
 let drag: { pointerId: number; slider: HTMLInputElement; grabOffset: number } | null = null;
 const selectedModel = $derived(models.find((entry) => entry.model === model));
 const efforts = $derived(selectedModel?.supportedReasoningEfforts ?? []);
@@ -41,6 +43,13 @@ const effortIndex = $derived(
 	),
 );
 const effortProgress = $derived(efforts.length > 1 ? effortIndex / (efforts.length - 1) : 0);
+
+$effect.pre(() => {
+	if (previousEffortIndex !== undefined && effortIndex !== previousEffortIndex) {
+		effortRollDirection = Math.sign(effortIndex - previousEffortIndex);
+	}
+	previousEffortIndex = effortIndex;
+});
 
 function effortLabel(value: string) {
 	if (value === "xhigh") return "Extra high";
@@ -106,7 +115,12 @@ $effect(() => {
 			<span class="effort-label-size" aria-hidden="true">{label}</span>
 		{/each}
 		{#key selectedEffort}
-			<span transition:appear={{ y: 4 }}>{effortLabel(selectedEffort)}</span>
+			<span
+				class="effort-label-value"
+				in:rollIn={{ y: 8 * effortRollDirection }}
+				out:rollOut={{ y: -8 * effortRollDirection }}
+				>{effortLabel(selectedEffort)}</span
+			>
 		{/key}
 	</span>
 {/snippet}

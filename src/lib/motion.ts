@@ -21,3 +21,11 @@ export function reveal(node: Element, { axis = "y" }: Pick<SlideParams, "axis"> 
 export function appear(node: Element, { y = 6 }: Pick<FlyParams, "y"> = {}) {
 	return fly(node, { y, duration: duration(node, "--motion-normal"), easing: cubicOut });
 }
+
+export function rollIn(node: Element, { y = 8 }: Pick<FlyParams, "y"> = {}) {
+	return fly(node, { y, duration: duration(node, "--motion-normal"), easing: cubicOut });
+}
+
+export function rollOut(node: Element, { y = -8 }: Pick<FlyParams, "y"> = {}) {
+	return fly(node, { y, duration: duration(node, "--motion-normal"), easing: cubicOut });
+}

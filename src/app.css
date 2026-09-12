@@ -363,6 +363,7 @@
 	display: block;
 }
 .effort-label-copy {
+	overflow: clip;
 	white-space: nowrap;
 }
 .effort-label-size {

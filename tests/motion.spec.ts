@@ -146,6 +146,37 @@ test("effort fill and thumb update together without position transitions", async
 		.toBeCloseTo(start, 0);
 });
 
+test("effort labels roll in the direction of the selected grade", async ({ page }) => {
+	await page.locator(".model-effort-trigger").click();
+	const slider = page.getByRole("slider", { name: "Reasoning effort" });
+
+	async function sampleRoll() {
+		return page.locator(".effort-label-copy").evaluate((element) => {
+			const labels = [...element.querySelectorAll<HTMLElement>(".effort-label-value")];
+			if (labels.length !== 2) throw new Error("The outgoing and incoming effort labels are missing");
+			return labels.map((label) => {
+				const animation = label.getAnimations().find((entry) => entry.effect instanceof KeyframeEffect);
+				if (!animation?.effect) throw new Error("The effort label is not rolling");
+				animation.pause();
+				animation.currentTime = Number(animation.effect.getTiming().duration) / 2;
+				return {
+					label: label.textContent,
+					y: new DOMMatrixReadOnly(getComputedStyle(label).transform).m42,
+				};
+			});
+		});
+	}
+
+	await slider.fill("3");
+	const raised = await sampleRoll();
+	expect(raised.find(({ label }) => label === "Extra high")?.y).toBeGreaterThan(0);
+
+	await page.waitForTimeout(300);
+	await slider.fill("1");
+	const lowered = await sampleRoll();
+	expect(lowered.find(({ label }) => label === "Medium")?.y).toBeLessThan(0);
+});
+
 test("the composer keeps its width while selecting and resizes on confirmation", async ({ page }) => {
 	const trigger = page.locator(".model-effort-trigger");
 	await expect(trigger).toHaveAccessibleName("Model A · Medium");
