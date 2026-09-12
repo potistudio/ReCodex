@@ -49,7 +49,6 @@ button:not(:disabled):not([aria-haspopup]):active {
 
 .suggestion-arrow,
 .model-effort-trigger > svg,
-.model-effort-label > svg,
 .effort-reset > svg,
 .tool-item summary > svg:last-child {
 	transition:
@@ -65,10 +64,6 @@ button:not(:disabled):not([aria-haspopup]):active {
 
 .model-effort-trigger[aria-expanded="true"] > svg {
 	rotate: 180deg;
-}
-
-.model-picker-trigger[aria-expanded="true"] .model-effort-label > svg {
-	translate: 2px 0;
 }
 
 .effort-reset:hover:not(:disabled) > svg {
@@ -168,27 +163,14 @@ button:not(:disabled):not([aria-haspopup]):active {
 	padding: 20px 13px 12px;
 }
 
-.effort-ticks span {
-	transition: opacity var(--motion-fast) ease;
+.gear-lever {
+	transition:
+		left var(--motion-normal) var(--motion-ease),
+		top var(--motion-normal) var(--motion-ease);
 }
 
-.effort-thumb {
-	position: absolute;
-	top: 0;
-	left: calc((100% - 28px) * var(--effort-progress));
-	width: 28px;
-	height: 28px;
-	border: 1px solid #0000000a;
-	border-radius: 50%;
-	corner-shape: round;
-	background: #fff;
-	box-shadow: 0 1px 3px #0000001f;
-	pointer-events: none;
-	transition: box-shadow var(--motion-fast) ease;
-}
-
-.effort-control.dragging .effort-thumb {
-	box-shadow: 0 2px 6px #0002;
+.gear-gate.dragging .gear-lever {
+	transition: none;
 }
 
 @supports (interpolate-size: allow-keywords) {

@@ -1,7 +1,6 @@
 <script lang="ts">
-import { ChevronDown, ChevronRight, RotateCcw, Zap } from "@lucide/svelte";
+import { ChevronDown, Gauge, RotateCcw } from "@lucide/svelte";
 import { Popover } from "bits-ui";
-import * as Dropdown from "$lib/components/ui/dropdown-menu";
 import { appear, rollIn, rollOut } from "$lib/motion";
 import type { Model } from "$lib/types";
 
@@ -19,16 +18,19 @@ let {
 	onModelChange: (model: string) => void;
 } = $props();
 
+const effortOrder = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+
 let open = $state(false);
 let triggerLabelElement = $state<HTMLSpanElement>();
 let triggerLabelBounds = $state<DOMRectReadOnly>();
 let triggerLabelWidth = $state<number>();
-let pointerProgress = $state<number | null>(null);
 let previousEffortIndex = $state<number>();
 let effortRollDirection = $state(1);
 let previousModelIndex = $state<number>();
 let modelRollDirection = $state(1);
-let drag: { pointerId: number; slider: HTMLInputElement; grabOffset: number } | null = null;
+let dragging = $state(false);
+let pointerId: number | null = null;
+
 const selectedModel = $derived(models.find((entry) => entry.model === model));
 const modelIndex = $derived(
 	Math.max(
@@ -36,21 +38,22 @@ const modelIndex = $derived(
 		models.findIndex((entry) => entry.model === model),
 	),
 );
-const efforts = $derived(selectedModel?.supportedReasoningEfforts ?? []);
 const selectedEffort = $derived(effort || selectedModel?.defaultReasoningEffort || "");
+const effortScale = $derived(
+	[...new Set(models.flatMap((entry) => entry.supportedReasoningEfforts.map((item) => item.reasoningEffort)))].sort(
+		(a, b) => {
+			const aIndex = effortOrder.indexOf(a);
+			const bIndex = effortOrder.indexOf(b);
+			return (aIndex < 0 ? effortOrder.length : aIndex) - (bIndex < 0 ? effortOrder.length : bIndex);
+		},
+	),
+);
+const effortIndex = $derived(Math.max(0, effortScale.indexOf(selectedEffort)));
+const modelProgress = $derived(models.length > 1 ? modelIndex / (models.length - 1) : 0.5);
+const effortProgress = $derived(effortScale.length > 1 ? effortIndex / (effortScale.length - 1) : 0.5);
 const triggerLabel = $derived(
 	open ? "Selecting model..." : `${selectedModel?.displayName || "Codex"} · ${effortLabel(selectedEffort)}`,
 );
-const effortLabels = $derived([
-	...new Set([...efforts.map((option) => effortLabel(option.reasoningEffort)), effortLabel(selectedEffort)]),
-]);
-const effortIndex = $derived(
-	Math.max(
-		0,
-		efforts.findIndex((option) => option.reasoningEffort === selectedEffort),
-	),
-);
-const effortProgress = $derived(efforts.length > 1 ? effortIndex / (efforts.length - 1) : 0);
 
 $effect.pre(() => {
 	if (previousEffortIndex !== undefined && effortIndex !== previousEffortIndex) {
@@ -63,79 +66,106 @@ $effect.pre(() => {
 	previousModelIndex = modelIndex;
 });
 
+$effect(() => {
+	if (!open && triggerLabelBounds && triggerLabelElement) {
+		triggerLabelWidth = triggerLabelElement.getBoundingClientRect().width;
+	}
+});
+
+$effect(() => {
+	if (disabled) open = false;
+	if (!open) endDrag();
+	return endDrag;
+});
+
 function effortLabel(value: string) {
 	if (value === "xhigh") return "Extra high";
 	return value ? value.charAt(0).toUpperCase() + value.slice(1) : "Select effort";
 }
 
-$effect(() => {
-	if (!open && triggerLabelBounds && triggerLabelElement) {
-		// Measure the rendered label on close; the observer may still contain the placeholder's width.
-		triggerLabelWidth = triggerLabelElement.getBoundingClientRect().width;
-	}
-});
+function effortDescription(modelOption: Model, effortValue: string) {
+	return modelOption.supportedReasoningEfforts.find((item) => item.reasoningEffort === effortValue)?.description;
+}
 
-function updatePointerProgress(event: PointerEvent) {
-	if (!drag || event.pointerId !== drag.pointerId) return;
-	const bounds = drag.slider.getBoundingClientRect();
-	const progress = Math.max(
+function selectGear(modelOption: Model, effortValue: string) {
+	if (disabled || !effortDescription(modelOption, effortValue)) return;
+	if (modelOption.model !== model) onModelChange(modelOption.model);
+	effort = effortValue;
+}
+
+function nearestSupportedEffort(modelOption: Model, targetIndex: number) {
+	return modelOption.supportedReasoningEfforts.reduce((nearest, option) => {
+		const distance = Math.abs(effortScale.indexOf(option.reasoningEffort) - targetIndex);
+		const nearestDistance = Math.abs(effortScale.indexOf(nearest.reasoningEffort) - targetIndex);
+		return distance < nearestDistance ? option : nearest;
+	}).reasoningEffort;
+}
+
+function selectFromPointer(event: PointerEvent, gate: HTMLElement) {
+	const bounds = gate.getBoundingClientRect();
+	const x = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+	const y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
+	const targetModelIndex = Math.round(x * Math.max(0, models.length - 1));
+	const targetEffortIndex = Math.round(y * Math.max(0, effortScale.length - 1));
+	const targetModel = models[targetModelIndex];
+	if (!targetModel?.supportedReasoningEfforts.length) return;
+	selectGear(targetModel, nearestSupportedEffort(targetModel, targetEffortIndex));
+}
+
+function startDrag(event: PointerEvent) {
+	if (disabled || !event.isPrimary || event.button !== 0) return;
+	const surface = event.currentTarget as HTMLElement;
+	const gate = surface.parentElement;
+	if (!gate) return;
+	pointerId = event.pointerId;
+	dragging = true;
+	surface.setPointerCapture(event.pointerId);
+	selectFromPointer(event, gate);
+}
+
+function moveDrag(event: PointerEvent) {
+	if (!dragging || event.pointerId !== pointerId) return;
+	const gate = (event.currentTarget as HTMLElement).parentElement;
+	if (gate) selectFromPointer(event, gate);
+}
+
+function endDrag(event?: PointerEvent) {
+	if (!dragging || (event && event.pointerId !== pointerId)) return;
+	const gate = event?.currentTarget as HTMLElement | undefined;
+	if (gate && pointerId !== null && gate.hasPointerCapture(pointerId)) gate.releasePointerCapture(pointerId);
+	dragging = false;
+	pointerId = null;
+}
+
+function moveModel(offset: number) {
+	const target = models[Math.max(0, Math.min(models.length - 1, modelIndex + offset))];
+	if (!target?.supportedReasoningEfforts.length) return;
+	const targetEffort = target.supportedReasoningEfforts.some((item) => item.reasoningEffort === selectedEffort)
+		? selectedEffort
+		: target.defaultReasoningEffort;
+	selectGear(target, targetEffort);
+}
+
+function moveEffort(offset: number) {
+	if (!selectedModel) return;
+	const supported = selectedModel.supportedReasoningEfforts;
+	const index = Math.max(
 		0,
-		Math.min(1, (event.clientX - bounds.left - 14 - drag.grabOffset) / (bounds.width - 28)),
+		supported.findIndex((item) => item.reasoningEffort === selectedEffort),
 	);
-	const intervals = efforts.length - 1;
-	const position = progress * intervals;
-	const interval = Math.floor(position);
-	const t = position - interval;
-	// Zero slope at each step creates spatial detents without time-based interpolation.
-	const towardNext = t ** 5;
-	const towardPrevious = (1 - t) ** 5;
-	const eased = towardNext / (towardPrevious + towardNext);
-	pointerProgress = (interval + eased) / intervals;
+	const target = supported[Math.max(0, Math.min(supported.length - 1, index + offset))];
+	if (target) selectGear(selectedModel, target.reasoningEffort);
 }
 
-function startPointerDrag(event: PointerEvent) {
-	if (disabled || efforts.length < 2 || !event.isPrimary || event.button !== 0) return;
-	const slider = event.currentTarget as HTMLInputElement;
-	const thumb = slider.parentElement?.querySelector(".effort-thumb")?.getBoundingClientRect();
-	const grabOffset =
-		thumb && event.clientX >= thumb.left && event.clientX <= thumb.right
-			? event.clientX - (thumb.left + thumb.width / 2)
-			: 0;
-	drag = { pointerId: event.pointerId, slider, grabOffset };
-	slider.setPointerCapture(event.pointerId);
-	updatePointerProgress(event);
+function handleKeydown(event: KeyboardEvent) {
+	if (event.key === "ArrowLeft") moveModel(-1);
+	else if (event.key === "ArrowRight") moveModel(1);
+	else if (event.key === "ArrowUp") moveEffort(-1);
+	else if (event.key === "ArrowDown") moveEffort(1);
+	else return;
+	event.preventDefault();
 }
-
-function endPointerDrag(event?: PointerEvent) {
-	if (!drag || (event && event.pointerId !== drag.pointerId)) return;
-	const { slider, pointerId } = drag;
-	drag = null;
-	pointerProgress = null;
-	if (slider.hasPointerCapture(pointerId)) slider.releasePointerCapture(pointerId);
-}
-
-$effect(() => {
-	if (disabled) open = false;
-	if (!open) endPointerDrag();
-	return endPointerDrag;
-});
 </script>
-
-{#snippet effortText()}
-	<span class="motion-copy effort-label-copy">
-		{#each effortLabels as label (label)}
-			<span class="effort-label-size" aria-hidden="true">{label}</span>
-		{/each}
-		{#key selectedEffort}
-			<span
-				class="effort-label-value"
-				in:rollIn={{ y: 8 * effortRollDirection }}
-				out:rollOut={{ y: -8 * effortRollDirection }}
-				>{effortLabel(selectedEffort)}</span
-			>
-		{/key}
-	</span>
-{/snippet}
 
 <Popover.Root bind:open>
 	<Popover.Trigger
@@ -171,90 +201,114 @@ $effect(() => {
 			collisionPadding={12}
 		>
 			<div class="model-effort-summary">
-				<span class="model-effort-icon" aria-hidden="true"><Zap size={15} fill="currentColor" /></span>
-				<Dropdown.Root>
-					<Dropdown.Trigger class="model-picker-trigger" aria-label="Choose model" {disabled}>
-						<span>
-							<span class="model-effort-label">
-								{@render effortText()}
-								<ChevronRight size={12} aria-hidden="true" />
-							</span>
-							<span class="motion-copy model-effort-name-copy">
-								{#key model}
-									<span
-										class="model-effort-name"
-										in:rollIn={{ y: 8 * modelRollDirection }}
-										out:rollOut={{ y: -8 * modelRollDirection }}
-									>
-										{selectedModel?.displayName || "Codex"}
-									</span>
-								{/key}
-							</span>
-						</span>
-					</Dropdown.Trigger>
-					<Dropdown.Content class="model-picker-menu" side="right" align="start" sideOffset={12}>
-						<Dropdown.Label>Model</Dropdown.Label>
-						<Dropdown.RadioGroup value={model} onValueChange={onModelChange}>
-							{#each models as option (option.model)}
-								<Dropdown.RadioItem value={option.model} class="model-option" {disabled}>
-									<div><strong>{option.displayName}</strong><small>{option.description}</small></div>
-								</Dropdown.RadioItem>
-							{/each}
-						</Dropdown.RadioGroup>
-					</Dropdown.Content>
-				</Dropdown.Root>
+				<span class="model-effort-icon" aria-hidden="true"><Gauge size={16} /></span>
+				<div class="model-effort-current" aria-live="polite">
+					<span class="motion-copy effort-label-copy">
+						{#key selectedEffort}
+							<span
+								class="effort-label-value"
+								in:rollIn={{ y: 8 * effortRollDirection }}
+								out:rollOut={{ y: -8 * effortRollDirection }}
+								>{effortLabel(selectedEffort)}</span
+							>
+						{/key}
+					</span>
+					<span class="motion-copy model-effort-name-copy">
+						{#key model}
+							<span
+								class="model-effort-name"
+								in:rollIn={{ y: 8 * modelRollDirection }}
+								out:rollOut={{ y: -8 * modelRollDirection }}
+								>{selectedModel?.displayName || "Codex"}</span
+							>
+						{/key}
+					</span>
+				</div>
 				<button
 					type="button"
 					class="effort-reset"
 					aria-label="Reset reasoning effort"
 					title={`Reset to ${effortLabel(selectedModel?.defaultReasoningEffort || "")}`}
 					disabled={disabled || !selectedModel?.defaultReasoningEffort}
-					onclick={() => (effort = selectedModel?.defaultReasoningEffort || "")}
+					onclick={() => selectedModel && selectGear(selectedModel, selectedModel.defaultReasoningEffort)}
 				>
 					<RotateCcw size={14} aria-hidden="true" />
 				</button>
 			</div>
-			{#if efforts.length}
-				<div
-					class="effort-control"
-					class:dragging={pointerProgress !== null}
-					style:--effort-progress={pointerProgress ?? effortProgress}
-				>
-					<div class="effort-track" aria-hidden="true">
-						<div class="effort-fill"></div>
-						<div class="effort-ticks">
-							{#each efforts as option, index (option.reasoningEffort)}
-								<span
-									class:filled={index <= effortIndex}
-									style:left={`${efforts.length > 1 ? (index / (efforts.length - 1)) * 100 : 0}%`}
-								></span>
-							{/each}
-						</div>
-					</div>
-					<span class="effort-thumb" aria-hidden="true"></span>
-					<input
-						type="range"
-						class="effort-slider"
-						aria-label="Reasoning effort"
-						aria-valuetext={effortLabel(selectedEffort)}
-						title={efforts[effortIndex]?.description}
-						min="0"
-						max={Math.max(1, efforts.length - 1)}
-						step="1"
-						value={effortIndex}
-						disabled={disabled || efforts.length < 2}
-						onpointerdown={startPointerDrag}
-						onpointermove={updatePointerProgress}
-						onpointerup={endPointerDrag}
-						onpointercancel={endPointerDrag}
-						onlostpointercapture={endPointerDrag}
-						oninput={(event) => {
-							const option = efforts[event.currentTarget.valueAsNumber];
-							if (option) effort = option.reasoningEffort;
-						}}
-					>
+
+			<div
+				class="gear-selector"
+				style:--gear-columns={models.length}
+				style:--gear-rows={effortScale.length}
+				style:--gear-x={modelProgress}
+				style:--gear-y={effortProgress}
+			>
+				<div class="gear-model-labels" aria-hidden="true">
+					{#each models as option (option.model)}
+						<span class:active={option.model === model} title={option.displayName}
+							>{option.displayName}</span
+						>
+					{/each}
 				</div>
-			{/if}
+				<div class="gear-effort-labels" aria-hidden="true">
+					{#each effortScale as effortValue (effortValue)}
+						<span class:active={effortValue === selectedEffort}>{effortLabel(effortValue)}</span>
+					{/each}
+				</div>
+				<div class="gear-gate" class:dragging>
+					<svg class="gear-gate-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+						<line x1="0" y1="50" x2="100" y2="50" />
+						{#each models as _, index}
+							<line
+								x1={models.length > 1 ? (index / (models.length - 1)) * 100 : 50}
+								y1="0"
+								x2={models.length > 1 ? (index / (models.length - 1)) * 100 : 50}
+								y2="100"
+							/>
+						{/each}
+					</svg>
+					<button
+						type="button"
+						class="gear-drag-surface"
+						aria-label={`Gear selector, ${selectedModel?.displayName || "Codex"}, ${effortLabel(selectedEffort)}`}
+						{disabled}
+						onkeydown={handleKeydown}
+						onpointerdown={startDrag}
+						onpointermove={moveDrag}
+						onpointerup={endDrag}
+						onpointercancel={endDrag}
+						onlostpointercapture={endDrag}
+					></button>
+					{#each models as modelOption, column (modelOption.model)}
+						{#each effortScale as effortValue, row (effortValue)}
+							{#if effortDescription(modelOption, effortValue)}
+								<button
+									type="button"
+									class="gear-position"
+									class:active={modelOption.model === model && effortValue === selectedEffort}
+									style:left={`${models.length > 1 ? (column / (models.length - 1)) * 100 : 50}%`}
+									style:top={`${effortScale.length > 1 ? (row / (effortScale.length - 1)) * 100 : 50}%`}
+									aria-label={`${modelOption.displayName}, ${effortLabel(effortValue)}`}
+									title={effortDescription(modelOption, effortValue)}
+									{disabled}
+									onclick={(event) => {
+										if (event.detail === 0) selectGear(modelOption, effortValue);
+									}}
+									onpointerdown={startDrag}
+									onpointermove={moveDrag}
+									onpointerup={endDrag}
+									onpointercancel={endDrag}
+									onlostpointercapture={endDrag}
+								></button>
+							{/if}
+						{/each}
+					{/each}
+					<span class="gear-lever" aria-hidden="true">
+						<span class="gear-knob"><span>{modelIndex + 1}</span></span>
+					</span>
+				</div>
+			</div>
+			<p class="gear-hint">Drag the lever · Arrow keys to shift</p>
 		</Popover.Content>
 	</Popover.Portal>
 </Popover.Root>
