@@ -20,6 +20,8 @@ let {
 } = $props();
 
 let open = $state(false);
+let pointerProgress = $state<number | null>(null);
+let drag: { pointerId: number; slider: HTMLInputElement; grabOffset: number } | null = null;
 const selectedModel = $derived(models.find((entry) => entry.model === model));
 const efforts = $derived(selectedModel?.supportedReasoningEfforts ?? []);
 const selectedEffort = $derived(effort || selectedModel?.defaultReasoningEffort || "");
@@ -39,8 +41,40 @@ function effortLabel(value: string) {
 	return value ? value.charAt(0).toUpperCase() + value.slice(1) : "Select effort";
 }
 
+function movePointer(event: PointerEvent) {
+	if (!drag || event.pointerId !== drag.pointerId) return;
+	const bounds = drag.slider.getBoundingClientRect();
+	pointerProgress = Math.max(
+		0,
+		Math.min(1, (event.clientX - bounds.left - 14 - drag.grabOffset) / (bounds.width - 28)),
+	);
+}
+
+function startPointerDrag(event: PointerEvent) {
+	if (disabled || efforts.length < 2 || !event.isPrimary || event.button !== 0) return;
+	const slider = event.currentTarget as HTMLInputElement;
+	const thumb = slider.parentElement?.querySelector(".effort-thumb")?.getBoundingClientRect();
+	const grabOffset =
+		thumb && event.clientX >= thumb.left && event.clientX <= thumb.right
+			? event.clientX - (thumb.left + thumb.width / 2)
+			: 0;
+	drag = { pointerId: event.pointerId, slider, grabOffset };
+	slider.setPointerCapture(event.pointerId);
+	movePointer(event);
+}
+
+function endPointerDrag(event?: PointerEvent) {
+	if (!drag || (event && event.pointerId !== drag.pointerId)) return;
+	const { slider, pointerId } = drag;
+	drag = null;
+	pointerProgress = null;
+	if (slider.hasPointerCapture(pointerId)) slider.releasePointerCapture(pointerId);
+}
+
 $effect(() => {
 	if (disabled) open = false;
+	if (!open) endPointerDrag();
+	return endPointerDrag;
 });
 </script>
 
@@ -124,7 +158,11 @@ $effect(() => {
 				</button>
 			</div>
 			{#if efforts.length}
-				<div class="effort-control" style:--effort-progress={effortProgress}>
+				<div
+					class="effort-control"
+					class:dragging={pointerProgress !== null}
+					style:--effort-progress={pointerProgress ?? effortProgress}
+				>
 					<div class="effort-track" aria-hidden="true">
 						<div class="effort-fill"></div>
 						<div class="effort-ticks">
@@ -148,6 +186,11 @@ $effect(() => {
 						step="1"
 						value={effortIndex}
 						disabled={disabled || efforts.length < 2}
+						onpointerdown={startPointerDrag}
+						onpointermove={movePointer}
+						onpointerup={endPointerDrag}
+						onpointercancel={endPointerDrag}
+						onlostpointercapture={endPointerDrag}
 						oninput={(event) => {
 							const option = efforts[event.currentTarget.valueAsNumber];
 							if (option) effort = option.reasoningEffort;
