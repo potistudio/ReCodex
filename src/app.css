@@ -462,7 +462,7 @@
 	width: 300px;
 	max-width: calc(100vw - 24px);
 	max-height: min(360px, var(--bits-dropdown-menu-content-available-height));
-	background-color: color-mix(in srgb, var(--popover) 35%, transparent);
+	background-color: color-mix(in srgb, var(--foreground) 12%, transparent);
 	backdrop-filter: blur(24px) saturate(135%);
 }
 .model-option {
