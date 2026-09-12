@@ -74,8 +74,11 @@
 	--radius-xl: calc(var(--radius) + 4px);
 }
 @layer base {
-	* {
+	*,
+	::before,
+	::after {
 		border-color: var(--border);
+		corner-shape: squircle;
 	}
 	body {
 		margin: 0;
@@ -800,6 +803,16 @@
 	border-radius: 100%;
 	background: var(--primary);
 	animation: pulse 1.5s infinite;
+}
+
+.avatar,
+.connection-dot,
+.scroll-to-latest,
+.welcome-eyebrow > span,
+.pill-dot,
+.send-button,
+.working-dot {
+	corner-shape: round;
 }
 .working-label {
 	display: inline-flex;
