@@ -48,8 +48,11 @@ $effect(() => {
 		title={selectedModel?.displayName}
 	>
 		<span class="motion-copy">
-			{#key effort}
-				<span transition:appear={{ y: 4 }}>{effortLabel(effort)}</span>
+			{#key `${model}:${selectedEffort}`}
+				<span transition:appear={{ y: 4 }}>
+					{selectedModel?.displayName || "Codex"}
+					· {effortLabel(selectedEffort)}
+				</span>
 			{/key}
 		</span>
 		<ChevronDown size={12} aria-hidden="true" />

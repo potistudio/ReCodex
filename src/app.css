@@ -331,6 +331,7 @@
 	min-width: 112px;
 	font-weight: 550;
 	font-size: 11px;
+	white-space: nowrap;
 	color: var(--muted-foreground);
 	padding: 6px 10px;
 	border-radius: 999px;
