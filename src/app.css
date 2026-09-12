@@ -553,6 +553,7 @@
 }
 .composer textarea::placeholder {
 	color: var(--muted-foreground);
+	opacity: 0.65;
 }
 .composer-toolbar {
 	display: flex;
