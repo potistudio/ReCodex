@@ -348,12 +348,15 @@
 	opacity: 0.55;
 }
 .model-effort-trigger-copy {
+	display: flex;
+	justify-content: center;
 	flex-shrink: 0;
 	overflow: clip;
 	transition: width var(--motion-normal) var(--motion-ease);
 }
 .model-effort-trigger-label {
 	display: block;
+	flex-shrink: 0;
 	width: max-content;
 }
 .model-effort-trigger-label > span {

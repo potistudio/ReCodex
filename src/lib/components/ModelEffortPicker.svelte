@@ -20,7 +20,9 @@ let {
 } = $props();
 
 let open = $state(false);
+let triggerLabelElement = $state<HTMLSpanElement>();
 let triggerLabelBounds = $state<DOMRectReadOnly>();
+let triggerLabelWidth = $state<number>();
 let pointerProgress = $state<number | null>(null);
 let drag: { pointerId: number; slider: HTMLInputElement; grabOffset: number } | null = null;
 const selectedModel = $derived(models.find((entry) => entry.model === model));
@@ -44,6 +46,13 @@ function effortLabel(value: string) {
 	if (value === "xhigh") return "Extra high";
 	return value ? value.charAt(0).toUpperCase() + value.slice(1) : "Select effort";
 }
+
+$effect(() => {
+	if (!open && triggerLabelBounds && triggerLabelElement) {
+		// Measure the rendered label on close; the observer may still contain the placeholder's width.
+		triggerLabelWidth = triggerLabelElement.getBoundingClientRect().width;
+	}
+});
 
 function updatePointerProgress(event: PointerEvent) {
 	if (!drag || event.pointerId !== drag.pointerId) return;
@@ -111,9 +120,13 @@ $effect(() => {
 	>
 		<span
 			class="model-effort-trigger-copy"
-			style:width={triggerLabelBounds ? `${triggerLabelBounds.width}px` : undefined}
+			style:width={triggerLabelWidth === undefined ? undefined : `${triggerLabelWidth}px`}
 		>
-			<span class="model-effort-trigger-label" bind:contentRect={triggerLabelBounds}>
+			<span
+				class="model-effort-trigger-label"
+				bind:this={triggerLabelElement}
+				bind:contentRect={triggerLabelBounds}
+			>
 				{#key triggerLabel}
 					<span class:model-effort-selecting={open} in:appear={{ y: 4 }}>{triggerLabel}</span>
 				{/key}

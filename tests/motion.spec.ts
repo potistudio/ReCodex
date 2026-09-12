@@ -146,16 +146,33 @@ test("effort fill and thumb update together without position transitions", async
 		.toBeCloseTo(start, 0);
 });
 
-test("the composer fits the visible label and stays anchored while dragging effort", async ({ page }) => {
+test("the composer keeps its width while selecting and resizes on confirmation", async ({ page }) => {
 	const trigger = page.locator(".model-effort-trigger");
 	await expect(trigger).toHaveAccessibleName("Model A · Medium");
 	await expect.poll(() => trigger.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(0);
 	const initialWidth = await trigger.evaluate((element) => element.getBoundingClientRect().width);
+	await page.evaluate(() => {
+		(window as unknown as { motionEvents: string[] }).motionEvents = [];
+	});
 	await trigger.click();
 	const slider = page.getByRole("slider", { name: "Reasoning effort" });
 	await slider.press("Home");
 	await expect(trigger).toHaveAccessibleName("Selecting model...");
 	await expect.poll(() => trigger.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(0);
+	const selectingGeometry = await trigger.evaluate((element) => {
+		const copy = element.querySelector(".model-effort-trigger-copy")?.getBoundingClientRect();
+		const label = element.querySelector(".model-effort-selecting")?.getBoundingClientRect();
+		if (!copy || !label) throw new Error("The selecting label is missing");
+		return {
+			width: element.getBoundingClientRect().width,
+			centerOffset: label.x + label.width / 2 - (copy.x + copy.width / 2),
+		};
+	});
+	expect(selectingGeometry.width).toBeCloseTo(initialWidth, 1);
+	expect(selectingGeometry.centerOffset).toBeCloseTo(0, 1);
+	expect(await page.evaluate(() => (window as unknown as { motionEvents: string[] }).motionEvents)).not.toContain(
+		"width",
+	);
 	const bounds = await slider.boundingBox();
 	if (!bounds) throw new Error("The effort slider is missing");
 	await page.evaluate(() => {
