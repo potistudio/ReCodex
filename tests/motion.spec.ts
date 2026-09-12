@@ -107,13 +107,13 @@ test("hover, dialogs, and nested popovers animate and restore focus", async ({ p
 	await expect(trigger).toBeFocused();
 });
 
-test("effort fill and thumb travel together and settle on the latest input", async ({ page }) => {
+test("effort fill and thumb anticipate, snap together, and settle on the latest input", async ({ page }) => {
 	await page.locator(".model-effort-trigger").click();
 	const slider = page.getByRole("slider", { name: "Reasoning effort" });
 	const thumb = page.locator(".effort-thumb");
 	const start = await thumb.evaluate((element) => Number.parseFloat(getComputedStyle(element).left));
 	await slider.fill("5");
-	const sample = await page.locator(".effort-control").evaluate((element) => {
+	const samples = await page.locator(".effort-control").evaluate((element) => {
 		const thumb = element.querySelector(".effort-thumb");
 		const fill = element.querySelector(".effort-fill");
 		if (!thumb || !fill) throw new Error("Effort visuals are missing");
@@ -121,19 +121,24 @@ test("effort fill and thumb travel together and settle on the latest input", asy
 			.flatMap((node) => node.getAnimations())
 			.filter((animation) => animation instanceof CSSTransition);
 		if (animations.length !== 2) throw new Error("Both effort visuals must transition");
-		for (const animation of animations) {
-			animation.pause();
-			animation.currentTime = Number(animation.effect?.getTiming().duration) / 2;
-		}
-		const result = {
-			left: Number.parseFloat(getComputedStyle(thumb).left),
-			width: Number.parseFloat(getComputedStyle(fill).width),
-		};
+		const result = [0.1, 0.62].map((progress) => {
+			for (const animation of animations) {
+				animation.pause();
+				animation.currentTime = Number(animation.effect?.getTiming().duration) * progress;
+			}
+			return {
+				left: Number.parseFloat(getComputedStyle(thumb).left),
+				width: Number.parseFloat(getComputedStyle(fill).width),
+			};
+		});
 		for (const animation of animations) animation.finish();
 		return result;
 	});
-	expect(sample.left).toBeGreaterThan(start);
-	expect(sample.width - sample.left).toBeCloseTo(14, 0);
+	expect(samples[0].left).toBeLessThan(start);
+	expect(start - samples[0].left).toBeLessThan(6);
+	expect(samples[1].left).toBeGreaterThan(202);
+	expect(samples[1].left).toBeLessThan(210);
+	for (const sample of samples) expect(sample.width - sample.left).toBeCloseTo(14, 0);
 	await slider.press("Home");
 	await slider.press("End");
 	await slider.press("ArrowLeft");
@@ -182,10 +187,19 @@ test("dragging effort keeps the composer label and slider anchored", async ({ pa
 	const y = bounds.y + bounds.height / 2;
 	await page.mouse.move(bounds.x + 14, y);
 	await page.mouse.down();
+	await expect
+		.poll(() =>
+			page.locator(".effort-thumb").evaluate((element) => {
+				const bounds = element.getBoundingClientRect();
+				return bounds.width / bounds.height;
+			}),
+		)
+		.toBeGreaterThan(1.1);
 	await page.mouse.move(bounds.x + bounds.width - 14, y, { steps: 36 });
 	await expect(slider).toHaveAttribute("aria-valuetext", "Ultra");
 	await page.mouse.move(bounds.x + 14, y, { steps: 36 });
 	await page.mouse.up();
+	await expect(page.locator(".effort-thumb")).toHaveCSS("scale", "1");
 	await expect(slider).toHaveAttribute("aria-valuetext", "Low");
 	await expect(trigger).toHaveAccessibleName("Model A · Low");
 	await expect.poll(() => trigger.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(0);

@@ -170,10 +170,11 @@ button:not(:disabled):not([aria-haspopup]):active {
 
 .effort-control {
 	--effort-duration: var(--motion-normal);
+	--effort-ease: linear(0, -0.025 10%, 0.18 26%, 0.76 44%, 1.035 62%, 0.992 82%, 1);
 }
 
 .effort-fill {
-	transition: width var(--effort-duration) var(--motion-ease);
+	transition: width var(--effort-duration) var(--effort-ease);
 }
 
 .effort-ticks span {
@@ -192,18 +193,19 @@ button:not(:disabled):not([aria-haspopup]):active {
 	background: #fff;
 	box-shadow: 0 1px 3px #0000001f;
 	pointer-events: none;
+	scale: 1;
 	transition:
-		left var(--effort-duration) var(--motion-ease),
-		scale var(--motion-fast) var(--motion-ease),
+		left var(--effort-duration) var(--effort-ease),
+		scale var(--motion-normal) var(--effort-ease),
 		box-shadow var(--motion-fast) ease;
 }
 
 .effort-control:has(.effort-slider:active) {
-	--effort-duration: 70ms;
+	--effort-duration: 160ms;
 }
 
 .effort-control:has(.effort-slider:active) .effort-thumb {
-	scale: 1.06;
+	scale: 1.12 0.94;
 	box-shadow: 0 2px 6px #0002;
 }
 
