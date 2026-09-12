@@ -533,8 +533,8 @@
 	border-radius: 22px;
 	padding: 18px 16px 12px;
 	box-shadow:
-		0 3px 13px #00000004,
-		0 1px 3px #00000003;
+		0 10px 30px #00000012,
+		0 2px 8px #0000000a;
 }
 .composer:focus-within {
 	border-color: var(--ring);
