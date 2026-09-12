@@ -109,9 +109,10 @@ test("hover, dialogs, and nested popovers animate and restore focus", async ({ p
 	});
 	expect(popoverBorder.outer).toBe("rgba(255, 255, 255, 0.5)");
 	expect(popoverBorder.shadows).toContain("rgba(0, 0, 0, 0.5) 0px 0px 0px 1px inset");
-	const modelBMedium = page.getByRole("button", { name: "Model B, Medium" });
-	await modelBMedium.click();
-	await expect(modelBMedium).toHaveAttribute("aria-pressed", "true");
+	const gear = page.getByRole("button", { name: /Gear selector/ });
+	await gear.focus();
+	await gear.press("ArrowRight");
+	await expect(gear).toHaveAccessibleName("Gear selector, Model B, Medium");
 	await page.keyboard.press("Escape");
 	await trigger.press("Enter");
 	await expect(popover).toBeVisible();
@@ -121,20 +122,28 @@ test("hover, dialogs, and nested popovers animate and restore focus", async ({ p
 	await expect(trigger).toBeFocused();
 });
 
-test("grid cells switch model and effort and reset to the model default", async ({ page }) => {
+test("gear positions switch model and effort and reset to the model default", async ({ page }) => {
 	await page.locator(".model-effort-trigger").click();
-	const modelBUltra = page.getByRole("button", { name: "Model B, Ultra" });
+	const gear = page.getByRole("button", { name: /Gear selector/ });
+	const lever = page.locator(".gear-lever");
 
-	await modelBUltra.click();
-	await expect(modelBUltra).toHaveAttribute("aria-pressed", "true");
+	await page.getByRole("button", { name: "Model B, Ultra" }).click();
+	await expect(gear).toHaveAccessibleName("Gear selector, Model B, Ultra");
 	await expect(page.locator(".model-effort-current")).toContainText("Model B");
 	await expect(page.locator(".model-effort-current")).toContainText("Ultra");
+	const leverPosition = await lever.evaluate((element) => {
+		const leverBounds = element.getBoundingClientRect();
+		const gateBounds = element.parentElement?.getBoundingClientRect();
+		if (!gateBounds) throw new Error("The gear gate is missing");
+		return leverBounds.x + leverBounds.width / 2 - gateBounds.right;
+	});
+	expect(leverPosition).toBeCloseTo(0, 1);
 
 	await page.getByRole("button", { name: "Reset reasoning effort" }).click();
-	await expect(page.getByRole("button", { name: "Model B, High" })).toHaveAttribute("aria-pressed", "true");
+	await expect(gear).toHaveAccessibleName("Gear selector, Model B, High");
 });
 
-test("selection labels roll in the direction of the selected position", async ({ page }) => {
+test("gear labels roll in the direction of the selected position", async ({ page }) => {
 	await page.addStyleTag({ content: ":root { --motion-normal: 1000ms; }" });
 	await page.locator(".model-effort-trigger").click();
 
@@ -165,17 +174,27 @@ test("selection labels roll in the direction of the selected position", async ({
 	expect(raisedModel.find(({ label }) => label === "Model B")?.y).toBeLessThan(0);
 });
 
-test("grid cells are keyboard-operable and keep the composer label in sync", async ({ page }) => {
+test("the lever supports keyboard shifts and spatial dragging", async ({ page }) => {
 	const trigger = page.locator(".model-effort-trigger");
 	await expect(trigger).toHaveAccessibleName("Model A · Medium");
 	const initialWidth = await trigger.evaluate((element) => element.getBoundingClientRect().width);
 	await trigger.click();
 	await expect(trigger).toHaveAccessibleName("Selecting model...");
 
-	const modelAUltra = page.getByRole("button", { name: "Model A, Ultra" });
-	await modelAUltra.focus();
-	await modelAUltra.press("Enter");
-	await expect(modelAUltra).toHaveAttribute("aria-pressed", "true");
+	const gear = page.getByRole("button", { name: /Gear selector/ });
+	await gear.focus();
+	await gear.press("ArrowRight");
+	await gear.press("ArrowDown");
+	await expect(gear).toHaveAccessibleName("Gear selector, Model B, High");
+
+	const gate = page.locator(".gear-gate");
+	const bounds = await gate.boundingBox();
+	if (!bounds) throw new Error("The gear gate is missing");
+	await page.mouse.move(bounds.x + bounds.width, bounds.y);
+	await page.mouse.down();
+	await page.mouse.move(bounds.x, bounds.y + bounds.height, { steps: 12 });
+	await page.mouse.up();
+	await expect(gear).toHaveAccessibleName("Gear selector, Model A, Ultra");
 
 	await page.keyboard.press("Escape");
 	await expect(trigger).toHaveAccessibleName("Model A · Ultra");
@@ -221,9 +240,11 @@ test("panels reverse cleanly and reduced motion keeps controls immediate", async
 	await page.locator(".model-effort-trigger").click();
 	const popover = page.getByRole("dialog", { name: "Model and reasoning effort" });
 	await expect(popover).toHaveCSS("animation-name", "none");
-	const modelBUltra = page.getByRole("button", { name: "Model B, Ultra" });
-	await modelBUltra.click();
-	await expect(modelBUltra).toHaveAttribute("aria-pressed", "true");
+	await page.getByRole("button", { name: "Model B, Ultra" }).click();
+	await expect(page.locator(".gear-lever")).toHaveCSS("transition-duration", "0s");
+	await expect(page.getByRole("button", { name: /Gear selector/ })).toHaveAccessibleName(
+		"Gear selector, Model B, Ultra",
+	);
 	await page.keyboard.press("Escape");
 	await expect(popover).toHaveCount(0);
 	await page.getByRole("button", { name: "Hide sidebar" }).click();

@@ -28,6 +28,8 @@ let previousEffortIndex = $state<number>();
 let effortRollDirection = $state(1);
 let previousModelIndex = $state<number>();
 let modelRollDirection = $state(1);
+let dragging = $state(false);
+let pointerId: number | null = null;
 
 const selectedModel = $derived(models.find((entry) => entry.model === model));
 const modelIndex = $derived(
@@ -47,6 +49,8 @@ const effortScale = $derived(
 	),
 );
 const effortIndex = $derived(Math.max(0, effortScale.indexOf(selectedEffort)));
+const modelProgress = $derived(models.length > 1 ? modelIndex / (models.length - 1) : 0.5);
+const effortProgress = $derived(effortScale.length > 1 ? effortIndex / (effortScale.length - 1) : 0.5);
 const triggerLabel = $derived(
 	open ? "Selecting model..." : `${selectedModel?.displayName || "Codex"} · ${effortLabel(selectedEffort)}`,
 );
@@ -70,6 +74,8 @@ $effect(() => {
 
 $effect(() => {
 	if (disabled) open = false;
+	if (!open) endDrag();
+	return endDrag;
 });
 
 function effortLabel(value: string) {
@@ -85,6 +91,79 @@ function selectGear(modelOption: Model, effortValue: string) {
 	if (disabled || !effortDescription(modelOption, effortValue)) return;
 	if (modelOption.model !== model) onModelChange(modelOption.model);
 	effort = effortValue;
+}
+
+function nearestSupportedEffort(modelOption: Model, targetIndex: number) {
+	return modelOption.supportedReasoningEfforts.reduce((nearest, option) => {
+		const distance = Math.abs(effortScale.indexOf(option.reasoningEffort) - targetIndex);
+		const nearestDistance = Math.abs(effortScale.indexOf(nearest.reasoningEffort) - targetIndex);
+		return distance < nearestDistance ? option : nearest;
+	}).reasoningEffort;
+}
+
+function selectFromPointer(event: PointerEvent, gate: HTMLElement) {
+	const bounds = gate.getBoundingClientRect();
+	const x = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+	const y = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
+	const targetModelIndex = Math.round(x * Math.max(0, models.length - 1));
+	const targetEffortIndex = Math.round(y * Math.max(0, effortScale.length - 1));
+	const targetModel = models[targetModelIndex];
+	if (!targetModel?.supportedReasoningEfforts.length) return;
+	selectGear(targetModel, nearestSupportedEffort(targetModel, targetEffortIndex));
+}
+
+function startDrag(event: PointerEvent) {
+	if (disabled || !event.isPrimary || event.button !== 0) return;
+	const surface = event.currentTarget as HTMLElement;
+	const gate = surface.parentElement;
+	if (!gate) return;
+	pointerId = event.pointerId;
+	dragging = true;
+	surface.setPointerCapture(event.pointerId);
+	selectFromPointer(event, gate);
+}
+
+function moveDrag(event: PointerEvent) {
+	if (!dragging || event.pointerId !== pointerId) return;
+	const gate = (event.currentTarget as HTMLElement).parentElement;
+	if (gate) selectFromPointer(event, gate);
+}
+
+function endDrag(event?: PointerEvent) {
+	if (!dragging || (event && event.pointerId !== pointerId)) return;
+	const gate = event?.currentTarget as HTMLElement | undefined;
+	if (gate && pointerId !== null && gate.hasPointerCapture(pointerId)) gate.releasePointerCapture(pointerId);
+	dragging = false;
+	pointerId = null;
+}
+
+function moveModel(offset: number) {
+	const target = models[Math.max(0, Math.min(models.length - 1, modelIndex + offset))];
+	if (!target?.supportedReasoningEfforts.length) return;
+	const targetEffort = target.supportedReasoningEfforts.some((item) => item.reasoningEffort === selectedEffort)
+		? selectedEffort
+		: target.defaultReasoningEffort;
+	selectGear(target, targetEffort);
+}
+
+function moveEffort(offset: number) {
+	if (!selectedModel) return;
+	const supported = selectedModel.supportedReasoningEfforts;
+	const index = Math.max(
+		0,
+		supported.findIndex((item) => item.reasoningEffort === selectedEffort),
+	);
+	const target = supported[Math.max(0, Math.min(supported.length - 1, index + offset))];
+	if (target) selectGear(selectedModel, target.reasoningEffort);
+}
+
+function handleKeydown(event: KeyboardEvent) {
+	if (event.key === "ArrowLeft") moveModel(-1);
+	else if (event.key === "ArrowRight") moveModel(1);
+	else if (event.key === "ArrowUp") moveEffort(-1);
+	else if (event.key === "ArrowDown") moveEffort(1);
+	else return;
+	event.preventDefault();
 }
 </script>
 
@@ -157,40 +236,79 @@ function selectGear(modelOption: Model, effortValue: string) {
 				</button>
 			</div>
 
-			<div class="model-effort-grid" style:--model-columns={models.length}>
-				<span class="model-effort-grid-corner" aria-hidden="true"></span>
-				{#each models as modelOption (modelOption.model)}
-					<span
-						class="model-effort-grid-model"
-						class:active={modelOption.model === model}
-						title={modelOption.displayName}
-						>{modelOption.displayName}</span
-					>
-				{/each}
-				{#each effortScale as effortValue (effortValue)}
-					<span class="model-effort-grid-effort" class:active={effortValue === selectedEffort}
-						>{effortLabel(effortValue)}</span
-					>
-					{#each models as modelOption (modelOption.model)}
-						{#if effortDescription(modelOption, effortValue)}
-							<button
-								type="button"
-								class="model-effort-grid-cell"
-								class:active={modelOption.model === model && effortValue === selectedEffort}
-								aria-label={`${modelOption.displayName}, ${effortLabel(effortValue)}`}
-								aria-pressed={modelOption.model === model && effortValue === selectedEffort}
-								title={effortDescription(modelOption, effortValue)}
-								{disabled}
-								onclick={() => selectGear(modelOption, effortValue)}
-							>
-								<span aria-hidden="true"></span>
-							</button>
-						{:else}
-							<span class="model-effort-grid-cell unavailable" aria-hidden="true"></span>
-						{/if}
+			<div
+				class="gear-selector"
+				style:--gear-columns={models.length}
+				style:--gear-rows={effortScale.length}
+				style:--gear-x={modelProgress}
+				style:--gear-y={effortProgress}
+			>
+				<div class="gear-model-labels" aria-hidden="true">
+					{#each models as option (option.model)}
+						<span class:active={option.model === model} title={option.displayName}
+							>{option.displayName}</span
+						>
 					{/each}
-				{/each}
+				</div>
+				<div class="gear-effort-labels" aria-hidden="true">
+					{#each effortScale as effortValue (effortValue)}
+						<span class:active={effortValue === selectedEffort}>{effortLabel(effortValue)}</span>
+					{/each}
+				</div>
+				<div class="gear-gate" class:dragging>
+					<svg class="gear-gate-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+						<line x1="0" y1="50" x2="100" y2="50" />
+						{#each models as _, index}
+							<line
+								x1={models.length > 1 ? (index / (models.length - 1)) * 100 : 50}
+								y1="0"
+								x2={models.length > 1 ? (index / (models.length - 1)) * 100 : 50}
+								y2="100"
+							/>
+						{/each}
+					</svg>
+					<button
+						type="button"
+						class="gear-drag-surface"
+						aria-label={`Gear selector, ${selectedModel?.displayName || "Codex"}, ${effortLabel(selectedEffort)}`}
+						{disabled}
+						onkeydown={handleKeydown}
+						onpointerdown={startDrag}
+						onpointermove={moveDrag}
+						onpointerup={endDrag}
+						onpointercancel={endDrag}
+						onlostpointercapture={endDrag}
+					></button>
+					{#each models as modelOption, column (modelOption.model)}
+						{#each effortScale as effortValue, row (effortValue)}
+							{#if effortDescription(modelOption, effortValue)}
+								<button
+									type="button"
+									class="gear-position"
+									class:active={modelOption.model === model && effortValue === selectedEffort}
+									style:left={`${models.length > 1 ? (column / (models.length - 1)) * 100 : 50}%`}
+									style:top={`${effortScale.length > 1 ? (row / (effortScale.length - 1)) * 100 : 50}%`}
+									aria-label={`${modelOption.displayName}, ${effortLabel(effortValue)}`}
+									title={effortDescription(modelOption, effortValue)}
+									{disabled}
+									onclick={(event) => {
+										if (event.detail === 0) selectGear(modelOption, effortValue);
+									}}
+									onpointerdown={startDrag}
+									onpointermove={moveDrag}
+									onpointerup={endDrag}
+									onpointercancel={endDrag}
+									onlostpointercapture={endDrag}
+								></button>
+							{/if}
+						{/each}
+					{/each}
+					<span class="gear-lever" aria-hidden="true">
+						<span class="gear-knob"></span>
+					</span>
+				</div>
 			</div>
+			<p class="gear-hint">Drag the lever · Arrow keys to shift</p>
 		</Popover.Content>
 	</Popover.Portal>
 </Popover.Root>
