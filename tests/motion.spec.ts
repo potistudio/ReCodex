@@ -153,32 +153,30 @@ test("effort labels roll in the direction of the selected grade", async ({ page 
 	async function sampleRoll() {
 		return page.locator(".effort-label-copy").evaluate((element) => {
 			const labels = [...element.querySelectorAll<HTMLElement>(".effort-label-value")];
-			if (labels.length !== 1) throw new Error("The effort label should not overlap with an outgoing label");
-			const [label] = labels;
-			const animation = label.getAnimations().find((entry) => entry.effect instanceof KeyframeEffect);
-			if (!animation?.effect) throw new Error("The effort label is not rolling");
-			animation.pause();
-			animation.currentTime = Number(animation.effect.getTiming().duration) / 2;
-			return {
-				label: label.textContent,
-				opacity: Number(getComputedStyle(label).opacity),
-				y: new DOMMatrixReadOnly(getComputedStyle(label).transform).m42,
-			};
+			if (labels.length !== 2) throw new Error("The outgoing and incoming effort labels are missing");
+			return labels.map((label) => {
+				const animation = label.getAnimations().find((entry) => entry.effect instanceof KeyframeEffect);
+				if (!animation?.effect) throw new Error("The effort label is not rolling");
+				animation.pause();
+				animation.currentTime = Number(animation.effect.getTiming().duration) / 2;
+				return {
+					label: label.textContent,
+					y: new DOMMatrixReadOnly(getComputedStyle(label).transform).m42,
+				};
+			});
 		});
 	}
 
 	await slider.fill("3");
 	const raised = await sampleRoll();
-	expect(raised.label).toBe("Extra high");
-	expect(raised.opacity).toBe(1);
-	expect(raised.y).toBeGreaterThan(0);
+	const raisedTo = raised.find(({ label }) => label === "Extra high");
+	expect(raisedTo?.y).toBeGreaterThan(0);
 
 	await page.waitForTimeout(200);
 	await slider.fill("1");
 	const lowered = await sampleRoll();
-	expect(lowered.label).toBe("Medium");
-	expect(lowered.opacity).toBe(1);
-	expect(lowered.y).toBeLessThan(0);
+	const loweredTo = lowered.find(({ label }) => label === "Medium");
+	expect(loweredTo?.y).toBeLessThan(0);
 });
 
 test("the composer keeps its width while selecting and resizes on confirmation", async ({ page }) => {
