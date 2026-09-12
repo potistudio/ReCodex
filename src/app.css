@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "@fontsource-variable/inter";
+@import "./lib/motion.css";
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -121,7 +122,6 @@
 	background: var(--sidebar);
 	display: flex;
 	flex-direction: column;
-	padding: 20px 13px 12px;
 	border-right: 1px solid var(--border);
 }
 .brand-row {
@@ -421,6 +421,8 @@
 	color: var(--muted-foreground);
 }
 .model-effort-name {
+	display: block;
+	margin-top: 1px;
 	overflow: hidden;
 	font-size: 12px;
 	line-height: 16px;
@@ -518,23 +520,21 @@
 	appearance: none;
 	width: 28px;
 	height: 28px;
-	border: 1px solid #0000000a;
+	border: 0;
 	border-radius: 50%;
 	corner-shape: round;
-	background: #fff;
-	box-shadow: 0 1px 3px #0000001f;
+	background: transparent;
 }
 .effort-slider::-moz-range-track {
 	height: 28px;
 	background: transparent;
 }
 .effort-slider::-moz-range-thumb {
-	width: 26px;
-	height: 26px;
-	border: 1px solid #0000000a;
+	width: 28px;
+	height: 28px;
+	border: 0;
 	border-radius: 50%;
-	background: #fff;
-	box-shadow: 0 1px 3px #0000001f;
+	background: transparent;
 }
 .effort-slider:focus-visible {
 	outline: 2px solid var(--effort-accent);
@@ -682,8 +682,9 @@
 	border-radius: 14px;
 	padding: 19px 17px;
 	transition:
-		background 0.15s,
-		transform 0.15s;
+		background-color var(--motion-fast) ease,
+		transform var(--motion-normal) var(--motion-ease),
+		scale var(--motion-fast) var(--motion-ease);
 	background: var(--background);
 }
 .suggestions > button:hover {
@@ -1686,7 +1687,8 @@
 @media (prefers-reduced-motion: reduce) {
 	*,
 	*::before,
-	*::after {
+	*::after,
+	*::details-content {
 		/* biome-ignore lint/complexity/noImportantStyles: Reduced-motion preferences must override component animations. */
 		animation: none !important;
 		/* biome-ignore lint/complexity/noImportantStyles: Reduced-motion preferences must override component transitions. */

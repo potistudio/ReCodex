@@ -2,6 +2,7 @@
 import { ChevronDown, ChevronRight, RotateCcw, Zap } from "@lucide/svelte";
 import { Popover } from "bits-ui";
 import * as Dropdown from "$lib/components/ui/dropdown-menu";
+import { appear } from "$lib/motion";
 import type { Model } from "$lib/types";
 
 let {
@@ -46,7 +47,11 @@ $effect(() => {
 		disabled={disabled || !models.length}
 		title={selectedModel?.displayName}
 	>
-		<span>{effortLabel(effort)}</span>
+		<span class="motion-copy">
+			{#key effort}
+				<span transition:appear={{ y: 4 }}>{effortLabel(effort)}</span>
+			{/key}
+		</span>
 		<ChevronDown size={12} aria-hidden="true" />
 	</Popover.Trigger>
 	<Popover.Portal>
@@ -63,10 +68,17 @@ $effect(() => {
 				<span class="model-effort-icon" aria-hidden="true"><Zap size={15} fill="currentColor" /></span>
 				<Dropdown.Root>
 					<Dropdown.Trigger class="model-picker-trigger" aria-label="Choose model" {disabled}>
-						<span class="model-effort-label"
-							>{effortLabel(selectedEffort)}<ChevronRight size={12} aria-hidden="true" /></span
-						>
-						<span class="model-effort-name">{selectedModel?.displayName || "Codex"}</span>
+						<span class="motion-copy">
+							{#key `${model}:${selectedEffort}`}
+								<span transition:appear={{ y: 4 }}>
+									<span class="model-effort-label"
+										>{effortLabel(selectedEffort)}
+										<ChevronRight size={12} aria-hidden="true" /></span
+									>
+									<span class="model-effort-name">{selectedModel?.displayName || "Codex"}</span>
+								</span>
+							{/key}
+						</span>
 					</Dropdown.Trigger>
 					<Dropdown.Content class="model-picker-menu" side="right" align="start" sideOffset={12}>
 						<Dropdown.Label>Model</Dropdown.Label>
@@ -103,6 +115,7 @@ $effect(() => {
 							{/each}
 						</div>
 					</div>
+					<span class="effort-thumb" aria-hidden="true"></span>
 					<input
 						type="range"
 						class="effort-slider"
