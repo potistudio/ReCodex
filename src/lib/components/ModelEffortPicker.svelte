@@ -41,13 +41,20 @@ function effortLabel(value: string) {
 	return value ? value.charAt(0).toUpperCase() + value.slice(1) : "Select effort";
 }
 
-function movePointer(event: PointerEvent) {
+function updatePointerProgress(event: PointerEvent) {
 	if (!drag || event.pointerId !== drag.pointerId) return;
 	const bounds = drag.slider.getBoundingClientRect();
-	pointerProgress = Math.max(
+	const progress = Math.max(
 		0,
 		Math.min(1, (event.clientX - bounds.left - 14 - drag.grabOffset) / (bounds.width - 28)),
 	);
+	const intervals = efforts.length - 1;
+	const position = progress * intervals;
+	const interval = Math.floor(position);
+	const t = position - interval;
+	// Zero slope at each step creates spatial detents without time-based interpolation.
+	const eased = t * t * t * (t * (6 * t - 15) + 10);
+	pointerProgress = (interval + eased) / intervals;
 }
 
 function startPointerDrag(event: PointerEvent) {
@@ -60,7 +67,7 @@ function startPointerDrag(event: PointerEvent) {
 			: 0;
 	drag = { pointerId: event.pointerId, slider, grabOffset };
 	slider.setPointerCapture(event.pointerId);
-	movePointer(event);
+	updatePointerProgress(event);
 }
 
 function endPointerDrag(event?: PointerEvent) {
@@ -187,7 +194,7 @@ $effect(() => {
 						value={effortIndex}
 						disabled={disabled || efforts.length < 2}
 						onpointerdown={startPointerDrag}
-						onpointermove={movePointer}
+						onpointermove={updatePointerProgress}
 						onpointerup={endPointerDrag}
 						onpointercancel={endPointerDrag}
 						onlostpointercapture={endPointerDrag}

@@ -107,37 +107,31 @@ test("hover, dialogs, and nested popovers animate and restore focus", async ({ p
 	await expect(trigger).toBeFocused();
 });
 
-test("effort fill and thumb travel together and settle on the latest input", async ({ page }) => {
+test("effort fill and thumb update together without position transitions", async ({ page }) => {
 	await page.locator(".model-effort-trigger").click();
 	const slider = page.getByRole("slider", { name: "Reasoning effort" });
 	const thumb = page.locator(".effort-thumb");
 	const start = await thumb.evaluate((element) => Number.parseFloat(getComputedStyle(element).left));
 	await slider.fill("5");
-	const samples = await page.locator(".effort-control").evaluate((element) => {
+	const sample = await page.locator(".effort-control").evaluate((element) => {
 		const thumb = element.querySelector(".effort-thumb");
 		const fill = element.querySelector(".effort-fill");
 		if (!thumb || !fill) throw new Error("Effort visuals are missing");
-		const animations = [thumb, fill]
+		const positionTransitions = [thumb, fill]
 			.flatMap((node) => node.getAnimations())
-			.filter((animation) => animation instanceof CSSTransition);
-		if (animations.length !== 2) throw new Error("Both effort visuals must transition");
-		const result = [0.25, 0.75].map((progress) => {
-			for (const animation of animations) {
-				animation.pause();
-				animation.currentTime = Number(animation.effect?.getTiming().duration) * progress;
-			}
-			return {
-				left: Number.parseFloat(getComputedStyle(thumb).left),
-				width: Number.parseFloat(getComputedStyle(fill).width),
-			};
-		});
-		for (const animation of animations) animation.finish();
-		return result;
+			.filter(
+				(animation) =>
+					animation instanceof CSSTransition && ["left", "width"].includes(animation.transitionProperty),
+			);
+		return {
+			left: Number.parseFloat(getComputedStyle(thumb).left),
+			width: Number.parseFloat(getComputedStyle(fill).width),
+			positionTransitions: positionTransitions.length,
+		};
 	});
-	expect(samples[0].left).toBeGreaterThan(start);
-	expect(samples[1].left).toBeGreaterThan(samples[0].left);
-	expect(samples[1].left).toBeLessThan(202);
-	for (const sample of samples) expect(sample.width - sample.left).toBeCloseTo(14, 0);
+	expect(sample.left).toBeCloseTo(202, 1);
+	expect(sample.width - sample.left).toBeCloseTo(14, 1);
+	expect(sample.positionTransitions).toBe(0);
 	await slider.press("Home");
 	await slider.press("End");
 	await slider.press("ArrowLeft");
@@ -208,7 +202,7 @@ test("dragging effort keeps the composer label and slider anchored", async ({ pa
 	}
 });
 
-test("effort thumb follows pointer movement within a step without changing shape", async ({ page }) => {
+test("effort positions flatten near steps and depend on position rather than time or direction", async ({ page }) => {
 	await page.locator(".model-effort-trigger").click();
 	const slider = page.getByRole("slider", { name: "Reasoning effort" });
 	const thumb = page.locator(".effort-thumb");
@@ -227,24 +221,38 @@ test("effort thumb follows pointer movement within a step without changing shape
 	if (!initial) throw new Error("The effort thumb is missing");
 	const x = initial.x + initial.width / 2;
 	const y = initial.y + initial.height / 2;
+	const sliderBounds = await slider.boundingBox();
+	if (!sliderBounds) throw new Error("The effort slider is missing");
+	const interval = (sliderBounds.width - initial.width) / Number(await slider.getAttribute("max"));
 	await page.mouse.move(x, y);
 	await page.mouse.down();
-	await page.mouse.move(x + 12, y, { steps: 4 });
-	await expect(slider).toHaveAttribute("aria-valuetext", "Medium");
-	await expect
-		.poll(() => thumb.evaluate((element) => element.getBoundingClientRect().x))
-		.toBeCloseTo(initial.x + 12, 0);
-	const following = await thumb.boundingBox();
-	if (!following) throw new Error("The effort thumb disappeared");
-	expect(following.width).toBeCloseTo(initial.width, 1);
-	expect(following.height).toBeCloseTo(initial.height, 1);
-	await page.mouse.move(x - 10, y, { steps: 4 });
-	await expect
-		.poll(() => thumb.evaluate((element) => element.getBoundingClientRect().x))
-		.toBeCloseTo(initial.x - 10, 0);
+	const fractions = [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1];
+	const offsets: number[] = [];
+	for (const fraction of fractions) {
+		await page.mouse.move(x + interval * fraction, y);
+		const bounds = await thumb.boundingBox();
+		if (!bounds) throw new Error("The effort thumb disappeared");
+		expect(bounds.width).toBeCloseTo(initial.width, 1);
+		expect(bounds.height).toBeCloseTo(initial.height, 1);
+		offsets.push(bounds.x - initial.x);
+	}
+	expect(offsets[0]).toBeCloseTo(0, 1);
+	expect(offsets[1]).toBeGreaterThan(0);
+	expect(offsets[1]).toBeLessThan(interval * 0.02);
+	expect(offsets[3]).toBeCloseTo(interval / 2, 1);
+	expect(offsets[5]).toBeGreaterThan(interval * 0.98);
+	expect(offsets[5]).toBeLessThan(interval);
+	expect(offsets[6]).toBeCloseTo(interval, 1);
+	for (let index = fractions.length - 1; index >= 0; index--) {
+		await page.mouse.move(x + interval * fractions[index], y, { steps: 5 });
+		await page.waitForTimeout(50);
+		const offset = await thumb.evaluate((element, origin) => element.getBoundingClientRect().x - origin, initial.x);
+		expect(offset).toBeCloseTo(offsets[index], 1);
+	}
 	await page.mouse.up();
 	await expect(slider).toHaveAttribute("aria-valuetext", "Medium");
-	await expect.poll(() => thumb.evaluate((element) => element.getBoundingClientRect().x)).toBeCloseTo(initial.x, 0);
+	const released = await thumb.boundingBox();
+	expect(released?.x).toBeCloseTo(initial.x, 1);
 });
 
 test("panels reverse cleanly and reduced motion keeps controls immediate", async ({ page }) => {
