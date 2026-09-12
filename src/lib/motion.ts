@@ -22,10 +22,14 @@ export function appear(node: Element, { y = 6 }: Pick<FlyParams, "y"> = {}) {
 	return fly(node, { y, duration: duration(node, "--motion-normal"), easing: cubicOut });
 }
 
-export function rollIn(node: Element, { y = 8 }: Pick<FlyParams, "y"> = {}) {
-	return fly(node, { y, duration: duration(node, "--motion-normal"), easing: cubicOut });
+function roll(node: Element, y: number) {
+	return {
+		duration: duration(node, "--motion-fast") * 0.75,
+		easing: cubicOut,
+		css: (_t: number, u: number) => `transform: translate3d(0, ${y * u}px, 0);`,
+	};
 }
 
-export function rollOut(node: Element, { y = -8 }: Pick<FlyParams, "y"> = {}) {
-	return fly(node, { y, duration: duration(node, "--motion-normal"), easing: cubicOut });
+export function rollIn(node: Element, { y = 20 }: { y?: number } = {}) {
+	return roll(node, y);
 }

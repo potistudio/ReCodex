@@ -2,7 +2,7 @@
 import { ChevronDown, ChevronRight, RotateCcw, Zap } from "@lucide/svelte";
 import { Popover } from "bits-ui";
 import * as Dropdown from "$lib/components/ui/dropdown-menu";
-import { appear, rollIn, rollOut } from "$lib/motion";
+import { appear, rollIn } from "$lib/motion";
 import type { Model } from "$lib/types";
 
 let {
@@ -115,10 +115,7 @@ $effect(() => {
 			<span class="effort-label-size" aria-hidden="true">{label}</span>
 		{/each}
 		{#key selectedEffort}
-			<span
-				class="effort-label-value"
-				in:rollIn={{ y: 8 * effortRollDirection }}
-				out:rollOut={{ y: -8 * effortRollDirection }}
+			<span class="effort-label-value" in:rollIn={{ y: 20 * effortRollDirection }}
 				>{effortLabel(selectedEffort)}</span
 			>
 		{/key}
