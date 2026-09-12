@@ -9,7 +9,6 @@ import {
 	Folder,
 	FolderPlus,
 	LoaderCircle,
-	Moon,
 	MoreHorizontal,
 	PanelLeftClose,
 	PanelLeftOpen,
@@ -21,7 +20,6 @@ import {
 	Sparkles,
 	Square,
 	SquarePen,
-	Sun,
 	X,
 } from "@lucide/svelte";
 import { isTauri } from "@tauri-apps/api/core";
@@ -31,11 +29,15 @@ import { App } from "$lib/app.svelte";
 import Approval from "$lib/components/Approval.svelte";
 import FilePanel from "$lib/components/FilePanel.svelte";
 import Message from "$lib/components/Message.svelte";
+import ThemePicker from "$lib/components/ThemePicker.svelte";
 import { Button } from "$lib/components/ui/button";
 import * as Dialog from "$lib/components/ui/dialog";
 import * as Dropdown from "$lib/components/ui/dropdown-menu";
 import { Input } from "$lib/components/ui/input";
-import type { Project } from "$lib/types";
+import { applyTheme, readTheme } from "$lib/themes";
+import type { Project, RateLimitSnapshot, RateLimitWindow } from "$lib/types";
+import { formatResetTime, formatTokenCount, formatUsageWindow, remainingPercent } from "$lib/usage";
+import { workingState } from "$lib/working";
 
 const app = new App();
 let draft = $state("");
@@ -47,38 +49,159 @@ let fileDirty = $state(false);
 let settingsOpen = $state(false);
 let renameOpen = $state(false);
 let projectName = $state("");
-let dark = $state(false);
+let theme = $state(readTheme());
 let chatScroll = $state<HTMLDivElement>();
 let composer = $state<HTMLTextAreaElement>();
-let followBottom = $state(true);
+let scrollMode = $state<"follow" | "free">("follow");
+let manualScroll = false;
+let wheelTimer: ReturnType<typeof setTimeout> | undefined;
+let labelTransitionTimer: ReturnType<typeof setTimeout> | undefined;
+const labelTransitionDuration = 600;
+const activeWork = $derived(workingState(app.items, app.approvals.length > 0, app.thinkingLabel));
+let displayedWorkLabel = $state("");
+let outgoingWorkLabel = $state("");
+let pendingWorkLabels = $state<string[]>([]);
+const displayedWorkTokens = $derived(labelTokens(displayedWorkLabel));
+const outgoingWorkTokens = $derived(labelTokens(outgoingWorkLabel));
+const workTokenCount = $derived(Math.max(displayedWorkTokens.length, outgoingWorkTokens.length));
 const filteredThreads = $derived(
 	app.threads.filter((thread) => (thread.name || thread.preview).toLowerCase().includes(search.toLowerCase())),
 );
 const ready = $derived(app.connected && !!app.project && (!app.requiresAuth || !!app.account));
+const rateLimitSnapshots = $derived.by(() => {
+	const rateLimits = app.rateLimits;
+	if (!rateLimits) return [];
+	const snapshots = [rateLimits.rateLimits, ...Object.values(rateLimits.rateLimitsByLimitId ?? {})].filter(
+		(snapshot): snapshot is RateLimitSnapshot => Boolean(snapshot),
+	);
+	return [...new Map(snapshots.map((snapshot) => [snapshot.limitId ?? "default", snapshot])).values()];
+});
+function rateLimitName(snapshot: RateLimitSnapshot) {
+	return snapshot.limitName ?? snapshot.limitId ?? "Codex";
+}
+function rateLimitWindows(snapshot: RateLimitSnapshot): RateLimitWindow[] {
+	return [snapshot.primary, snapshot.secondary].filter((window): window is RateLimitWindow => window !== null);
+}
+function labelTokens(label: string) {
+	return label.match(/\S+\s*/g) ?? [];
+}
+function startWorkLabelTransition(nextLabel: string) {
+	const previousLabel = displayedWorkLabel;
+	displayedWorkLabel = nextLabel;
+	if (!previousLabel) return;
+	outgoingWorkLabel = previousLabel;
+	labelTransitionTimer = setTimeout(() => {
+		outgoingWorkLabel = "";
+		labelTransitionTimer = undefined;
+		const [nextPendingLabel, ...remainingLabels] = pendingWorkLabels;
+		pendingWorkLabels = remainingLabels;
+		if (nextPendingLabel) startWorkLabelTransition(nextPendingLabel);
+	}, labelTransitionDuration);
+}
 onMount(() => {
-	dark = localStorage.getItem("recodex-theme") === "dark";
 	void app.init();
-	return () => app.dispose();
+	return () => {
+		if (labelTransitionTimer) clearTimeout(labelTransitionTimer);
+		app.dispose();
+	};
 });
 $effect(() => {
-	document.documentElement.classList.toggle("dark", dark);
-	localStorage.setItem("recodex-theme", dark ? "dark" : "light");
+	applyTheme(theme);
+});
+$effect(() => {
+	const nextLabel = activeWork.label;
+	if (!app.thinkingLabel) {
+		pendingWorkLabels = [];
+		if (labelTransitionTimer) clearTimeout(labelTransitionTimer);
+		labelTransitionTimer = undefined;
+		outgoingWorkLabel = "";
+		displayedWorkLabel = nextLabel;
+		return;
+	}
+	if (nextLabel === displayedWorkLabel || pendingWorkLabels.includes(nextLabel)) return;
+	if (outgoingWorkLabel) {
+		pendingWorkLabels = [...pendingWorkLabels, nextLabel];
+		return;
+	}
+	startWorkLabelTransition(nextLabel);
 });
 $effect(() => {
 	app.items;
 	app.activeTurn;
 	app.approvals;
-	if (followBottom && app.items.length)
+	if (scrollMode === "follow" && app.items.length)
 		void tick().then(() => {
 			if (chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight;
 		});
 });
+function updateScrollMode() {
+	if (!chatScroll || !manualScroll) return;
+	scrollMode = chatScroll.scrollHeight - chatScroll.scrollTop - chatScroll.clientHeight < 100 ? "follow" : "free";
+}
+function beginWheelScroll() {
+	manualScroll = true;
+	if (wheelTimer) clearTimeout(wheelTimer);
+	wheelTimer = setTimeout(() => {
+		manualScroll = false;
+	}, 150);
+}
+function trackManualScroll(node: HTMLElement) {
+	const beginPointerScroll = () => {
+		manualScroll = true;
+	};
+	const endPointerScroll = () => {
+		manualScroll = false;
+	};
+	node.addEventListener("wheel", beginWheelScroll, { passive: true });
+	node.addEventListener("pointerdown", beginPointerScroll);
+	node.addEventListener("touchstart", beginPointerScroll, { passive: true });
+	window.addEventListener("pointerup", endPointerScroll);
+	window.addEventListener("touchend", endPointerScroll);
+	return {
+		destroy() {
+			if (wheelTimer) clearTimeout(wheelTimer);
+			node.removeEventListener("wheel", beginWheelScroll);
+			node.removeEventListener("pointerdown", beginPointerScroll);
+			node.removeEventListener("touchstart", beginPointerScroll);
+			window.removeEventListener("pointerup", endPointerScroll);
+			window.removeEventListener("touchend", endPointerScroll);
+		},
+	};
+}
+function followLatest() {
+	scrollMode = "follow";
+	void tick().then(() => chatScroll?.scrollTo({ behavior: "smooth", top: chatScroll.scrollHeight }));
+}
+function centerLatestUserMessage() {
+	if (!chatScroll) return;
+	const messages = chatScroll.querySelectorAll<HTMLElement>(".user-message");
+	const message = messages[messages.length - 1];
+	if (!message) return;
+	const scrollBounds = chatScroll.getBoundingClientRect();
+	const messageBounds = message.getBoundingClientRect();
+	chatScroll.scrollTo({
+		behavior: "auto",
+		top: Math.max(
+			0,
+			chatScroll.scrollTop +
+				messageBounds.top -
+				scrollBounds.top -
+				(chatScroll.clientHeight - messageBounds.height) / 2,
+		),
+	});
+}
 async function send() {
 	const text = draft.trim();
 	if (!text) return;
+	const wasFollowing = scrollMode === "follow";
 	draft = "";
-	followBottom = true;
-	if (!(await app.send(text))) draft = text;
+	if (!(await app.send(text))) {
+		draft = text;
+	} else if (wasFollowing) {
+		scrollMode = "free";
+		await tick();
+		centerLatestUserMessage();
+	}
 	await tick();
 	composer?.focus();
 }
@@ -87,6 +210,10 @@ function inputKey(event: KeyboardEvent) {
 		event.preventDefault();
 		if (ready && !app.busy) void send();
 	}
+}
+function useSuggestion(prompt: string) {
+	draft = prompt;
+	composer?.focus();
 }
 async function canLeaveFiles() {
 	return (
@@ -101,8 +228,13 @@ async function chooseProject(project: Project) {
 	if (app.project?.path === project.path || app.busy) return;
 	if (await canLeaveFiles()) {
 		fileDirty = false;
+		scrollMode = "follow";
 		await app.chooseProject(project);
 	}
+}
+function newChat() {
+	scrollMode = "follow";
+	app.newChat();
 }
 async function addProject() {
 	if (await canLeaveFiles()) {
@@ -134,7 +266,7 @@ function shortcuts(event: KeyboardEvent) {
 	}
 	if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "o") {
 		event.preventDefault();
-		app.newChat();
+		newChat();
 	}
 }
 </script>
@@ -165,7 +297,7 @@ function shortcuts(event: KeyboardEvent) {
 					class="brand"
 					onclick={(event) => {
 						event.preventDefault();
-						app.newChat();
+						newChat();
 					}}
 					><span class="brand-mark"><Code2 size={21} strokeWidth={2.1} /></span>ReCodex</a
 				><Button variant="ghost" size="icon" aria-label="Hide sidebar" onclick={() => (sidebar = false)}
@@ -173,7 +305,7 @@ function shortcuts(event: KeyboardEvent) {
 				>
 			</div>
 			<nav class="primary-nav" aria-label="Workspace">
-				<button type="button" onclick={() => app.newChat()} disabled={!app.connected || app.loading}>
+				<button type="button" onclick={newChat} disabled={!app.connected || app.loading}>
 					<SquarePen size={18} /><span>New chat</span><kbd>Ctrl ⇧ O</kbd>
 				</button>
 				<button type="button" onclick={() => (searchOpen = !searchOpen)}>
@@ -230,16 +362,20 @@ function shortcuts(event: KeyboardEvent) {
 						class:selected={app.thread?.id === thread.id}
 						disabled={app.loading || !app.connected}
 						onclick={() => {
-							followBottom = true;
+							scrollMode = "follow";
 							void app.resume(thread);
 						}}
 						title={thread.name || thread.preview}
 					>
-						<span class="truncate"
-							>{thread.name ||
-								thread.preview ||
-								"Untitled chat"}</span
-						>
+						<span class="thread-summary">
+							<span class="truncate">{thread.name || thread.preview || "Untitled chat"}</span>
+							{#if app.tokenUsageFor(thread.id)}
+								<small title="Total tokens reported by Codex for this session"
+									>{formatTokenCount(app.tokenUsageFor(thread.id).total.totalTokens)}
+									tokens</small
+								>
+							{/if}
+						</span>
 						{#if app.isThreadRunning(thread.id) && app.thread?.id !== thread.id}
 							<LoaderCircle class="spin thread-running" size={14} aria-hidden="true" />
 						{/if}
@@ -263,7 +399,14 @@ function shortcuts(event: KeyboardEvent) {
 				{/if}
 			</div>
 			<div class="sidebar-footer">
-				<button type="button" class="account-button" onclick={() => (settingsOpen = true)}>
+				<button
+					type="button"
+					class="account-button"
+					onclick={() => {
+						settingsOpen = true;
+						void app.readRateLimits().catch(() => {});
+					}}
+				>
 					<span class="avatar">{app.account?.email?.[0]?.toUpperCase() || "R"}</span
 					><span
 						><strong
@@ -275,7 +418,7 @@ function shortcuts(event: KeyboardEvent) {
 								? "Connecting…"
 								: app.connected
 									? "Codex connected"
-									: "Not connected"}</small
+								: "Not connected"}</small
 						></span
 					><Settings2 size={17} />
 				</button>
@@ -310,6 +453,19 @@ function shortcuts(event: KeyboardEvent) {
 				>
 			</div>
 			<div class="topbar-right">
+				<span
+					class="rate-limit-indicator"
+					role="status"
+					title="Remaining Codex rate-limit allowance"
+					aria-label="Codex rate-limit allowance"
+				>
+					<span>Rate limit</span>
+					<strong
+						>{app.rateLimits?.rateLimits.primary
+							? `${remainingPercent(app.rateLimits.rateLimits.primary.usedPercent)}% left`
+							: "—"}</strong
+					>
+				</span>
 				{#if app.project}
 					<span class="project-breadcrumb"><Folder size={14} />{app.project.name}</span
 					><Button
@@ -358,76 +514,96 @@ function shortcuts(event: KeyboardEvent) {
 						>
 					</div>
 				{/if}
-				<div
-					class="chat-scroll"
-					bind:this={chatScroll}
-					onscroll={() => {
-						if (chatScroll)
-							followBottom =
-								chatScroll.scrollHeight -
-									chatScroll.scrollTop -
-									chatScroll.clientHeight <
-								100;
-					}}
-				>
-					{#if app.items.length === 0}
-						<div class="welcome">
-							<div class="welcome-eyebrow"><span></span>A little focus. A lot of possibility.</div>
-							<h1>What will you build?</h1>
-							<p>Bring an idea. Make it real.<br>Your code and conversations, in one quiet workspace.</p>
-							{#if !app.project}
-								<Button
-									variant="outline"
-									size="lg"
-									onclick={addProject}
-									disabled={!isTauri() || app.busy}
-									><FolderPlus size={16} />Open a project<ArrowUpRight size={14} /></Button
-								>
-							{:else}
-								<div class="workspace-pill">
-									<Folder size={14} /><span>{app.project.name}</span><span class="pill-dot"></span
-									><span>Ready to create</span>
-								</div>
-							{/if}
-							<div class="suggestions">
-								{#each [{ icon: Code2, title: "Explore the code", detail: "Find your way around", prompt: "Give me a concise overview of this project, its architecture, and where to start." }, { icon: Sparkles, title: "Build something", detail: "Start with a small idea", prompt: "Help me build a new feature in this project. First, ask me what I want to create." }, { icon: FileCode, title: "Make it better", detail: "A fresh pair of eyes", prompt: "Review this project for concrete bugs and suggest the most useful fixes before making changes." }] as suggestion}
-									<button
-										type="button"
-										onclick={() => {
-							draft = suggestion.prompt;
-											composer?.focus();
-										}}
+				<div class="chat-scroll-frame">
+					<div class="chat-scroll" bind:this={chatScroll} use:trackManualScroll onscroll={updateScrollMode}>
+						{#if app.items.length === 0}
+							<div class="welcome">
+								<div class="welcome-eyebrow"><span></span>A little focus. A lot of possibility.</div>
+								<h1>What will you build?</h1>
+								<p>
+									Bring an idea. Make it real.<br>Your code and conversations, in one quiet workspace.
+								</p>
+								{#if !app.project}
+									<Button
+										variant="outline"
+										size="lg"
+										onclick={addProject}
+										disabled={!isTauri() || app.busy}
+										><FolderPlus size={16} />Open a project<ArrowUpRight size={14} /></Button
 									>
-										<suggestion.icon size={20} strokeWidth={1.5} />
-										<strong>{suggestion.title}</strong><span>{suggestion.detail}</span>
-										<ArrowUpRight size={14} class="suggestion-arrow" />
-									</button>
-								{/each}
-							</div>
-						</div>
-					{:else}
-						<div class="messages">
-							{#each app.items as item (item.id)}
-								<Message {item} />
-							{/each}
-							{#if app.activeTurn || app.sending}
-								<div class="working">
-									<span class="working-dot"></span>
-									{app
-										.approvals.length
-										? "Waiting for your input"
-										: "Working on it…"}
+								{:else}
+									<div class="workspace-pill">
+										<Folder size={14} /><span>{app.project.name}</span><span class="pill-dot"></span
+										><span>Ready to create</span>
+									</div>
+								{/if}
+								<div class="suggestions">
+									{#each [{ icon: Code2, title: "Explore the code", detail: "Find your way around", prompt: "Give me a concise overview of this project, its architecture, and where to start." }, { icon: Sparkles, title: "Build something", detail: "Start with a small idea", prompt: "Help me build a new feature in this project. First, ask me what I want to create." }, { icon: FileCode, title: "Make it better", detail: "A fresh pair of eyes", prompt: "Review this project for concrete bugs and suggest the most useful fixes before making changes." }] as suggestion}
+										<button type="button" onclick={() => useSuggestion(suggestion.prompt)}>
+											<suggestion.icon size={20} strokeWidth={1.5} />
+											<strong>{suggestion.title}</strong><span>{suggestion.detail}</span>
+											<ArrowUpRight size={14} class="suggestion-arrow" />
+										</button>
+									{/each}
 								</div>
-							{/if}
-							{#each app.approvals as event (event.id)}
-								<Approval
-									{event}
-									respond={(event, result) =>
-									app.respond(event, result)}
-									requestAlternative={(event) => app.requestAlternative(event)}
-								/>
-							{/each}
-						</div>
+							</div>
+						{:else}
+							<div class="messages">
+								{#each app.items as item (item.renderKey ?? item.id)}
+									<Message
+										{item}
+										tokenUsage={item.turnId ? app.tokenUsageForTurn(item.turnId) : null}
+									/>
+								{/each}
+								{#if app.activeTurn || app.sending}
+									<div class="working">
+										<span class="working-dot"></span>
+										<span class="working-label">
+											{#each Array(workTokenCount) as _, index (index)}
+												<span class="working-label-token" style:--label-index={index}>
+													{#if outgoingWorkLabel}
+														<span
+															class="working-label-token-text working-label-token-outgoing"
+															>{outgoingWorkTokens[index] ?? "\u00a0"}</span
+														>
+													{/if}
+													{#key displayedWorkLabel}
+														<span
+															class="working-label-token-text"
+															class:working-label-token-incoming={outgoingWorkLabel}
+															>{displayedWorkTokens[index] ?? "\u00a0"}</span
+														>
+													{/key}
+												</span>
+											{/each}
+										</span>
+										{#if activeWork.detail}
+											<span class="working-detail">{activeWork.detail}</span>
+										{/if}
+									</div>
+								{/if}
+								{#each app.approvals as event (event.id)}
+									<Approval
+										{event}
+										respond={(event, result) => app.respond(event, result)}
+										requestAlternative={(event) => app.requestAlternative(event)}
+									/>
+								{/each}
+								{#if app.activeTurn || app.sending || scrollMode === "free"}
+									<div class="message-scroll-spacer" aria-hidden="true"></div>
+								{/if}
+							</div>
+						{/if}
+					</div>
+					{#if scrollMode === "free"}
+						<button
+							class="scroll-to-latest"
+							type="button"
+							aria-label="Scroll to latest"
+							onclick={followLatest}
+						>
+							<ChevronDown size={18} />
+						</button>
 					{/if}
 				</div>
 				<div class="composer-area">
@@ -532,16 +708,7 @@ function shortcuts(event: KeyboardEvent) {
 			><Dialog.Title>Settings</Dialog.Title
 			><Dialog.Description>A workspace that feels like yours.</Dialog.Description></Dialog.Header
 		>
-		<div class="settings-row">
-			<span><strong>Appearance</strong><small>Choose your preferred theme</small></span
-			><Button variant="outline" onclick={() => (dark = !dark)}
-				>{#if dark}
-					<Sun />Light
-				{:else}
-					<Moon />Dark
-				{/if}</Button
-			>
-		</div>
+		<ThemePicker bind:value={theme} />
 		<div class="settings-row">
 			<span
 				><strong>Codex connection</strong
@@ -569,6 +736,34 @@ function shortcuts(event: KeyboardEvent) {
 				<span class="account-plan">{app.account.planType || app.account.type}</span>
 			{/if}
 		</div>
+		<section class="rate-limit-panel" aria-label="Rate limits">
+			<div>
+				<strong>Rate limits</strong>
+				<small>Remaining allowance from your signed-in Codex account.</small>
+			</div>
+			{#if rateLimitSnapshots.length}
+				<div class="rate-limit-list">
+					{#each rateLimitSnapshots as snapshot (snapshot.limitId ?? "default")}
+						{#each rateLimitWindows(snapshot) as window, index (`${snapshot.limitId ?? "default"}-${index}`)}
+							<div class="rate-limit-row">
+								<span
+									><strong>{rateLimitName(snapshot)}</strong
+									><small>{formatUsageWindow(window)}</small></span
+								>
+								<span class="rate-limit-value"
+									><strong>{remainingPercent(window.usedPercent)}% remaining</strong>
+									<small
+										>{formatResetTime(window.resetsAt) ? `Resets ${formatResetTime(window.resetsAt)}` : "Reset unavailable"}</small
+									></span
+								>
+							</div>
+						{/each}
+					{/each}
+				</div>
+			{:else}
+				<p>Rate-limit details are unavailable for this account.</p>
+			{/if}
+		</section>
 		<p class="settings-note">
 			ReCodex uses your installed Codex CLI and its sign-in. If Codex is not found, set
 			<code>RECODEX_CODEX_PATH</code>

@@ -1,6 +1,6 @@
 # ReCodex
 
-A local desktop workspace for Codex, built with Tauri 2, SvelteKit, Svelte 5, and shadcn-svelte's Rhea components. The interface uses a quiet neutral palette, compact controls, and light and dark themes.
+A local desktop workspace for Codex, built with Tauri 2, SvelteKit, Svelte 5, and shadcn-svelte's Rhea components. The interface uses compact controls and a choice of 22 light and dark themes.
 
 ## Features
 
@@ -10,6 +10,15 @@ A local desktop workspace for Codex, built with Tauri 2, SvelteKit, Svelte 5, an
 - Open, rename, switch, and remove local projects. Removing a project only removes its sidebar registration.
 - Browse and edit existing UTF-8 files, save with Ctrl/Cmd+S, and detect changes made on disk before saving.
 - ChatGPT sign-in through Codex and reconnect controls with connection diagnostics.
+- Theme previews with instant switching and a saved appearance preference.
+
+## Themes
+
+Open the account button at the bottom of the sidebar, then choose a preview under **Settings → Appearance**. The palette applies across the workspace, dialogs, menus, and file editor and is restored on the next launch. Existing light and dark preferences remain supported.
+
+Available palettes: ReCodex Light/Dark, Linear Light/Dark, OpenAI Light/Dark, Catppuccin Latte/Frappé/Macchiato/Mocha, One Dark/Light, Tokyo Night/Storm/Moon/Day, Nord, Dracula, Gruvbox Dark/Light, and Rosé Pine/Dawn.
+
+Linear and OpenAI are inspired palettes adapted for this interface. Editor palettes use the published colors from [Catppuccin](https://catppuccin.com/palette/), [One Dark](https://github.com/atom/one-dark-syntax), [One Light](https://github.com/atom/one-light-syntax), [Tokyo Night](https://github.com/folke/tokyonight.nvim), [Nord](https://www.nordtheme.com/docs/colors-and-palettes/), [Dracula](https://draculatheme.com/contribute), [Gruvbox](https://github.com/morhetz/gruvbox), and [Rosé Pine](https://rosepinetheme.com/palette/), with surface and text adjustments for this UI.
 
 ## Run
 

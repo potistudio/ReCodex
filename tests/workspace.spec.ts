@@ -1,14 +1,17 @@
 import { expect, test } from "@playwright/test";
 
+const hideCssStudio = "css-studio-panel { display: none !important; }";
+
 test("browser preview, suggestions, and theme", async ({ page }) => {
 	await page.goto("/");
+	await page.addStyleTag({ content: hideCssStudio });
 	await expect(page.getByRole("heading", { name: "What will you build?" })).toBeVisible();
 	await expect(page.getByText("Browser preview ·", { exact: false })).toBeVisible();
 	await page.getByRole("button", { name: "Explore the code" }).click();
 	await expect(page.getByRole("textbox", { name: "Message Codex" })).toHaveValue(/Give me a concise overview/);
 	await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
 	await page.getByRole("button", { name: /Your workspace/ }).click();
-	await page.getByRole("button", { name: "Dark", exact: true }).click();
+	await page.getByRole("radio", { name: "ReCodex Dark", exact: true }).check();
 	await expect(page.locator("html")).toHaveClass("dark");
 });
 
@@ -96,9 +99,36 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 				if (command === "server_respond") {
 					host.approvalResult = args.result;
 					emit({
+						method: "thread/tokenUsage/updated",
+						params: {
+							threadId: thread.id,
+							turnId: "turn-1",
+							tokenUsage: {
+								total: {
+									totalTokens: 1000,
+									inputTokens: 600,
+									cachedInputTokens: 400,
+									cacheWriteInputTokens: 0,
+									outputTokens: 200,
+									reasoningOutputTokens: 200,
+								},
+								last: {
+									totalTokens: 1000,
+									inputTokens: 600,
+									cachedInputTokens: 400,
+									cacheWriteInputTokens: 0,
+									outputTokens: 200,
+									reasoningOutputTokens: 200,
+								},
+								modelContextWindow: 272000,
+							},
+						},
+					});
+					emit({
 						method: "item/completed",
 						params: {
 							threadId: thread.id,
+							turnId: "turn-1",
 							item: {
 								id: "command-1",
 								type: "commandExecution",
@@ -111,6 +141,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 						method: "item/completed",
 						params: {
 							threadId: thread.id,
+							turnId: "turn-1",
 							item: {
 								id: "answer-1",
 								type: "agentMessage",
@@ -164,6 +195,16 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 							planType: "plus",
 						},
 						requiresOpenaiAuth: true,
+					};
+				if (args.method === "account/rateLimits/read")
+					return {
+						rateLimits: {
+							limitId: "codex",
+							limitName: "Codex",
+							primary: { usedPercent: 61, windowDurationMins: 10080, resetsAt: 1789355330 },
+							secondary: null,
+						},
+						rateLimitsByLimitId: null,
 					};
 				if (args.method === "thread/list") {
 					host.threadListCwds = [
@@ -236,44 +277,94 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 							},
 						});
 						emit({
-							method: "item/agentMessage/delta",
+							method: "item/reasoning/summaryTextDelta",
 							params: {
 								threadId: thread.id,
-								itemId: "answer-1",
-								delta: "This is a ",
+								itemId: "reasoning-1",
+								summaryIndex: 0,
+								delta: "**Reviewing ",
 							},
 						});
-						emit({
-							method: "item/started",
-							params: {
-								threadId: thread.id,
-								item: {
-									id: "command-1",
-									type: "commandExecution",
-									command: "pnpm check",
-									status: "inProgress",
+						setTimeout(() => {
+							emit({
+								method: "item/reasoning/summaryTextDelta",
+								params: {
+									threadId: thread.id,
+									itemId: "reasoning-1",
+									summaryIndex: 0,
+									delta: "the project**",
 								},
-							},
-						});
-						emit({
-							method: "item/commandExecution/outputDelta",
-							params: {
-								threadId: thread.id,
-								itemId: "command-1",
-								delta: "Checking types…\n",
-							},
-						});
-						emit({
-							id: 42,
-							method: "item/commandExecution/requestApproval",
-							params: {
-								threadId: thread.id,
-								turnId,
-								command: "pnpm check",
-								reason: "Validate the project",
-								availableDecisions: ["accept"],
-							},
-						});
+							});
+							setTimeout(() => {
+								emit({
+									method: "item/reasoning/summaryTextDelta",
+									params: {
+										threadId: thread.id,
+										itemId: "reasoning-1",
+										summaryIndex: 1,
+										delta: "**Assessing ",
+									},
+								});
+								emit({
+									method: "item/reasoning/summaryTextDelta",
+									params: {
+										threadId: thread.id,
+										itemId: "reasoning-1",
+										summaryIndex: 1,
+										delta: "dependencies**",
+									},
+								});
+								setTimeout(() => {
+									emit({
+										method: "item/agentMessage/delta",
+										params: {
+											threadId: thread.id,
+											itemId: "answer-1",
+											delta: "This is a ",
+										},
+									});
+									emit({
+										method: "item/agentMessage/delta",
+										params: {
+											threadId: thread.id,
+											itemId: "answer-1",
+											delta: "SvelteKit",
+										},
+									});
+									emit({
+										method: "item/started",
+										params: {
+											threadId: thread.id,
+											item: {
+												id: "command-1",
+												type: "commandExecution",
+												command: "pnpm check",
+												status: "inProgress",
+											},
+										},
+									});
+									emit({
+										method: "item/commandExecution/outputDelta",
+										params: {
+											threadId: thread.id,
+											itemId: "command-1",
+											delta: "Checking types…\n",
+										},
+									});
+									emit({
+										id: 42,
+										method: "item/commandExecution/requestApproval",
+										params: {
+											threadId: thread.id,
+											turnId,
+											command: "pnpm check",
+											reason: "Validate the project",
+											availableDecisions: ["accept"],
+										},
+									});
+								}, 1000);
+							}, 50);
+						}, 50);
 					}, 20);
 					return {
 						turn: { id: turnId, status: "inProgress", items: [] },
@@ -284,12 +375,28 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 		};
 	});
 	await page.goto("/");
+	await page.addStyleTag({ content: `${hideCssStudio} .messages { padding-top: 1200px !important; }` });
 	await expect(page.getByText("Codex connected", { exact: true })).toBeVisible();
+	await expect(page.getByLabel("Codex rate-limit allowance")).toContainText("39% left");
 	await page.getByRole("button", { name: "Model A", exact: true }).click();
 	await page.getByRole("menuitem", { name: /Model B/ }).click();
 	await page.getByRole("textbox", { name: "Message Codex" }).fill("Explain this project");
 	await page.getByRole("button", { name: "Send message", exact: true }).click();
+	await expect(page.locator(".user-message > .message-sent")).toBeVisible();
+	await expect(page.getByRole("button", { name: "Scroll to latest" })).toBeVisible();
+	await expect
+		.poll(async () => (await page.locator(".working-label-token-incoming").allTextContents()).join("").trimEnd())
+		.toBe("Reviewing");
+	expect((await page.locator(".working-label-token-outgoing").allTextContents()).join("").trimEnd()).toBe("Thinking");
+	expect(
+		await page
+			.locator(".working-label-token-incoming")
+			.first()
+			.evaluate((element) => getComputedStyle(element).animationName.includes("working-label-push-in")),
+	).toBe(true);
 	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
+	await expect(page.locator(".message-append").filter({ hasText: "This is a" })).toBeVisible();
+	await expect(page.locator(".message-append")).toHaveCount(2);
 	await page.getByRole("button", { name: "Background conversation", exact: true }).click();
 	await expect(page.locator(".markdown")).toContainText("Background conversation");
 	await expect(page.getByRole("button", { name: "New chat" })).toBeEnabled();
@@ -301,13 +408,53 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(page.locator(".tool-item.running")).toContainText("Running");
 	await expect(page.locator(".tool-item.running pre")).toContainText("Checking types…");
 	await expect(page.getByRole("button", { name: "Decline", exact: true })).toBeVisible();
+	await page.locator(".chat-scroll").evaluate((element) => {
+		const message = element.querySelector<HTMLElement>(".user-message");
+		if (!message) throw new Error("User message not found");
+		element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -100 }));
+		element.scrollTop += message.getBoundingClientRect().top - element.getBoundingClientRect().top - 80;
+	});
+	await expect
+		.poll(() =>
+			page.locator(".chat-scroll").evaluate((element) => {
+				const message = element.querySelector<HTMLElement>(".user-message");
+				return message ? message.getBoundingClientRect().top - element.getBoundingClientRect().top : null;
+			}),
+		)
+		.toBeCloseTo(80, 0);
 	await page.getByRole("button", { name: "Ask for another approach" }).click();
 	await expect(page.locator(".tool-item")).toContainText("Completed");
 	await expect(page.getByText("This is a SvelteKit project.", { exact: true })).toBeVisible();
+	await expect
+		.poll(() =>
+			page.locator(".chat-scroll").evaluate((element) => {
+				const message = element.querySelector<HTMLElement>(".user-message");
+				return message ? message.getBoundingClientRect().top - element.getBoundingClientRect().top : null;
+			}),
+		)
+		.toBeCloseTo(80, 0);
+	await expect(page.locator(".message-scroll-spacer")).toBeVisible();
+	await page.getByRole("button", { name: "Scroll to latest" }).click();
+	await expect(page.getByRole("button", { name: "Scroll to latest" })).toBeHidden();
+	await expect(page.locator(".message-scroll-spacer")).toBeHidden();
+	await expect(page.locator(".thread-list").getByText("1,000 tokens", { exact: true })).toBeVisible();
+	await expect(page.locator(".assistant-message").getByText(/1,000 tokens/)).toBeVisible();
+	await page.locator(".account-button").click();
+	await expect(
+		page.getByRole("region", { name: "Rate limits" }).getByText("39% remaining", { exact: true }),
+	).toBeVisible();
+	await page.getByRole("button", { name: "Close" }).click();
 	await expect(page.locator(".user-message")).toHaveCount(2);
-	expect(await page.evaluate(() => (window as unknown as { turnParams: { model: string } }).turnParams.model)).toBe(
-		"model-b",
-	);
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { turnParams: { model: string; summary: string } }).turnParams.model,
+		),
+	).toBe("model-b");
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { turnParams: { model: string; summary: string } }).turnParams.summary,
+		),
+	).toBe("concise");
 	expect(await page.evaluate(() => (window as unknown as { approvalResult: unknown }).approvalResult)).toEqual({
 		decision: "decline",
 	});
@@ -346,9 +493,9 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 		"D:/relocated-working-directory",
 		"C:/example",
 	]);
-	await expect(page.getByRole("button", { name: "Explain this project", exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: /^Explain this project/ })).toBeVisible();
 	await page.getByRole("button", { name: /New chat/ }).click();
-	await page.getByRole("button", { name: "Explain this project", exact: true }).click();
+	await page.getByRole("button", { name: /^Explain this project/ }).click();
 	await expect(page.getByText("Restored conversation", { exact: true })).toBeVisible();
 	expect(errors).toEqual([]);
 });

@@ -14,7 +14,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && biome check .",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "node scripts/with-codex.mjs tauri",
-    "test": "vitest run src/lib/conversation.test.ts",
+    "test": "vitest run src/lib/conversation.test.ts src/lib/working.test.ts src/lib/usage.test.ts",
     "test:e2e": "playwright test",
     "format": "biome format --write .",
     "format:check": "biome format .",

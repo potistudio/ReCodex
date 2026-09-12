@@ -18,13 +18,16 @@ export interface Model {
 }
 export interface Item {
 	id: string;
+	renderKey?: string;
+	turnId?: string;
 	type: string;
 	text?: string;
 	content?: { type: string; text?: string }[];
-	summary?: string[];
 	command?: string;
 	aggregatedOutput?: string;
 	status?: string;
+	streaming?: boolean;
+	streamSegments?: string[];
 	changes?: { path: string; kind: { type: string }; diff: string }[];
 	tool?: string;
 	server?: string;
@@ -34,6 +37,34 @@ export interface Turn {
 	items: Item[];
 	status: string;
 	error?: { message: string } | null;
+}
+export interface TokenUsageBreakdown {
+	totalTokens: number;
+	inputTokens: number;
+	cachedInputTokens: number;
+	cacheWriteInputTokens: number;
+	outputTokens: number;
+	reasoningOutputTokens: number;
+}
+export interface ThreadTokenUsage {
+	total: TokenUsageBreakdown;
+	last: TokenUsageBreakdown;
+	modelContextWindow: number | null;
+}
+export interface RateLimitWindow {
+	usedPercent: number;
+	windowDurationMins: number | null;
+	resetsAt: number | null;
+}
+export interface RateLimitSnapshot {
+	limitId: string | null;
+	limitName: string | null;
+	primary: RateLimitWindow | null;
+	secondary: RateLimitWindow | null;
+}
+export interface RateLimits {
+	rateLimits: RateLimitSnapshot;
+	rateLimitsByLimitId: Record<string, RateLimitSnapshot | undefined> | null;
 }
 export interface Thread {
 	id: string;
@@ -58,9 +89,11 @@ export interface ServerEvent {
 		turnId?: string;
 		itemId?: string;
 		delta?: string;
+		summaryIndex?: number;
 		output?: string;
 		item?: Item;
 		turn?: Turn;
+		tokenUsage?: ThreadTokenUsage;
 		thread?: Thread;
 		requestId?: number | string;
 		message?: string;

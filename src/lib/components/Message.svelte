@@ -5,15 +5,18 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { Button } from "$lib/components/ui/button";
-import type { Item } from "$lib/types";
+import type { Item, TokenUsageBreakdown } from "$lib/types";
+import { formatTokenCount } from "$lib/usage";
 
-let { item }: { item: Item } = $props();
+let { item, tokenUsage = null }: { item: Item; tokenUsage?: TokenUsageBreakdown | null } = $props();
 let copied = $state(false);
 let copyError = $state("");
 let commandExpanded = $state(false);
 let commandOutput = $state<HTMLPreElement>();
 const text = $derived(
-	item.type === "userMessage" ? (item.content?.map((part) => part.text ?? "").join("\n") ?? "") : (item.text ?? ""),
+	item.type === "userMessage"
+		? (item.content?.map((part) => (typeof part === "string" ? "" : (part.text ?? ""))).join("\n") ?? "")
+		: (item.text ?? ""),
 );
 const html = $derived(
 	DOMPurify.sanitize(marked.parse(text, { async: false }) as string, {
@@ -59,21 +62,32 @@ $effect(() => {
 </script>
 
 {#if item.type === "userMessage"}
-	<div class="user-message"><div>{text}</div></div>
+	<div class="user-message"><div class:message-sent={item.renderKey}>{text}</div></div>
 {:else if item.type === "agentMessage" || item.type === "plan"}
 	<article class="assistant-message">
 		<div class="message-author">
 			<span class="mini-mark">⌘</span>
 			ReCodex
+			{#if item.type === "agentMessage" && tokenUsage}
+				<span class="message-token-usage">· {formatTokenCount(tokenUsage.totalTokens)} tokens</span>
+			{/if}
 			{#if item.type === "plan"}
 				<span class="muted">· Plan</span>
 			{/if}
 		</div>
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<!-- biome-ignore lint/a11y/noStaticElementInteractions: Delegates clicks from rendered markdown links. -->
-		<!-- biome-ignore lint/a11y/useKeyWithClickEvents: Keyboard activation is provided by the rendered markdown links. -->
-		<div class="markdown" onclick={link}>{@html html}</div>
+		{#if item.streaming}
+			<div class="markdown streaming-markdown">
+				{#each item.streamSegments ?? [] as segment, index (index)}
+					<span class="message-append">{segment}</span>
+				{/each}
+			</div>
+		{:else}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- biome-ignore lint/a11y/noStaticElementInteractions: Delegates clicks from rendered markdown links. -->
+			<!-- biome-ignore lint/a11y/useKeyWithClickEvents: Keyboard activation is provided by the rendered markdown links. -->
+			<div class="markdown" onclick={link}>{@html html}</div>
+		{/if}
 		{#if text}
 			<Button
 				variant="ghost"
@@ -111,14 +125,7 @@ $effect(() => {
 			<pre class="diff">{change.diff}</pre>
 		{/each}
 	</details>
-{:else if item.type === "reasoning"}
-	{#if item.summary?.length}
-		<details class="tool-item reasoning">
-			<summary><Sparkles size={15} />Thinking<ChevronRight size={13} /></summary>
-			<p>{item.summary.join("\n")}</p>
-		</details>
-	{/if}
-{:else}
+{:else if item.type !== "reasoning"}
 	<div class="activity">
 		<Sparkles size={14} /><span>{item.tool ?? item.type}</span><span>{item.status ?? ""}</span>
 	</div>
