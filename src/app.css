@@ -586,18 +586,6 @@
 	background: var(--muted);
 	color: var(--muted-foreground);
 }
-.composer-footnote {
-	display: flex;
-	justify-content: space-between;
-	font-size: 9px;
-	color: var(--muted-foreground);
-	padding: 12px 7px 0;
-}
-.composer-footnote > span:first-child {
-	display: flex;
-	gap: 4px;
-	align-items: center;
-}
 .connection-action {
 	padding-top: 10px;
 	text-align: center;
@@ -1431,9 +1419,6 @@
 	.workspace-body:has(.file-panel) .welcome h1 {
 		font-size: 27px;
 	}
-	.workspace-body:has(.file-panel) .composer-footnote > span:last-child {
-		display: none;
-	}
 }
 @media (max-width: 800px) {
 	.sidebar {
@@ -1458,10 +1443,6 @@
 	}
 	.welcome {
 		padding-block: 30px;
-	}
-	/* biome-ignore lint/style/noDescendingSpecificity: The mobile fallback repeats the hidden state for all layouts. */
-	.composer-footnote > span:last-child {
-		display: none;
 	}
 	.file-panel {
 		position: absolute;

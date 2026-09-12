@@ -16,7 +16,6 @@ import {
 	Plus,
 	Search,
 	Settings2,
-	ShieldCheck,
 	Sparkles,
 	Square,
 	SquarePen,
@@ -669,10 +668,6 @@ function shortcuts(event: KeyboardEvent) {
 							{/if}
 						</div>
 					</form>
-					<div class="composer-footnote">
-						<span><ShieldCheck size={12} />Review changes before you commit</span
-						><span>Shift + Enter for a new line</span>
-					</div>
 					{#if isTauri() && !app.connected}
 						<div class="connection-action">
 							<Button variant="outline" size="sm" disabled={app.connecting} onclick={() => app.connect()}
