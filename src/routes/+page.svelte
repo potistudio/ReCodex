@@ -2,7 +2,6 @@
 import {
 	ArrowUp,
 	ArrowUpRight,
-	Check,
 	ChevronDown,
 	Code2,
 	FileCode,
@@ -28,6 +27,7 @@ import { App } from "$lib/app.svelte";
 import Approval from "$lib/components/Approval.svelte";
 import FilePanel from "$lib/components/FilePanel.svelte";
 import Message from "$lib/components/Message.svelte";
+import ModelEffortPicker from "$lib/components/ModelEffortPicker.svelte";
 import ThemePicker from "$lib/components/ThemePicker.svelte";
 import { Button } from "$lib/components/ui/button";
 import * as Dialog from "$lib/components/ui/dialog";
@@ -57,9 +57,6 @@ let wheelTimer: ReturnType<typeof setTimeout> | undefined;
 let labelTransitionTimer: ReturnType<typeof setTimeout> | undefined;
 const labelTransitionDuration = 600;
 const activeWork = $derived(workingState(app.items, app.approvals.length > 0, app.thinkingLabel));
-const selectedEffortLabel = $derived(
-	app.effort ? app.effort.charAt(0).toUpperCase() + app.effort.slice(1) : "Select effort",
-);
 let displayedWorkLabel = $state("");
 let outgoingWorkLabel = $state("");
 let pendingWorkLabels = $state<string[]>([]);
@@ -616,60 +613,13 @@ function shortcuts(event: KeyboardEvent) {
 										"Select a project"}</span
 								>
 								<span class="toolbar-divider"></span>
-								<Dropdown.Root
-									><Dropdown.Trigger
-										class="model-effort-trigger"
-										disabled={!app.models.length || app.busy}
-										><span>{selectedEffortLabel}</span>
-										<ChevronDown size={12} /></Dropdown.Trigger
-									><Dropdown.Content align="start" class="w-80"
-										><div class="model-effort-summary">
-											<Sparkles size={15} />
-											<div>
-												<strong>{selectedEffortLabel}</strong>
-												<small>{app.selectedModel?.displayName || "Codex"}</small>
-											</div>
-										</div>
-										<Dropdown.Separator />
-										<Dropdown.Label>Model</Dropdown.Label>
-										{#each app.models as model}
-											<Dropdown.Item
-												onclick={() => app.selectModel(model.model)}
-												class="model-option"
-												><div>
-													<strong>{model.displayName}</strong
-													><small>{model.description}</small>
-												</div>
-												{#if app.model === model.model}
-													<Check size={15} />
-												{/if}</Dropdown.Item
-											>
-										{/each}
-										<Dropdown.Separator />
-										<Dropdown.Label>Reasoning effort</Dropdown.Label>
-										{#if app.selectedModel?.supportedReasoningEfforts.length}
-											<Dropdown.RadioGroup
-												class="effort-scale"
-												aria-label="Reasoning effort"
-												bind:value={app.effort}
-											>
-												{#each app.selectedModel.supportedReasoningEfforts as option}
-													<Dropdown.RadioItem
-														value={option.reasoningEffort}
-														class="effort-step"
-														title={option.description}
-													>
-														<span class="effort-step-dot"></span>
-														<span class="sr-only"
-															>{option.reasoningEffort.charAt(0).toUpperCase() +
-																option.reasoningEffort.slice(1)}</span
-														>
-													</Dropdown.RadioItem>
-												{/each}
-											</Dropdown.RadioGroup>
-										{/if}</Dropdown.Content
-									></Dropdown.Root
-								>
+								<ModelEffortPicker
+									models={app.models}
+									model={app.model}
+									bind:effort={app.effort}
+									disabled={app.busy}
+									onModelChange={(model) => app.selectModel(model)}
+								/>
 							</div>
 							{#if app.activeTurn}
 								<Button size="icon" aria-label="Stop generation" onclick={() => app.stop()}
