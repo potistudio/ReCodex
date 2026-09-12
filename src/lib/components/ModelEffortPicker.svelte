@@ -23,6 +23,9 @@ let open = $state(false);
 const selectedModel = $derived(models.find((entry) => entry.model === model));
 const efforts = $derived(selectedModel?.supportedReasoningEfforts ?? []);
 const selectedEffort = $derived(effort || selectedModel?.defaultReasoningEffort || "");
+const effortLabels = $derived([
+	...new Set([...efforts.map((option) => effortLabel(option.reasoningEffort)), effortLabel(selectedEffort)]),
+]);
 const effortIndex = $derived(
 	Math.max(
 		0,
@@ -41,19 +44,32 @@ $effect(() => {
 });
 </script>
 
+{#snippet effortText()}
+	<span class="motion-copy effort-label-copy">
+		{#each effortLabels as label (label)}
+			<span class="effort-label-size" aria-hidden="true">{label}</span>
+		{/each}
+		{#key selectedEffort}
+			<span transition:appear={{ y: 4 }}>{effortLabel(selectedEffort)}</span>
+		{/key}
+	</span>
+{/snippet}
+
 <Popover.Root bind:open>
 	<Popover.Trigger
 		class="model-effort-trigger"
 		disabled={disabled || !models.length}
+		aria-label={`${selectedModel?.displayName || "Codex"} · ${effortLabel(selectedEffort)}`}
 		title={selectedModel?.displayName}
 	>
-		<span class="motion-copy">
-			{#key `${model}:${selectedEffort}`}
-				<span transition:appear={{ y: 4 }}>
-					{selectedModel?.displayName || "Codex"}
-					· {effortLabel(selectedEffort)}
-				</span>
-			{/key}
+		<span class="model-effort-selection">
+			<span class="motion-copy">
+				{#key model}
+					<span transition:appear={{ y: 4 }}>{selectedModel?.displayName || "Codex"}</span>
+				{/key}
+			</span>
+			<span>·</span>
+			{@render effortText()}
 		</span>
 		<ChevronDown size={12} aria-hidden="true" />
 	</Popover.Trigger>
@@ -71,16 +87,18 @@ $effect(() => {
 				<span class="model-effort-icon" aria-hidden="true"><Zap size={15} fill="currentColor" /></span>
 				<Dropdown.Root>
 					<Dropdown.Trigger class="model-picker-trigger" aria-label="Choose model" {disabled}>
-						<span class="motion-copy">
-							{#key `${model}:${selectedEffort}`}
-								<span transition:appear={{ y: 4 }}>
-									<span class="model-effort-label"
-										>{effortLabel(selectedEffort)}
-										<ChevronRight size={12} aria-hidden="true" /></span
-									>
-									<span class="model-effort-name">{selectedModel?.displayName || "Codex"}</span>
-								</span>
-							{/key}
+						<span>
+							<span class="model-effort-label">
+								{@render effortText()}
+								<ChevronRight size={12} aria-hidden="true" />
+							</span>
+							<span class="motion-copy">
+								{#key model}
+									<span class="model-effort-name" transition:appear={{ y: 4 }}>
+										{selectedModel?.displayName || "Codex"}
+									</span>
+								{/key}
+							</span>
 						</span>
 					</Dropdown.Trigger>
 					<Dropdown.Content class="model-picker-menu" side="right" align="start" sideOffset={12}>

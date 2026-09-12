@@ -148,6 +148,62 @@ test("effort fill and thumb travel together and settle on the latest input", asy
 		.toBeCloseTo(start, 0);
 });
 
+test("dragging effort keeps the composer label and slider anchored", async ({ page }) => {
+	const trigger = page.locator(".model-effort-trigger");
+	await trigger.click();
+	const slider = page.getByRole("slider", { name: "Reasoning effort" });
+	await slider.press("Home");
+	await expect(trigger).toHaveAccessibleName("Model A · Low");
+	await expect.poll(() => trigger.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(0);
+	const bounds = await slider.boundingBox();
+	if (!bounds) throw new Error("The effort slider is missing");
+	await page.evaluate(() => {
+		const host = window as unknown as {
+			effortGeometry: { width: number; popoverX: number; sliderX: number }[];
+			stopEffortSampling: () => void;
+		};
+		const trigger = document.querySelector(".model-effort-trigger");
+		const popover = document.querySelector(".model-effort-popover");
+		const slider = document.querySelector(".effort-slider");
+		if (!trigger || !popover || !slider) throw new Error("The effort picker is missing");
+		host.effortGeometry = [];
+		let frame = 0;
+		const sample = () => {
+			host.effortGeometry.push({
+				width: trigger.getBoundingClientRect().width,
+				popoverX: popover.getBoundingClientRect().x,
+				sliderX: slider.getBoundingClientRect().x,
+			});
+			frame = requestAnimationFrame(sample);
+		};
+		sample();
+		host.stopEffortSampling = () => cancelAnimationFrame(frame);
+	});
+	const y = bounds.y + bounds.height / 2;
+	await page.mouse.move(bounds.x + 14, y);
+	await page.mouse.down();
+	await page.mouse.move(bounds.x + bounds.width - 14, y, { steps: 36 });
+	await expect(slider).toHaveAttribute("aria-valuetext", "Ultra");
+	await page.mouse.move(bounds.x + 14, y, { steps: 36 });
+	await page.mouse.up();
+	await expect(slider).toHaveAttribute("aria-valuetext", "Low");
+	await expect(trigger).toHaveAccessibleName("Model A · Low");
+	await expect.poll(() => trigger.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(0);
+	const samples = await page.evaluate(() => {
+		const host = window as unknown as {
+			effortGeometry: { width: number; popoverX: number; sliderX: number }[];
+			stopEffortSampling: () => void;
+		};
+		host.stopEffortSampling();
+		return host.effortGeometry;
+	});
+	expect(samples.length).toBeGreaterThan(10);
+	for (const coordinate of ["width", "popoverX", "sliderX"] as const) {
+		const values = samples.map((sample) => sample[coordinate]);
+		expect(Math.max(...values) - Math.min(...values), coordinate).toBeLessThan(1);
+	}
+});
+
 test("panels reverse cleanly and reduced motion keeps controls immediate", async ({ page }) => {
 	const contentWidth = await page
 		.locator(".sidebar > .panel-content")
