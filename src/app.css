@@ -323,16 +323,41 @@
 	font-weight: 600;
 	color: var(--foreground);
 }
-.model-trigger {
+.model-effort-trigger {
 	display: flex;
-	gap: 4px;
+	gap: 6px;
 	align-items: center;
+	justify-content: center;
+	min-width: 112px;
 	font-weight: 550;
-	font-size: 10px;
+	font-size: 11px;
 	color: var(--muted-foreground);
-	padding: 2px 0;
+	padding: 6px 10px;
+	background: color-mix(in srgb, var(--muted) 75%, transparent);
 }
-.model-trigger svg {
+.model-effort-trigger:hover,
+.model-effort-trigger[aria-expanded="true"] {
+	background: var(--muted);
+}
+.model-effort-trigger svg {
+	color: var(--muted-foreground);
+}
+.model-effort-summary {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 11px;
+}
+.model-effort-summary > div {
+	display: grid;
+	gap: 2px;
+}
+.model-effort-summary strong {
+	font-size: 13px;
+	font-weight: 600;
+}
+.model-effort-summary small {
+	font-size: 10px;
 	color: var(--muted-foreground);
 }
 .model-option {
@@ -353,6 +378,41 @@
 	line-height: 1.6;
 	color: var(--muted-foreground);
 	margin-top: 3px;
+}
+.effort-scale {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(32px, 1fr));
+	gap: 2px;
+	margin: 2px 7px 8px;
+	padding: 3px;
+	border-radius: 999px;
+	background: var(--muted);
+}
+.effort-step {
+	display: grid;
+	height: 24px;
+	min-height: 24px;
+	place-items: center;
+	border-radius: 999px;
+	padding: 0;
+}
+.effort-step [data-slot="dropdown-menu-radio-item-indicator"] {
+	display: none;
+}
+.effort-step-dot {
+	width: 4px;
+	height: 4px;
+	border-radius: 100%;
+	background: var(--muted-foreground);
+	opacity: 0.45;
+}
+.effort-step[data-state="checked"] {
+	background: var(--card);
+	box-shadow: 0 1px 4px #0002;
+}
+.effort-step[data-state="checked"] .effort-step-dot {
+	background: var(--primary);
+	opacity: 1;
 }
 .topbar-hint {
 	font-size: 11px;
@@ -567,11 +627,6 @@
 	gap: 7px;
 	color: var(--muted-foreground);
 	font-size: 10px;
-}
-.composer-context select {
-	outline: none;
-	background: transparent;
-	max-width: 95px;
 }
 .toolbar-divider {
 	height: 12px;

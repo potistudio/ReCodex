@@ -57,6 +57,9 @@ let wheelTimer: ReturnType<typeof setTimeout> | undefined;
 let labelTransitionTimer: ReturnType<typeof setTimeout> | undefined;
 const labelTransitionDuration = 600;
 const activeWork = $derived(workingState(app.items, app.approvals.length > 0, app.thinkingLabel));
+const selectedEffortLabel = $derived(
+	app.effort ? app.effort.charAt(0).toUpperCase() + app.effort.slice(1) : "Select effort",
+);
 let displayedWorkLabel = $state("");
 let outgoingWorkLabel = $state("");
 let pendingWorkLabels = $state<string[]>([]);
@@ -614,11 +617,21 @@ function shortcuts(event: KeyboardEvent) {
 								>
 								<span class="toolbar-divider"></span>
 								<Dropdown.Root
-									><Dropdown.Trigger class="model-trigger" disabled={!app.models.length || app.busy}
-										><span>{app.selectedModel?.displayName || "Codex"}</span>
+									><Dropdown.Trigger
+										class="model-effort-trigger"
+										disabled={!app.models.length || app.busy}
+										><span>{selectedEffortLabel}</span>
 										<ChevronDown size={12} /></Dropdown.Trigger
 									><Dropdown.Content align="start" class="w-80"
-										><Dropdown.Label>Choose a model</Dropdown.Label>
+										><div class="model-effort-summary">
+											<Sparkles size={15} />
+											<div>
+												<strong>{selectedEffortLabel}</strong>
+												<small>{app.selectedModel?.displayName || "Codex"}</small>
+											</div>
+										</div>
+										<Dropdown.Separator />
+										<Dropdown.Label>Model</Dropdown.Label>
 										{#each app.models as model}
 											<Dropdown.Item
 												onclick={() => app.selectModel(model.model)}
@@ -631,24 +644,32 @@ function shortcuts(event: KeyboardEvent) {
 													<Check size={15} />
 												{/if}</Dropdown.Item
 											>
-										{/each}</Dropdown.Content
+										{/each}
+										<Dropdown.Separator />
+										<Dropdown.Label>Reasoning effort</Dropdown.Label>
+										{#if app.selectedModel?.supportedReasoningEfforts.length}
+											<Dropdown.RadioGroup
+												class="effort-scale"
+												aria-label="Reasoning effort"
+												bind:value={app.effort}
+											>
+												{#each app.selectedModel.supportedReasoningEfforts as option}
+													<Dropdown.RadioItem
+														value={option.reasoningEffort}
+														class="effort-step"
+														title={option.description}
+													>
+														<span class="effort-step-dot"></span>
+														<span class="sr-only"
+															>{option.reasoningEffort.charAt(0).toUpperCase() +
+																option.reasoningEffort.slice(1)}</span
+														>
+													</Dropdown.RadioItem>
+												{/each}
+											</Dropdown.RadioGroup>
+										{/if}</Dropdown.Content
 									></Dropdown.Root
 								>
-								{#if app.selectedModel?.supportedReasoningEfforts.length}
-									<span class="toolbar-divider"></span
-									><select aria-label="Reasoning effort" disabled={app.busy} bind:value={app.effort}>
-										{#each app.selectedModel.supportedReasoningEfforts as option}
-											<option value={option.reasoningEffort}>
-												{option.reasoningEffort
-													.charAt(0)
-													.toUpperCase() +
-													option.reasoningEffort.slice(
-														1,
-													)}
-											</option>
-										{/each}
-									</select>
-								{/if}
 							</div>
 							{#if app.activeTurn}
 								<Button size="icon" aria-label="Stop generation" onclick={() => app.stop()}
