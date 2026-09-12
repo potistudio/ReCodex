@@ -237,11 +237,13 @@ test("effort positions flatten near steps and depend on position rather than tim
 		offsets.push(bounds.x - initial.x);
 	}
 	expect(offsets[0]).toBeCloseTo(0, 1);
-	expect(offsets[1]).toBeGreaterThan(0);
-	expect(offsets[1]).toBeLessThan(interval * 0.02);
-	expect(offsets[3]).toBeCloseTo(interval / 2, 1);
-	expect(offsets[5]).toBeGreaterThan(interval * 0.98);
-	expect(offsets[5]).toBeLessThan(interval);
+	expect(offsets[1]).toBeCloseTo(0, 1);
+	expect(offsets[2]).toBeGreaterThan(0);
+	expect(offsets[2]).toBeLessThan(interval * 0.01);
+	expect(offsets[3]).toBeCloseTo(interval / 2, 0);
+	expect(offsets[4]).toBeGreaterThan(interval * 0.99);
+	expect(offsets[4]).toBeLessThan(interval);
+	expect(offsets[5]).toBeCloseTo(interval, 1);
 	expect(offsets[6]).toBeCloseTo(interval, 1);
 	for (let index = fractions.length - 1; index >= 0; index--) {
 		await page.mouse.move(x + interval * fractions[index], y, { steps: 5 });

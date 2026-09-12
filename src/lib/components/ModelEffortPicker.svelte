@@ -53,7 +53,9 @@ function updatePointerProgress(event: PointerEvent) {
 	const interval = Math.floor(position);
 	const t = position - interval;
 	// Zero slope at each step creates spatial detents without time-based interpolation.
-	const eased = t * t * t * (t * (6 * t - 15) + 10);
+	const towardNext = t ** 5;
+	const towardPrevious = (1 - t) ** 5;
+	const eased = towardNext / (towardPrevious + towardNext);
 	pointerProgress = (interval + eased) / intervals;
 }
 
