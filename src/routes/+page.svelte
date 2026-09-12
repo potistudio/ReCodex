@@ -432,24 +432,6 @@ function shortcuts(event: KeyboardEvent) {
 						><PanelLeftOpen /></Button
 					>
 				{/if}
-				<Dropdown.Root
-					><Dropdown.Trigger class="model-trigger" disabled={!app.models.length || app.busy}
-						><span>{app.selectedModel?.displayName || "Codex"}</span>
-						<ChevronDown size={15} /></Dropdown.Trigger
-					><Dropdown.Content align="start" class="w-80"
-						><Dropdown.Label>Choose a model</Dropdown.Label>
-						{#each app.models as model}
-							<Dropdown.Item onclick={() => app.selectModel(model.model)} class="model-option"
-								><div>
-									<strong>{model.displayName}</strong><small>{model.description}</small>
-								</div>
-								{#if app.model === model.model}
-									<Check size={15} />
-								{/if}</Dropdown.Item
-							>
-						{/each}</Dropdown.Content
-					></Dropdown.Root
-				>
 			</div>
 			<div class="topbar-right">
 				<span
@@ -629,6 +611,28 @@ function shortcuts(event: KeyboardEvent) {
 								<span
 									>{app.project?.name ||
 										"Select a project"}</span
+								>
+								<span class="toolbar-divider"></span>
+								<Dropdown.Root
+									><Dropdown.Trigger class="model-trigger" disabled={!app.models.length || app.busy}
+										><span>{app.selectedModel?.displayName || "Codex"}</span>
+										<ChevronDown size={12} /></Dropdown.Trigger
+									><Dropdown.Content align="start" class="w-80"
+										><Dropdown.Label>Choose a model</Dropdown.Label>
+										{#each app.models as model}
+											<Dropdown.Item
+												onclick={() => app.selectModel(model.model)}
+												class="model-option"
+												><div>
+													<strong>{model.displayName}</strong
+													><small>{model.description}</small>
+												</div>
+												{#if app.model === model.model}
+													<Check size={15} />
+												{/if}</Dropdown.Item
+											>
+										{/each}</Dropdown.Content
+									></Dropdown.Root
 								>
 								{#if app.selectedModel?.supportedReasoningEfforts.length}
 									<span class="toolbar-divider"></span
