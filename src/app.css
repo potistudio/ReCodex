@@ -384,7 +384,7 @@
 		inset 0 0 0 1px rgb(0 0 0 / 50%),
 		0 4px 12px #0000000d,
 		0 12px 28px #00000006;
-	backdrop-filter: blur(20px);
+	backdrop-filter: blur(32px);
 	z-index: 50;
 	outline: none;
 }
