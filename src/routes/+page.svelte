@@ -9,7 +9,6 @@ import {
 	Folder,
 	FolderPlus,
 	LoaderCircle,
-	Moon,
 	MoreHorizontal,
 	PanelLeftClose,
 	PanelLeftOpen,
@@ -21,7 +20,6 @@ import {
 	Sparkles,
 	Square,
 	SquarePen,
-	Sun,
 	X,
 } from "@lucide/svelte";
 import { isTauri } from "@tauri-apps/api/core";
@@ -31,10 +29,12 @@ import { App } from "$lib/app.svelte";
 import Approval from "$lib/components/Approval.svelte";
 import FilePanel from "$lib/components/FilePanel.svelte";
 import Message from "$lib/components/Message.svelte";
+import ThemePicker from "$lib/components/ThemePicker.svelte";
 import { Button } from "$lib/components/ui/button";
 import * as Dialog from "$lib/components/ui/dialog";
 import * as Dropdown from "$lib/components/ui/dropdown-menu";
 import { Input } from "$lib/components/ui/input";
+import { applyTheme, readTheme } from "$lib/themes";
 import type { Project, RateLimitSnapshot, RateLimitWindow } from "$lib/types";
 import { formatResetTime, formatTokenCount, formatUsageWindow, remainingPercent } from "$lib/usage";
 import { workingState } from "$lib/working";
@@ -49,7 +49,7 @@ let fileDirty = $state(false);
 let settingsOpen = $state(false);
 let renameOpen = $state(false);
 let projectName = $state("");
-let dark = $state(false);
+let theme = $state(readTheme());
 let chatScroll = $state<HTMLDivElement>();
 let composer = $state<HTMLTextAreaElement>();
 let scrollMode = $state<"follow" | "free">("follow");
@@ -99,7 +99,6 @@ function startWorkLabelTransition(nextLabel: string) {
 	}, labelTransitionDuration);
 }
 onMount(() => {
-	dark = localStorage.getItem("recodex-theme") === "dark";
 	void app.init();
 	return () => {
 		if (labelTransitionTimer) clearTimeout(labelTransitionTimer);
@@ -107,8 +106,7 @@ onMount(() => {
 	};
 });
 $effect(() => {
-	document.documentElement.classList.toggle("dark", dark);
-	localStorage.setItem("recodex-theme", dark ? "dark" : "light");
+	applyTheme(theme);
 });
 $effect(() => {
 	const nextLabel = activeWork.label;
@@ -710,16 +708,7 @@ function shortcuts(event: KeyboardEvent) {
 			><Dialog.Title>Settings</Dialog.Title
 			><Dialog.Description>A workspace that feels like yours.</Dialog.Description></Dialog.Header
 		>
-		<div class="settings-row">
-			<span><strong>Appearance</strong><small>Choose your preferred theme</small></span
-			><Button variant="outline" onclick={() => (dark = !dark)}
-				>{#if dark}
-					<Sun />Light
-				{:else}
-					<Moon />Dark
-				{/if}</Button
-			>
-		</div>
+		<ThemePicker bind:value={theme} />
 		<div class="settings-row">
 			<span
 				><strong>Codex connection</strong

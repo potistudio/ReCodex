@@ -11,7 +11,7 @@ test("browser preview, suggestions, and theme", async ({ page }) => {
 	await expect(page.getByRole("textbox", { name: "Message Codex" })).toHaveValue(/Give me a concise overview/);
 	await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
 	await page.getByRole("button", { name: /Your workspace/ }).click();
-	await page.getByRole("button", { name: "Dark", exact: true }).click();
+	await page.getByRole("radio", { name: "ReCodex Dark", exact: true }).check();
 	await expect(page.locator("html")).toHaveClass("dark");
 });
 
