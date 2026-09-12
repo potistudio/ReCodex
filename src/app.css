@@ -348,6 +348,15 @@
 .model-effort-trigger:disabled {
 	opacity: 0.55;
 }
+.model-effort-trigger-copy > span {
+	transition:
+		opacity var(--motion-fast) ease,
+		visibility var(--motion-fast);
+}
+.model-effort-trigger-copy > [aria-hidden="true"] {
+	visibility: hidden;
+	opacity: 0;
+}
 .model-effort-selection {
 	display: inline-flex;
 	align-items: center;

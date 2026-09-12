@@ -102,17 +102,20 @@ $effect(() => {
 	<Popover.Trigger
 		class="model-effort-trigger"
 		disabled={disabled || !models.length}
-		aria-label={`${selectedModel?.displayName || "Codex"} · ${effortLabel(selectedEffort)}`}
+		aria-label={open ? "Selecting model..." : `${selectedModel?.displayName || "Codex"} · ${effortLabel(selectedEffort)}`}
 		title={selectedModel?.displayName}
 	>
-		<span class="model-effort-selection">
-			<span class="motion-copy">
-				{#key model}
-					<span transition:appear={{ y: 4 }}>{selectedModel?.displayName || "Codex"}</span>
-				{/key}
+		<span class="motion-copy model-effort-trigger-copy">
+			<span class="model-effort-selection" aria-hidden={open}>
+				<span class="motion-copy">
+					{#key model}
+						<span transition:appear={{ y: 4 }}>{selectedModel?.displayName || "Codex"}</span>
+					{/key}
+				</span>
+				<span>·</span>
+				{@render effortText()}
 			</span>
-			<span>·</span>
-			{@render effortText()}
+			<span class="model-effort-selecting" aria-hidden={!open}>Selecting model...</span>
 		</span>
 		<ChevronDown size={12} aria-hidden="true" />
 	</Popover.Trigger>

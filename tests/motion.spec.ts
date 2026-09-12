@@ -151,7 +151,7 @@ test("dragging effort keeps the composer label and slider anchored", async ({ pa
 	await trigger.click();
 	const slider = page.getByRole("slider", { name: "Reasoning effort" });
 	await slider.press("Home");
-	await expect(trigger).toHaveAccessibleName("Model A · Low");
+	await expect(trigger).toHaveAccessibleName("Selecting model...");
 	await expect.poll(() => trigger.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(0);
 	const bounds = await slider.boundingBox();
 	if (!bounds) throw new Error("The effort slider is missing");
@@ -185,7 +185,7 @@ test("dragging effort keeps the composer label and slider anchored", async ({ pa
 	await page.mouse.move(bounds.x + 14, y, { steps: 36 });
 	await page.mouse.up();
 	await expect(slider).toHaveAttribute("aria-valuetext", "Low");
-	await expect(trigger).toHaveAccessibleName("Model A · Low");
+	await expect(trigger).toHaveAccessibleName("Selecting model...");
 	await expect.poll(() => trigger.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(0);
 	const samples = await page.evaluate(() => {
 		const host = window as unknown as {
