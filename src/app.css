@@ -328,7 +328,6 @@
 	gap: 6px;
 	align-items: center;
 	justify-content: center;
-	min-width: 112px;
 	font-weight: 550;
 	font-size: 11px;
 	white-space: nowrap;
@@ -348,26 +347,23 @@
 .model-effort-trigger:disabled {
 	opacity: 0.55;
 }
-.model-effort-trigger-copy > span {
-	transition:
-		opacity var(--motion-fast) ease,
-		visibility var(--motion-fast);
+.model-effort-trigger-copy {
+	flex-shrink: 0;
+	overflow: clip;
+	transition: width var(--motion-normal) var(--motion-ease);
 }
-.model-effort-trigger-copy > [aria-hidden="true"] {
-	visibility: hidden;
-	opacity: 0;
+.model-effort-trigger-label {
+	display: block;
+	width: max-content;
 }
-.model-effort-selection {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.35em;
-	text-align: left;
+.model-effort-trigger-label > span {
+	display: block;
 }
 .effort-label-copy {
 	white-space: nowrap;
 }
 .effort-label-size {
-	/* Reserve the widest supported label so dragging cannot move the popover anchor. */
+	/* Keep the model-menu chevron stationary while effort labels change. */
 	visibility: hidden;
 }
 .model-effort-popover {

@@ -20,11 +20,15 @@ let {
 } = $props();
 
 let open = $state(false);
+let triggerLabelBounds = $state<DOMRectReadOnly>();
 let pointerProgress = $state<number | null>(null);
 let drag: { pointerId: number; slider: HTMLInputElement; grabOffset: number } | null = null;
 const selectedModel = $derived(models.find((entry) => entry.model === model));
 const efforts = $derived(selectedModel?.supportedReasoningEfforts ?? []);
 const selectedEffort = $derived(effort || selectedModel?.defaultReasoningEffort || "");
+const triggerLabel = $derived(
+	open ? "Selecting model..." : `${selectedModel?.displayName || "Codex"} · ${effortLabel(selectedEffort)}`,
+);
 const effortLabels = $derived([
 	...new Set([...efforts.map((option) => effortLabel(option.reasoningEffort)), effortLabel(selectedEffort)]),
 ]);
@@ -102,20 +106,18 @@ $effect(() => {
 	<Popover.Trigger
 		class="model-effort-trigger"
 		disabled={disabled || !models.length}
-		aria-label={open ? "Selecting model..." : `${selectedModel?.displayName || "Codex"} · ${effortLabel(selectedEffort)}`}
+		aria-label={triggerLabel}
 		title={selectedModel?.displayName}
 	>
-		<span class="motion-copy model-effort-trigger-copy">
-			<span class="model-effort-selection" aria-hidden={open}>
-				<span class="motion-copy">
-					{#key model}
-						<span transition:appear={{ y: 4 }}>{selectedModel?.displayName || "Codex"}</span>
-					{/key}
-				</span>
-				<span>·</span>
-				{@render effortText()}
+		<span
+			class="model-effort-trigger-copy"
+			style:width={triggerLabelBounds ? `${triggerLabelBounds.width}px` : undefined}
+		>
+			<span class="model-effort-trigger-label" bind:contentRect={triggerLabelBounds}>
+				{#key triggerLabel}
+					<span class:model-effort-selecting={open} in:appear={{ y: 4 }}>{triggerLabel}</span>
+				{/key}
 			</span>
-			<span class="model-effort-selecting" aria-hidden={!open}>Selecting model...</span>
 		</span>
 		<ChevronDown size={12} aria-hidden="true" />
 	</Popover.Trigger>

@@ -146,8 +146,11 @@ test("effort fill and thumb update together without position transitions", async
 		.toBeCloseTo(start, 0);
 });
 
-test("dragging effort keeps the composer label and slider anchored", async ({ page }) => {
+test("the composer fits the visible label and stays anchored while dragging effort", async ({ page }) => {
 	const trigger = page.locator(".model-effort-trigger");
+	await expect(trigger).toHaveAccessibleName("Model A · Medium");
+	await expect.poll(() => trigger.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(0);
+	const initialWidth = await trigger.evaluate((element) => element.getBoundingClientRect().width);
 	await trigger.click();
 	const slider = page.getByRole("slider", { name: "Reasoning effort" });
 	await slider.press("Home");
@@ -200,6 +203,14 @@ test("dragging effort keeps the composer label and slider anchored", async ({ pa
 		const values = samples.map((sample) => sample[coordinate]);
 		expect(Math.max(...values) - Math.min(...values), coordinate).toBeLessThan(1);
 	}
+	await slider.press("Escape");
+	await expect(trigger).toHaveAccessibleName("Model A · Low");
+	await expect
+		.poll(() => trigger.evaluate((element) => element.getBoundingClientRect().width))
+		.toBeLessThan(initialWidth - 10);
+	await expect
+		.poll(() => page.evaluate(() => (window as unknown as { motionEvents: string[] }).motionEvents))
+		.toContain("width");
 });
 
 test("effort positions flatten near steps and depend on position rather than time or direction", async ({ page }) => {
