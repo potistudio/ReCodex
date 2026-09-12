@@ -26,8 +26,16 @@ let triggerLabelWidth = $state<number>();
 let pointerProgress = $state<number | null>(null);
 let previousEffortIndex = $state<number>();
 let effortRollDirection = $state(1);
+let previousModelIndex = $state<number>();
+let modelRollDirection = $state(1);
 let drag: { pointerId: number; slider: HTMLInputElement; grabOffset: number } | null = null;
 const selectedModel = $derived(models.find((entry) => entry.model === model));
+const modelIndex = $derived(
+	Math.max(
+		0,
+		models.findIndex((entry) => entry.model === model),
+	),
+);
 const efforts = $derived(selectedModel?.supportedReasoningEfforts ?? []);
 const selectedEffort = $derived(effort || selectedModel?.defaultReasoningEffort || "");
 const triggerLabel = $derived(
@@ -49,6 +57,10 @@ $effect.pre(() => {
 		effortRollDirection = Math.sign(effortIndex - previousEffortIndex);
 	}
 	previousEffortIndex = effortIndex;
+	if (previousModelIndex !== undefined && modelIndex !== previousModelIndex) {
+		modelRollDirection = Math.sign(modelIndex - previousModelIndex);
+	}
+	previousModelIndex = modelIndex;
 });
 
 function effortLabel(value: string) {
@@ -167,9 +179,13 @@ $effect(() => {
 								{@render effortText()}
 								<ChevronRight size={12} aria-hidden="true" />
 							</span>
-							<span class="motion-copy">
+							<span class="motion-copy model-effort-name-copy">
 								{#key model}
-									<span class="model-effort-name" transition:appear={{ y: 4 }}>
+									<span
+										class="model-effort-name"
+										in:rollIn={{ y: 8 * modelRollDirection }}
+										out:rollOut={{ y: -8 * modelRollDirection }}
+									>
 										{selectedModel?.displayName || "Codex"}
 									</span>
 								{/key}

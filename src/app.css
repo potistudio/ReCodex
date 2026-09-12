@@ -453,6 +453,9 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
+.model-effort-name-copy {
+	overflow: clip;
+}
 .model-picker-menu {
 	width: 300px;
 	max-width: calc(100vw - 24px);

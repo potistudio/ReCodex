@@ -40,6 +40,18 @@ test.beforeEach(async ({ page }) => {
 									(reasoningEffort) => ({ reasoningEffort, description: reasoningEffort }),
 								),
 							},
+							{
+								id: "model-b",
+								model: "model-b",
+								displayName: "Model B",
+								description: "Alternative preview model",
+								isDefault: false,
+								hidden: false,
+								defaultReasoningEffort: "high",
+								supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"].map(
+									(reasoningEffort) => ({ reasoningEffort, description: reasoningEffort }),
+								),
+							},
 						],
 						nextCursor: null,
 					};
@@ -177,6 +189,39 @@ test("effort labels roll in the direction of the selected grade", async ({ page 
 	const lowered = await sampleRoll();
 	const loweredTo = lowered.find(({ label }) => label === "Medium");
 	expect(loweredTo?.y).toBeLessThan(0);
+});
+
+test("model labels roll in the direction of the selected model", async ({ page }) => {
+	await page.locator(".model-effort-trigger").click();
+
+	async function sampleRoll() {
+		return page.locator(".model-effort-name-copy").evaluate((element) => {
+			const labels = [...element.querySelectorAll<HTMLElement>(".model-effort-name")];
+			if (labels.length !== 2) throw new Error("The outgoing and incoming model labels are missing");
+			return labels.map((label) => {
+				const animation = label.getAnimations().find((entry) => entry.effect instanceof KeyframeEffect);
+				if (!animation?.effect) throw new Error("The model label is not rolling");
+				animation.pause();
+				animation.currentTime = Number(animation.effect.getTiming().duration) / 2;
+				return {
+					label: label.textContent,
+					y: new DOMMatrixReadOnly(getComputedStyle(label).transform).m42,
+				};
+			});
+		});
+	}
+
+	const chooseModel = page.getByRole("button", { name: "Choose model", exact: true });
+	await chooseModel.click();
+	await page.getByRole("menuitemradio", { name: /Model B/ }).click();
+	const raised = await sampleRoll();
+	expect(raised.find(({ label }) => label === "Model B")?.y).toBeGreaterThan(0);
+
+	await page.waitForTimeout(200);
+	await chooseModel.click();
+	await page.getByRole("menuitemradio", { name: /Model A/ }).click();
+	const lowered = await sampleRoll();
+	expect(lowered.find(({ label }) => label === "Model A")?.y).toBeLessThan(0);
 });
 
 test("the composer keeps its width while selecting and resizes on confirmation", async ({ page }) => {
