@@ -103,6 +103,12 @@ test("hover, dialogs, and nested popovers animate and restore focus", async ({ p
 	await trigger.click();
 	const popover = page.getByRole("dialog", { name: "Model and reasoning effort" });
 	await sampleEntrance(popover);
+	const popoverBorder = await popover.evaluate((element) => {
+		const styles = getComputedStyle(element);
+		return { outer: styles.borderTopColor, shadows: styles.boxShadow };
+	});
+	expect(popoverBorder.outer).toBe("rgba(255, 255, 255, 0.5)");
+	expect(popoverBorder.shadows).toContain("rgba(0, 0, 0, 0.5) 0px 0px 0px 1px inset");
 	const chooseModel = page.getByRole("button", { name: "Choose model", exact: true });
 	await chooseModel.click();
 	await sampleEntrance(page.locator(".model-picker-menu"));
