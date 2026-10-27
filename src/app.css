@@ -780,15 +780,6 @@ textarea,
 	font-size: 12px;
 	margin-bottom: 12px;
 }
-.mini-mark {
-	width: 24px;
-	height: 24px;
-	border-radius: 8px;
-	background: var(--accent);
-	display: grid;
-	place-items: center;
-	color: var(--primary);
-}
 .markdown {
 	font-size: 13px;
 	line-height: 1.85;

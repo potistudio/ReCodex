@@ -66,7 +66,6 @@ $effect(() => {
 {:else if item.type === "agentMessage" || item.type === "plan"}
 	<article class="assistant-message">
 		<div class="message-author">
-			<span class="mini-mark">⌘</span>
 			ReCodex
 			{#if item.type === "agentMessage" && tokenUsage}
 				<span class="message-token-usage">· {formatTokenCount(tokenUsage.totalTokens)} tokens</span>
