@@ -326,7 +326,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 										params: {
 											threadId: thread.id,
 											itemId: "answer-1",
-											delta: "This is a ",
+											delta: "This is a **",
 										},
 									});
 									emit({
@@ -334,7 +334,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 										params: {
 											threadId: thread.id,
 											itemId: "answer-1",
-											delta: "SvelteKit",
+											delta: "SvelteKit**",
 										},
 									});
 									emit({
@@ -441,8 +441,8 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 			.evaluate((element) => getComputedStyle(element).animationName.includes("working-label-push-in")),
 	).toBe(true);
 	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
-	await expect(page.locator(".message-append").filter({ hasText: "This is a" })).toBeVisible();
-	await expect(page.locator(".message-append")).toHaveCount(2);
+	await expect(page.locator(".streaming-markdown p")).toHaveText("This is a SvelteKit");
+	await expect(page.locator(".streaming-markdown strong")).toHaveText("SvelteKit");
 	await page.getByRole("button", { name: "Background conversation", exact: true }).click();
 	await expect(page.locator(".markdown")).toContainText("Background conversation");
 	await expect(page.getByRole("button", { name: "New chat" })).toBeEnabled();
