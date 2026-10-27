@@ -2,7 +2,6 @@
 import {
 	ArrowUp,
 	ArrowUpRight,
-	Check,
 	ChevronDown,
 	Code2,
 	FileCode,
@@ -16,7 +15,6 @@ import {
 	Plus,
 	Search,
 	Settings2,
-	ShieldCheck,
 	Square,
 	SquarePen,
 	X,
@@ -28,11 +26,13 @@ import { App } from "$lib/app.svelte";
 import Approval from "$lib/components/Approval.svelte";
 import FilePanel from "$lib/components/FilePanel.svelte";
 import Message from "$lib/components/Message.svelte";
+import ModelEffortPicker from "$lib/components/ModelEffortPicker.svelte";
 import ThemePicker from "$lib/components/ThemePicker.svelte";
 import { Button } from "$lib/components/ui/button";
 import * as Dialog from "$lib/components/ui/dialog";
 import * as Dropdown from "$lib/components/ui/dropdown-menu";
 import { Input } from "$lib/components/ui/input";
+import { appear, reveal } from "$lib/motion";
 import { applyTheme, readTheme } from "$lib/themes";
 import type { Project, RateLimitSnapshot, RateLimitWindow } from "$lib/types";
 import { formatResetTime, formatTokenCount, formatUsageWindow, remainingPercent } from "$lib/usage";
@@ -288,132 +288,134 @@ function shortcuts(event: KeyboardEvent) {
 
 <div class="app-shell" class:sidebar-hidden={!sidebar}>
 	{#if sidebar}
-		<aside class="sidebar">
-			<div class="brand-row">
-				<a
-					href="/"
-					class="brand"
-					onclick={(event) => {
+		<aside class="sidebar" transition:reveal={{ axis: "x" }}>
+			<div class="panel-content">
+				<div class="brand-row">
+					<a
+						href="/"
+						class="brand"
+						onclick={(event) => {
 						event.preventDefault();
 						newChat();
 					}}
-					><span class="brand-mark"><Code2 size={21} strokeWidth={2.1} /></span>ReCodex</a
-				><Button variant="ghost" size="icon" aria-label="Hide sidebar" onclick={() => (sidebar = false)}
-					><PanelLeftClose /></Button
-				>
-			</div>
-			<nav class="primary-nav" aria-label="Workspace">
-				<button type="button" onclick={newChat} disabled={!app.connected || app.loading}>
-					<SquarePen size={18} /><span>New chat</span><kbd>Ctrl ⇧ O</kbd>
-				</button>
-				<button type="button" onclick={() => (searchOpen = !searchOpen)}>
-					<Search size={18} />
-					<span>Search chats</span><kbd>Ctrl K</kbd>
-				</button>
-			</nav>
-			{#if searchOpen}
-				<div class="sidebar-search">
-					<Input aria-label="Search chats" placeholder="Search this project…" bind:value={search} />
-				</div>
-			{/if}
-			<div class="section-heading">
-				<span>Projects</span
-				><Button
-					variant="ghost"
-					size="icon-xs"
-					aria-label="Add project"
-					disabled={app.busy || !isTauri()}
-					onclick={addProject}
-					><Plus /></Button
-				>
-			</div>
-			<div class="project-list">
-				{#each app.projects as project}
-					<button
-						type="button"
-						class:selected={app.project?.path === project.path}
-						disabled={app.busy}
-						onclick={() => chooseProject(project)}
-						title={project.path}
+						><span class="brand-mark"><Code2 size={21} strokeWidth={2.1} /></span>ReCodex</a
+					><Button variant="ghost" size="icon" aria-label="Hide sidebar" onclick={() => (sidebar = false)}
+						><PanelLeftClose /></Button
 					>
-						<Folder size={17} />
-						<span class="truncate">{project.name}</span>
+				</div>
+				<nav class="primary-nav" aria-label="Workspace">
+					<button type="button" onclick={newChat} disabled={!app.connected || app.loading}>
+						<SquarePen size={18} /><span>New chat</span><kbd>Ctrl ⇧ O</kbd>
 					</button>
-				{/each}
-			</div>
-			<div class="section-heading recent-heading">
-				<span>Recent chats</span>
-				{#if app.loading}
-					<LoaderCircle class="spin" size={13} />
+					<button type="button" onclick={() => (searchOpen = !searchOpen)}>
+						<Search size={18} />
+						<span>Search chats</span><kbd>Ctrl K</kbd>
+					</button>
+				</nav>
+				{#if searchOpen}
+					<div class="sidebar-search" transition:reveal>
+						<Input aria-label="Search chats" placeholder="Search this project…" bind:value={search} />
+					</div>
 				{/if}
-			</div>
-			<div class="thread-list">
-				{#each filteredThreads as thread}
-					<button
-						type="button"
-						class:selected={app.thread?.id === thread.id}
-						disabled={app.loading || !app.connected}
-						onclick={() => {
+				<div class="section-heading">
+					<span>Projects</span
+					><Button
+						variant="ghost"
+						size="icon-xs"
+						aria-label="Add project"
+						disabled={app.busy || !isTauri()}
+						onclick={addProject}
+						><Plus /></Button
+					>
+				</div>
+				<div class="project-list">
+					{#each app.projects as project}
+						<button
+							type="button"
+							class:selected={app.project?.path === project.path}
+							disabled={app.busy}
+							onclick={() => chooseProject(project)}
+							title={project.path}
+						>
+							<Folder size={17} />
+							<span class="truncate">{project.name}</span>
+						</button>
+					{/each}
+				</div>
+				<div class="section-heading recent-heading">
+					<span>Recent chats</span>
+					{#if app.loading}
+						<LoaderCircle class="spin" size={13} />
+					{/if}
+				</div>
+				<div class="thread-list">
+					{#each filteredThreads as thread}
+						<button
+							type="button"
+							class:selected={app.thread?.id === thread.id}
+							disabled={app.loading || !app.connected}
+							onclick={() => {
 							scrollMode = "follow";
 							void app.resume(thread);
 						}}
-						title={thread.name || thread.preview}
-					>
-						<span class="thread-summary">
-							<span class="truncate">{thread.name || thread.preview || "Untitled chat"}</span>
-							{#if app.tokenUsageFor(thread.id)}
-								<small title="Total tokens reported by Codex for this session"
-									>{formatTokenCount(app.tokenUsageFor(thread.id).total.totalTokens)}
-									tokens</small
-								>
+							title={thread.name || thread.preview}
+						>
+							<span class="thread-summary">
+								<span class="truncate">{thread.name || thread.preview || "Untitled chat"}</span>
+								{#if app.tokenUsageFor(thread.id)}
+									<small title="Total tokens reported by Codex for this session"
+										>{formatTokenCount(app.tokenUsageFor(thread.id).total.totalTokens)}
+										tokens</small
+									>
+								{/if}
+							</span>
+							{#if app.isThreadRunning(thread.id) && app.thread?.id !== thread.id}
+								<LoaderCircle class="spin thread-running" size={14} aria-hidden="true" />
 							{/if}
-						</span>
-						{#if app.isThreadRunning(thread.id) && app.thread?.id !== thread.id}
-							<LoaderCircle class="spin thread-running" size={14} aria-hidden="true" />
-						{/if}
-					</button>
-				{/each}
-				{#if !filteredThreads.length}
-					<div class="sidebar-empty">
-						{search
+						</button>
+					{/each}
+					{#if !filteredThreads.length}
+						<div class="sidebar-empty">
+							{search
 							? "No matching chats."
 							: "Your conversations will appear here."}
-					</div>
-				{/if}
-				{#if app.cursor}
-					<Button
-						variant="ghost"
-						size="sm"
-						disabled={app.busy}
-						onclick={() => app.guard(() => app.loadThreads(true))}
-						>Load more</Button
-					>
-				{/if}
-			</div>
-			<div class="sidebar-footer">
-				<button
-					type="button"
-					class="account-button"
-					onclick={() => {
+						</div>
+					{/if}
+					{#if app.cursor}
+						<Button
+							variant="ghost"
+							size="sm"
+							disabled={app.busy}
+							onclick={() => app.guard(() => app.loadThreads(true))}
+							>Load more</Button
+						>
+					{/if}
+				</div>
+				<div class="sidebar-footer">
+					<button
+						type="button"
+						class="account-button"
+						onclick={() => {
 						settingsOpen = true;
 						void app.readRateLimits().catch(() => {});
 					}}
-				>
-					<span class="avatar">{app.account?.email?.[0]?.toUpperCase() || "R"}</span
-					><span
-						><strong
-							>{app.account?.email?.split("@")[0] ||
+					>
+						<span class="avatar">{app.account?.email?.[0]?.toUpperCase() || "R"}</span
+						><span
+							><strong
+								>{app.account?.email?.split("@")[0] ||
 								"Your workspace"}</strong
-						><small
-							><span class="connection-dot" class:online={app.connected}></span>
-							{app.connecting
+							><small
+								><span class="connection-dot" class:online={app.connected}></span>
+								{app.connecting
 								? "Connecting…"
 								: app.connected
 									? "Codex connected"
 								: "Not connected"}</small
-						></span
-					><Settings2 size={17} />
-				</button>
+							></span
+						><Settings2 size={17} />
+					</button>
+				</div>
 			</div>
 		</aside>
 	{/if}
@@ -425,24 +427,6 @@ function shortcuts(event: KeyboardEvent) {
 						><PanelLeftOpen /></Button
 					>
 				{/if}
-				<Dropdown.Root
-					><Dropdown.Trigger class="model-trigger" disabled={!app.models.length || app.busy}
-						><span>{app.selectedModel?.displayName || "Codex"}</span>
-						<ChevronDown size={15} /></Dropdown.Trigger
-					><Dropdown.Content align="start" class="w-80"
-						><Dropdown.Label>Choose a model</Dropdown.Label>
-						{#each app.models as model}
-							<Dropdown.Item onclick={() => app.selectModel(model.model)} class="model-option"
-								><div>
-									<strong>{model.displayName}</strong><small>{model.description}</small>
-								</div>
-								{#if app.model === model.model}
-									<Check size={15} />
-								{/if}</Dropdown.Item
-							>
-						{/each}</Dropdown.Content
-					></Dropdown.Root
-				>
 			</div>
 			<div class="topbar-right">
 				<span
@@ -495,7 +479,7 @@ function shortcuts(event: KeyboardEvent) {
 					</div>
 				{/if}
 				{#if app.error}
-					<div class="error-banner" role="alert">
+					<div class="error-banner" role="alert" transition:reveal>
 						<span>{app.error}</span
 						><Button
 							variant="ghost"
@@ -509,7 +493,7 @@ function shortcuts(event: KeyboardEvent) {
 				<div class="chat-scroll-frame">
 					<div class="chat-scroll" bind:this={chatScroll} use:trackManualScroll onscroll={updateScrollMode}>
 						{#if app.items.length === 0}
-							<div class="welcome">
+							<div class="welcome" in:appear>
 								{#if !app.project}
 									<Button
 										variant="outline"
@@ -576,6 +560,7 @@ function shortcuts(event: KeyboardEvent) {
 					{#if scrollMode === "free"}
 						<button
 							class="scroll-to-latest"
+							transition:appear
 							type="button"
 							aria-label="Scroll to latest"
 							onclick={followLatest}
@@ -611,21 +596,14 @@ function shortcuts(event: KeyboardEvent) {
 									>{app.project?.name ||
 										"Select a project"}</span
 								>
-								{#if app.selectedModel?.supportedReasoningEfforts.length}
-									<span class="toolbar-divider"></span
-									><select aria-label="Reasoning effort" disabled={app.busy} bind:value={app.effort}>
-										{#each app.selectedModel.supportedReasoningEfforts as option}
-											<option value={option.reasoningEffort}>
-												{option.reasoningEffort
-													.charAt(0)
-													.toUpperCase() +
-													option.reasoningEffort.slice(
-														1,
-													)}
-											</option>
-										{/each}
-									</select>
-								{/if}
+								<span class="toolbar-divider"></span>
+								<ModelEffortPicker
+									models={app.models}
+									model={app.model}
+									bind:effort={app.effort}
+									disabled={app.busy}
+									onModelChange={(model) => app.selectModel(model)}
+								/>
 							</div>
 							{#if app.activeTurn}
 								<Button size="icon" aria-label="Stop generation" onclick={() => app.stop()}
@@ -649,10 +627,6 @@ function shortcuts(event: KeyboardEvent) {
 							{/if}
 						</div>
 					</form>
-					<div class="composer-footnote">
-						<span><ShieldCheck size={12} />Review changes before you commit</span
-						><span>Shift + Enter for a new line</span>
-					</div>
 					{#if isTauri() && !app.connected}
 						<div class="connection-action">
 							<Button variant="outline" size="sm" disabled={app.connecting} onclick={() => app.connect()}

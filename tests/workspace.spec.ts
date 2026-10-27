@@ -173,7 +173,10 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 								description: "Fast model",
 								isDefault: true,
 								defaultReasoningEffort: "medium",
-								supportedReasoningEfforts: [{ reasoningEffort: "medium" }],
+								supportedReasoningEfforts: [
+									{ reasoningEffort: "low", description: "Faster responses" },
+									{ reasoningEffort: "medium", description: "Balanced reasoning" },
+								],
 							},
 							{
 								id: "m2",
@@ -182,7 +185,10 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 								description: "Reasoning model",
 								isDefault: false,
 								defaultReasoningEffort: "high",
-								supportedReasoningEfforts: [{ reasoningEffort: "high" }],
+								supportedReasoningEfforts: [
+									{ reasoningEffort: "medium", description: "Balanced reasoning" },
+									{ reasoningEffort: "high", description: "Deeper reasoning" },
+								],
 							},
 						],
 						nextCursor: null,
@@ -378,8 +384,31 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await page.addStyleTag({ content: `${hideCssStudio} .messages { padding-top: 1200px !important; }` });
 	await expect(page.getByText("Codex connected", { exact: true })).toBeVisible();
 	await expect(page.getByLabel("Codex rate-limit allowance")).toContainText("39% left");
-	await page.getByRole("button", { name: "Model A", exact: true }).click();
-	await page.getByRole("menuitem", { name: /Model B/ }).click();
+	const modelEffortTrigger = page.locator(".composer .model-effort-trigger");
+	await expect(modelEffortTrigger).toHaveAccessibleName("Model A · Medium");
+	await modelEffortTrigger.click();
+	await expect(modelEffortTrigger).toHaveAccessibleName("Selecting model...");
+	await expect(modelEffortTrigger.locator(".model-effort-selecting")).toBeVisible();
+	await expect(page.getByRole("dialog", { name: "Model and reasoning effort" })).toBeVisible();
+	await expect(page.locator(".model-effort-summary")).toContainText("Model A");
+	await page.getByRole("button", { name: "Model B, High" }).click();
+	await expect(modelEffortTrigger).toHaveAccessibleName("Selecting model...");
+	await expect(page.locator(".model-effort-summary")).toContainText("Model B");
+	const gearSelector = page.getByRole("button", { name: /Gear selector/ });
+	await expect(gearSelector).toHaveAccessibleName("Gear selector, Model B, High");
+	await gearSelector.focus();
+	await gearSelector.press("ArrowUp");
+	await expect(gearSelector).toHaveAccessibleName("Gear selector, Model B, Medium");
+	await expect(modelEffortTrigger).toHaveAccessibleName("Selecting model...");
+	await page.getByRole("button", { name: "Reset reasoning effort", exact: true }).click();
+	await expect(gearSelector).toHaveAccessibleName("Gear selector, Model B, High");
+	await page.getByRole("button", { name: "Model B, Medium" }).click();
+	await expect(gearSelector).toHaveAccessibleName("Gear selector, Model B, Medium");
+	await gearSelector.press("Escape");
+	await expect(page.getByRole("dialog", { name: "Model and reasoning effort" })).toBeHidden();
+	await expect(modelEffortTrigger).toHaveAccessibleName("Model B · Medium");
+	await expect(modelEffortTrigger.locator(".model-effort-selecting")).toBeHidden();
+	await expect(modelEffortTrigger).toBeFocused();
 	const composer = page.getByRole("textbox", { name: "Message Codex" });
 	await composer.fill("日本語の確定");
 	await composer.dispatchEvent("compositionstart");
@@ -464,9 +493,18 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(page.locator(".user-message")).toHaveCount(2);
 	expect(
 		await page.evaluate(
-			() => (window as unknown as { turnParams: { model: string; summary: string } }).turnParams.model,
+			() =>
+				(window as unknown as { turnParams: { effort: string; model: string; summary: string } }).turnParams
+					.model,
 		),
 	).toBe("model-b");
+	expect(
+		await page.evaluate(
+			() =>
+				(window as unknown as { turnParams: { effort: string; model: string; summary: string } }).turnParams
+					.effort,
+		),
+	).toBe("medium");
 	expect(
 		await page.evaluate(
 			() => (window as unknown as { turnParams: { model: string; summary: string } }).turnParams.summary,

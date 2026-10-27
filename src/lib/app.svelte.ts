@@ -53,7 +53,6 @@ export class App {
 	logs = $state<string[]>([]);
 	fileRevision = $state(0);
 	busy = $derived(this.sending || this.activeTurn !== null || this.loading);
-	selectedModel = $derived(this.models.find((model) => model.model === this.model));
 	private unlisten?: UnlistenFn;
 	private disposed = false;
 	private alternativeTurnIds = new Set<string>();

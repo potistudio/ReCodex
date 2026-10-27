@@ -1,0 +1,234 @@
+:root {
+	--motion-fast: 160ms;
+	--motion-normal: 240ms;
+	--motion-panel: 320ms;
+	--motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+	--motion-exit: cubic-bezier(0.4, 0, 1, 1);
+}
+
+:where(
+	button,
+	a,
+	input,
+	textarea,
+	select,
+	summary,
+	[role="menuitem"],
+	[role="menuitemradio"],
+	[role="menuitemcheckbox"],
+	.theme-option
+) {
+	transition:
+		background-color var(--motion-fast) ease,
+		color var(--motion-fast) ease,
+		border-color var(--motion-fast) ease,
+		box-shadow var(--motion-normal) var(--motion-ease),
+		opacity var(--motion-fast) ease,
+		transform var(--motion-normal) var(--motion-ease),
+		translate var(--motion-normal) var(--motion-ease),
+		scale var(--motion-fast) var(--motion-ease);
+}
+
+body,
+.sidebar,
+.composer,
+.file-panel,
+.avatar,
+.workspace-pill,
+.tool-item {
+	transition:
+		background-color var(--motion-normal) ease,
+		color var(--motion-normal) ease,
+		border-color var(--motion-normal) ease,
+		box-shadow var(--motion-normal) ease;
+}
+
+button:not(:disabled):not([aria-haspopup]):active {
+	scale: 0.98;
+}
+
+.suggestion-arrow,
+.model-effort-trigger > svg,
+.effort-reset > svg,
+.tool-item summary > svg:last-child {
+	transition:
+		translate var(--motion-normal) var(--motion-ease),
+		rotate var(--motion-normal) var(--motion-ease),
+		opacity var(--motion-fast) ease;
+}
+
+.suggestions > button:hover .suggestion-arrow {
+	translate: 2px -2px;
+	opacity: 1;
+}
+
+.model-effort-trigger[aria-expanded="true"] > svg {
+	rotate: 180deg;
+}
+
+.effort-reset:hover:not(:disabled) > svg {
+	rotate: -45deg;
+}
+
+.tool-item[open] summary > svg:last-child {
+	rotate: 90deg;
+}
+
+:is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], .model-effort-popover) {
+	--motion-x: 0px;
+	--motion-y: 0px;
+	transform-origin: var(
+		--bits-dropdown-menu-content-transform-origin,
+		var(--bits-popover-content-transform-origin, center)
+	);
+}
+
+:is(
+	[data-slot="dropdown-menu-content"],
+	[data-slot="dropdown-menu-sub-content"],
+	.model-effort-popover
+)[data-side="top"] {
+	--motion-y: 6px;
+}
+
+:is(
+	[data-slot="dropdown-menu-content"],
+	[data-slot="dropdown-menu-sub-content"],
+	.model-effort-popover
+)[data-side="bottom"] {
+	--motion-y: -6px;
+}
+
+:is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"])[data-side="left"] {
+	--motion-x: 6px;
+}
+
+:is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"])[data-side="right"] {
+	--motion-x: -6px;
+}
+
+[data-slot="dialog-content"] {
+	--motion-x: 0px;
+	--motion-y: 10px;
+	transform-origin: center;
+}
+
+:is(
+	[data-slot="dropdown-menu-content"],
+	[data-slot="dropdown-menu-sub-content"],
+	[data-slot="dialog-content"],
+	.model-effort-popover
+)[data-state="open"] {
+	animation: surface-in var(--motion-normal) var(--motion-ease) both;
+}
+
+:is(
+	[data-slot="dropdown-menu-content"],
+	[data-slot="dropdown-menu-sub-content"],
+	[data-slot="dialog-content"],
+	.model-effort-popover
+)[data-state="closed"] {
+	animation: surface-out var(--motion-fast) var(--motion-exit) both;
+	pointer-events: none;
+}
+
+[data-slot="dialog-overlay"][data-state="open"] {
+	animation: scrim-in var(--motion-normal) ease both;
+}
+
+[data-slot="dialog-overlay"][data-state="closed"] {
+	animation: scrim-out var(--motion-fast) ease both;
+	pointer-events: none;
+}
+
+.motion-copy {
+	display: grid;
+	min-width: 0;
+}
+
+.motion-copy > span {
+	grid-area: 1 / 1;
+	min-width: 0;
+}
+
+.panel-content {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-height: 0;
+	width: var(--reveal-width, 100%);
+}
+
+.sidebar > .panel-content {
+	padding: 20px 13px 12px;
+}
+
+.gear-lever {
+	transition:
+		left var(--motion-normal) var(--motion-ease),
+		top var(--motion-normal) var(--motion-ease);
+}
+
+.gear-gate.dragging .gear-lever {
+	transition: none;
+}
+
+@supports (interpolate-size: allow-keywords) {
+	.tool-item::details-content,
+	.diagnostics::details-content {
+		interpolate-size: allow-keywords;
+		block-size: 0;
+		opacity: 0;
+		overflow: clip;
+		transition:
+			block-size var(--motion-panel) var(--motion-ease),
+			opacity var(--motion-normal) ease,
+			content-visibility var(--motion-panel) allow-discrete;
+	}
+
+	.tool-item[open]::details-content,
+	.diagnostics[open]::details-content {
+		block-size: auto;
+		opacity: 1;
+	}
+}
+
+@keyframes surface-in {
+	from {
+		opacity: 0;
+		transform: translate3d(var(--motion-x), var(--motion-y), 0) scale(0.96);
+	}
+	to {
+		opacity: 1;
+		transform: translate3d(0, 0, 0) scale(1);
+	}
+}
+
+@keyframes surface-out {
+	from {
+		opacity: 1;
+		transform: translate3d(0, 0, 0) scale(1);
+	}
+	to {
+		opacity: 0;
+		transform: translate3d(var(--motion-x), var(--motion-y), 0) scale(0.98);
+	}
+}
+
+@keyframes scrim-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+@keyframes scrim-out {
+	from {
+		opacity: 1;
+	}
+	to {
+		opacity: 0;
+	}
+}
