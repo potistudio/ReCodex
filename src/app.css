@@ -123,6 +123,16 @@ textarea,
 	-webkit-user-select: text;
 	user-select: text;
 }
+.sidebar-toggle-fixed {
+	position: fixed;
+	z-index: 30;
+	top: 18px;
+	left: 128px;
+}
+.sidebar-drag-area {
+	height: 72px;
+	flex-shrink: 0;
+}
 .app-shell {
 	display: flex;
 	height: 100dvh;
@@ -314,6 +324,18 @@ textarea,
 	display: flex;
 	gap: 12px;
 	align-items: center;
+}
+.mac-window .topbar-left {
+	align-self: stretch;
+	flex: 1;
+	min-width: 0;
+}
+.mac-window.sidebar-hidden .topbar-left {
+	padding-left: 150px;
+}
+.topbar-drag-area {
+	align-self: stretch;
+	flex: 1;
 }
 .rate-limit-indicator {
 	display: flex;

@@ -43,6 +43,7 @@ let draft = $state("");
 let search = $state("");
 let searchOpen = $state(false);
 let sidebar = $state(true);
+let macTitlebar = $state(false);
 let filesOpen = $state(false);
 let fileDirty = $state(false);
 let settingsOpen = $state(false);
@@ -99,6 +100,7 @@ function startWorkLabelTransition(nextLabel: string) {
 	}, labelTransitionDuration);
 }
 onMount(() => {
+	macTitlebar = isTauri() && /Macintosh|Mac OS X/.test(navigator.userAgent);
 	void app.init();
 	return () => {
 		if (labelTransitionTimer) clearTimeout(labelTransitionTimer);
@@ -286,9 +288,28 @@ function shortcuts(event: KeyboardEvent) {
 	}}
 />
 
-<div class="app-shell" class:sidebar-hidden={!sidebar}>
+{#if macTitlebar}
+	<div class="sidebar-toggle-fixed">
+		<Button
+			variant="ghost"
+			size="icon"
+			aria-label={sidebar ? "Hide sidebar" : "Show sidebar"}
+			onclick={() => (sidebar = !sidebar)}
+		>
+			{#if sidebar}
+				<PanelLeftClose />
+			{:else}
+				<PanelLeftOpen />
+			{/if}
+		</Button>
+	</div>
+{/if}
+<div class="app-shell" class:sidebar-hidden={!sidebar} class:mac-window={macTitlebar}>
 	{#if sidebar}
 		<aside class="sidebar" transition:reveal={{ axis: "x" }}>
+			{#if macTitlebar}
+				<div class="sidebar-drag-area" data-tauri-drag-region></div>
+			{/if}
 			<div class="panel-content">
 				<div class="brand-row">
 					<a
@@ -299,9 +320,12 @@ function shortcuts(event: KeyboardEvent) {
 						newChat();
 					}}
 						><span class="brand-mark"><Code2 size={21} strokeWidth={2.1} /></span>ReCodex</a
-					><Button variant="ghost" size="icon" aria-label="Hide sidebar" onclick={() => (sidebar = false)}
-						><PanelLeftClose /></Button
 					>
+					{#if !macTitlebar}
+						<Button variant="ghost" size="icon" aria-label="Hide sidebar" onclick={() => (sidebar = false)}
+							><PanelLeftClose /></Button
+						>
+					{/if}
 				</div>
 				<nav class="primary-nav" aria-label="Workspace">
 					<button type="button" onclick={newChat} disabled={!app.connected || app.loading}>
@@ -422,10 +446,13 @@ function shortcuts(event: KeyboardEvent) {
 	<main class="main-workspace">
 		<header class="topbar">
 			<div class="topbar-left">
-				{#if !sidebar}
+				{#if !sidebar && !macTitlebar}
 					<Button variant="ghost" size="icon" aria-label="Show sidebar" onclick={() => (sidebar = true)}
 						><PanelLeftOpen /></Button
 					>
+				{/if}
+				{#if macTitlebar}
+					<div class="topbar-drag-area" data-tauri-drag-region></div>
 				{/if}
 			</div>
 			<div class="topbar-right">
