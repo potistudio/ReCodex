@@ -65,15 +65,16 @@ $effect(() => {
 	<div class="user-message"><p class:message-sent={item.renderKey}>{text}</p></div>
 {:else if item.type === "agentMessage" || item.type === "plan"}
 	<article class="assistant-message">
-		<div class="message-author">
-			ReCodex
-			{#if item.type === "agentMessage" && tokenUsage}
-				<span class="message-token-usage">· {formatTokenCount(tokenUsage.totalTokens)} tokens</span>
-			{/if}
-			{#if item.type === "plan"}
-				<span class="muted">· Plan</span>
-			{/if}
-		</div>
+		{#if (item.type === "agentMessage" && tokenUsage) || item.type === "plan"}
+			<div class="message-author">
+				{#if item.type === "agentMessage" && tokenUsage}
+					<span class="message-token-usage">{formatTokenCount(tokenUsage.totalTokens)} tokens</span>
+				{/if}
+				{#if item.type === "plan"}
+					<span class="muted">Plan</span>
+				{/if}
+			</div>
+		{/if}
 		{#if item.streaming}
 			<div class="markdown streaming-markdown">
 				{#each item.streamSegments ?? [] as segment, index (index)}
