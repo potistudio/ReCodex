@@ -720,10 +720,16 @@
 	text-align: center;
 }
 .messages {
+	display: flex;
+	flex-direction: column;
+	gap: 30px;
 	width: 100%;
 	max-width: 740px;
 	margin: 0 auto;
 	padding: 30px 0 24px;
+}
+.messages > :is(.tool-item, .activity, .approval-card) {
+	margin-block: 0;
 }
 .message-scroll-spacer {
 	height: 50vh;
@@ -732,7 +738,6 @@
 .user-message {
 	display: flex;
 	justify-content: flex-end;
-	margin: 0 0 29px;
 }
 .user-message > .message-sent {
 	transform-origin: right bottom;
@@ -749,10 +754,6 @@
 	overflow-wrap: anywhere;
 	font-size: 13px;
 }
-.assistant-message {
-	margin: 0 0 30px;
-}
-
 .message-append {
 	animation: message-append 320ms ease-out both;
 }
@@ -783,6 +784,9 @@
 }
 .markdown p {
 	margin-bottom: 1em;
+}
+.markdown > :last-child {
+	margin-bottom: 0;
 }
 .markdown h1,
 .markdown h2,
