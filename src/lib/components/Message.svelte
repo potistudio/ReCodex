@@ -5,6 +5,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { Button } from "$lib/components/ui/button";
+import { streamingMarkdown } from "$lib/streaming-markdown";
 import type { Item, TokenUsageBreakdown } from "$lib/types";
 import { formatTokenCount } from "$lib/usage";
 
@@ -79,7 +80,12 @@ $effect(() => {
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<!-- biome-ignore lint/a11y/noStaticElementInteractions: Delegates clicks from rendered markdown links. -->
 		<!-- biome-ignore lint/a11y/useKeyWithClickEvents: Keyboard activation is provided by the rendered markdown links. -->
-		<div class="markdown" class:streaming-markdown={item.streaming} onclick={link}>{@html html}</div>
+		<div
+			class="markdown"
+			class:streaming-markdown={item.streaming}
+			use:streamingMarkdown={{ html, streaming: item.streaming }}
+			onclick={link}
+		></div>
 		{#if text}
 			<Button
 				variant="ghost"
