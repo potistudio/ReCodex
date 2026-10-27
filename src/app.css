@@ -425,35 +425,6 @@
 	padding: 50px 0 60px;
 	text-align: center;
 }
-.welcome-eyebrow {
-	color: var(--muted-foreground);
-	font-size: 11px;
-	letter-spacing: 0.25px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 7px;
-	margin-bottom: 20px;
-}
-.welcome-eyebrow > span {
-	height: 5px;
-	width: 5px;
-	background: var(--primary);
-	border-radius: 100%;
-}
-.welcome h1 {
-	font-size: clamp(30px, 3.1vw, 43px);
-	line-height: 1.2;
-	font-weight: 470;
-	letter-spacing: -1.65px;
-	margin: 0 0 17px;
-}
-.welcome > p {
-	font-size: 14px;
-	line-height: 1.9;
-	color: var(--muted-foreground);
-	margin: 0 0 25px;
-}
 .workspace-pill {
 	font-size: 11px;
 	display: inline-flex;
@@ -1415,9 +1386,6 @@
 	.workspace-body:has(.file-panel) .welcome {
 		padding-block: 25px;
 	}
-	.workspace-body:has(.file-panel) .welcome h1 {
-		font-size: 27px;
-	}
 	.workspace-body:has(.file-panel) .composer-footnote > span:last-child {
 		display: none;
 	}
@@ -1475,9 +1443,6 @@
 	}
 	.composer-area {
 		padding-inline: 15px;
-	}
-	.welcome h1 {
-		font-size: 32px;
 	}
 	.suggestions {
 		grid-template-columns: 1fr;

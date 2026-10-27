@@ -518,11 +518,6 @@ function shortcuts(event: KeyboardEvent) {
 					<div class="chat-scroll" bind:this={chatScroll} use:trackManualScroll onscroll={updateScrollMode}>
 						{#if app.items.length === 0}
 							<div class="welcome">
-								<div class="welcome-eyebrow"><span></span>A little focus. A lot of possibility.</div>
-								<h1>What will you build?</h1>
-								<p>
-									Bring an idea. Make it real.<br>Your code and conversations, in one quiet workspace.
-								</p>
 								{#if !app.project}
 									<Button
 										variant="outline"
