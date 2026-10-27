@@ -201,9 +201,6 @@
 .project-list > button.selected {
 	font-weight: 550;
 }
-.project-list > button.add-project {
-	color: var(--muted-foreground);
-}
 .recent-heading {
 	padding-top: 27px;
 }

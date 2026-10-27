@@ -340,9 +340,6 @@ function shortcuts(event: KeyboardEvent) {
 						{/if}
 					</button>
 				{/each}
-				<button type="button" class="add-project" disabled={app.busy || !isTauri()} onclick={addProject}>
-					<FolderPlus size={17} /><span>Open a project</span>
-				</button>
 			</div>
 			<div class="section-heading recent-heading">
 				<span>Recent chats</span>
