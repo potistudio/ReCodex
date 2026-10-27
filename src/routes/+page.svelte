@@ -17,7 +17,6 @@ import {
 	Search,
 	Settings2,
 	ShieldCheck,
-	Sparkles,
 	Square,
 	SquarePen,
 	X,
@@ -210,10 +209,6 @@ function inputKey(event: KeyboardEvent) {
 		event.preventDefault();
 		if (ready && !app.busy) void send();
 	}
-}
-function useSuggestion(prompt: string) {
-	draft = prompt;
-	composer?.focus();
 }
 async function canLeaveFiles() {
 	return (
@@ -532,15 +527,6 @@ function shortcuts(event: KeyboardEvent) {
 										><span>Ready to create</span>
 									</div>
 								{/if}
-								<div class="suggestions">
-									{#each [{ icon: Code2, title: "Explore the code", detail: "Find your way around", prompt: "Give me a concise overview of this project, its architecture, and where to start." }, { icon: Sparkles, title: "Build something", detail: "Start with a small idea", prompt: "Help me build a new feature in this project. First, ask me what I want to create." }, { icon: FileCode, title: "Make it better", detail: "A fresh pair of eyes", prompt: "Review this project for concrete bugs and suggest the most useful fixes before making changes." }] as suggestion}
-										<button type="button" onclick={() => useSuggestion(suggestion.prompt)}>
-											<suggestion.icon size={20} strokeWidth={1.5} />
-											<strong>{suggestion.title}</strong><span>{suggestion.detail}</span>
-											<ArrowUpRight size={14} class="suggestion-arrow" />
-										</button>
-									{/each}
-								</div>
 							</div>
 						{:else}
 							<div class="messages">

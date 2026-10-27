@@ -444,51 +444,6 @@
 	border-radius: 100%;
 	background: var(--muted-foreground);
 }
-.suggestions {
-	display: grid;
-	grid-template-columns: repeat(3, 1fr);
-	gap: 12px;
-	text-align: left;
-	margin: 47px auto 0;
-	max-width: 660px;
-}
-.suggestions > button {
-	position: relative;
-	display: flex;
-	flex-direction: column;
-	align-items: start;
-	border: 1px solid var(--border);
-	border-radius: 14px;
-	padding: 19px 17px;
-	transition:
-		background 0.15s,
-		transform 0.15s;
-	background: var(--background);
-}
-.suggestions > button:hover {
-	background: var(--secondary);
-	transform: translateY(-2px);
-}
-.suggestions > button > svg:first-child {
-	color: var(--primary);
-	margin-bottom: 18px;
-}
-.suggestions strong {
-	font-size: 12px;
-	font-weight: 550;
-}
-.suggestions span {
-	font-size: 10px;
-	color: var(--muted-foreground);
-	margin-top: 5px;
-}
-.suggestion-arrow {
-	position: absolute;
-	top: 21px;
-	right: 16px;
-	color: var(--muted-foreground);
-	opacity: 0.5;
-}
 .composer-area {
 	padding: 12px 32px 22px;
 	width: 100%;
@@ -1372,17 +1327,6 @@
 	.file-panel {
 		width: 43%;
 	}
-	.workspace-body:has(.file-panel) .suggestions {
-		grid-template-columns: 1fr;
-		gap: 7px;
-		margin-top: 20px;
-	}
-	.workspace-body:has(.file-panel) .suggestions > button {
-		padding: 12px;
-	}
-	.workspace-body:has(.file-panel) .suggestions > button > svg:first-child {
-		display: none;
-	}
 	.workspace-body:has(.file-panel) .welcome {
 		padding-block: 25px;
 	}
@@ -1397,18 +1341,6 @@
 	.primary-nav kbd,
 	.topbar-hint,
 	.project-breadcrumb {
-		display: none;
-	}
-	.suggestions {
-		gap: 8px;
-	}
-	.suggestions > button {
-		padding: 15px 11px;
-	}
-	.suggestions span {
-		font-size: 9px;
-	}
-	.suggestion-arrow {
 		display: none;
 	}
 	.welcome {
@@ -1444,29 +1376,10 @@
 	.composer-area {
 		padding-inline: 15px;
 	}
-	.suggestions {
-		grid-template-columns: 1fr;
-		max-width: 310px;
-		margin-top: 25px;
-	}
-	.suggestions > button {
-		padding: 13px 16px 13px 46px;
-	}
-	.suggestions > button > svg:first-child {
-		position: absolute;
-		left: 15px;
-		top: 18px;
-	}
-	.suggestions span {
-		font-size: 10px;
-	}
 }
 @media (max-height: 800px) {
 	.welcome {
 		padding-block: 20px 25px;
-	}
-	.suggestions {
-		margin-top: 25px;
 	}
 }
 @media (prefers-reduced-motion: reduce) {
