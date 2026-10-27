@@ -380,8 +380,25 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(page.getByLabel("Codex rate-limit allowance")).toContainText("39% left");
 	await page.getByRole("button", { name: "Model A", exact: true }).click();
 	await page.getByRole("menuitem", { name: /Model B/ }).click();
-	await page.getByRole("textbox", { name: "Message Codex" }).fill("Explain this project");
+	const composer = page.getByRole("textbox", { name: "Message Codex" });
+	await composer.fill("日本語の確定");
+	await composer.dispatchEvent("compositionstart");
+	// Some engines do not expose isComposing on the confirmation key.
+	await composer.dispatchEvent("keydown", { key: "Enter", isComposing: false });
+	await expect(composer).toHaveValue("日本語の確定");
 	await page.getByRole("button", { name: "Send message", exact: true }).click();
+	await expect(composer).toHaveValue("日本語の確定");
+	await composer.dispatchEvent("compositionend");
+	// WebKit can emit compositionend before the confirming keydown.
+	await composer.dispatchEvent("keydown", { key: "Enter", keyCode: 229, isComposing: false });
+	await expect(composer).toHaveValue("日本語の確定");
+	await composer.dispatchEvent("keydown", { key: "Enter", isComposing: true });
+	await expect(composer).toHaveValue("日本語の確定");
+	expect(await page.evaluate(() => (window as unknown as { turnInputs?: unknown[] }).turnInputs)).toBeUndefined();
+	await composer.fill("Explain this project");
+	await composer.press("Shift+Enter");
+	await expect(composer).toHaveValue("Explain this project\n");
+	await composer.press("Enter");
 	await expect(page.locator(".user-message > .message-sent")).toBeVisible();
 	await expect(page.getByRole("button", { name: "Scroll to latest" })).toBeVisible();
 	await expect

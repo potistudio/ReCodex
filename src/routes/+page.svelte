@@ -51,6 +51,7 @@ let projectName = $state("");
 let theme = $state(readTheme());
 let chatScroll = $state<HTMLDivElement>();
 let composer = $state<HTMLTextAreaElement>();
+let composing = false;
 let scrollMode = $state<"follow" | "free">("follow");
 let manualScroll = false;
 let wheelTimer: ReturnType<typeof setTimeout> | undefined;
@@ -191,7 +192,7 @@ function centerLatestUserMessage() {
 }
 async function send() {
 	const text = draft.trim();
-	if (!text) return;
+	if (!text || composing || !ready || app.busy) return;
 	const wasFollowing = scrollMode === "follow";
 	draft = "";
 	if (!(await app.send(text))) {
@@ -205,7 +206,9 @@ async function send() {
 	composer?.focus();
 }
 function inputKey(event: KeyboardEvent) {
-	if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+	// WebKit may clear isComposing before the Enter that confirms an IME conversion.
+	if (composing || event.isComposing || event.keyCode === 229) return;
+	if (event.key === "Enter" && !event.shiftKey) {
 		event.preventDefault();
 		if (ready && !app.busy) void send();
 	}
@@ -593,6 +596,8 @@ function shortcuts(event: KeyboardEvent) {
 							bind:this={composer}
 							bind:value={draft}
 							onkeydown={inputKey}
+							oncompositionstart={() => (composing = true)}
+							oncompositionend={() => (composing = false)}
 							aria-label="Message Codex"
 							placeholder={app.project
 								? "Ask Codex to build, explain, or fix anything…"
