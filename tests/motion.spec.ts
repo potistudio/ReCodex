@@ -105,10 +105,17 @@ test("hover, dialogs, and nested popovers animate and restore focus", async ({ p
 	await sampleEntrance(popover);
 	const popoverBorder = await popover.evaluate((element) => {
 		const styles = getComputedStyle(element);
-		return { outer: styles.borderTopColor, shadows: styles.boxShadow };
+		return {
+			background: styles.backgroundColor,
+			blur: styles.backdropFilter,
+			outer: styles.borderTopColor,
+			shadows: styles.boxShadow,
+		};
 	});
-	expect(popoverBorder.outer).toBe("rgba(255, 255, 255, 0.5)");
-	expect(popoverBorder.shadows).toContain("rgba(0, 0, 0, 0.5) 0px 0px 0px 1px inset");
+	expect(popoverBorder.outer).toBe("rgba(255, 255, 255, 0.2)");
+	expect(popoverBorder.shadows).toContain("rgba(0, 0, 0, 0.1) 0px 0px 0px 1px inset");
+	expect(popoverBorder.background).toBe("rgba(255, 255, 255, 0.5)");
+	expect(popoverBorder.blur).toBe("blur(20px)");
 	const gear = page.getByRole("button", { name: /Gear selector/ });
 	await gear.focus();
 	await gear.press("ArrowRight");
