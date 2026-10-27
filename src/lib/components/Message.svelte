@@ -62,7 +62,7 @@ $effect(() => {
 </script>
 
 {#if item.type === "userMessage"}
-	<div class="user-message"><div class:message-sent={item.renderKey}>{text}</div></div>
+	<div class="user-message"><p class:message-sent={item.renderKey}>{text}</p></div>
 {:else if item.type === "agentMessage" || item.type === "plan"}
 	<article class="assistant-message">
 		<div class="message-author">

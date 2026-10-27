@@ -738,7 +738,8 @@
 	transform-origin: right bottom;
 	animation: user-message-send 480ms cubic-bezier(0, 0.8, 0.2, 1) both;
 }
-.user-message > div {
+.user-message > p {
+	margin: 0;
 	background: var(--secondary);
 	border-radius: 20px 20px 5px 20px;
 	padding: 12px 18px;
