@@ -335,9 +335,6 @@ function shortcuts(event: KeyboardEvent) {
 					>
 						<Folder size={17} />
 						<span class="truncate">{project.name}</span>
-						{#if app.project?.path === project.path}
-							<ChevronDown size={13} />
-						{/if}
 					</button>
 				{/each}
 			</div>
