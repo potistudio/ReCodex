@@ -226,6 +226,7 @@ test("the title bar stays fixed while the sidebar changes width", async ({ page 
 	expect(headerBounds.height).toBe(48);
 	expect(sidebarBounds.y).toBe(headerBounds.y + headerBounds.height);
 	expect(mainBounds.y).toBe(sidebarBounds.y);
+	expect(mainBounds.x).toBe(sidebarBounds.x + sidebarBounds.width + 8);
 	await button.click();
 	const during = await page.getByRole("button", { name: "Show sidebar" }).boundingBox();
 	expect(during?.x).toBe(before.x);
@@ -234,7 +235,7 @@ test("the title bar stays fixed while the sidebar changes width", async ({ page 
 	const after = await page.getByRole("button", { name: "Show sidebar" }).boundingBox();
 	expect(after?.x).toBe(before.x);
 	expect(after?.y).toBe(before.y);
-	await expect.poll(async () => (await page.locator(".main-workspace").boundingBox())?.width).toBe(1280);
+	await expect.poll(async () => (await page.locator(".main-workspace").boundingBox())?.width).toBe(1264);
 });
 
 test("panels reverse cleanly and reduced motion keeps controls immediate", async ({ page }) => {
