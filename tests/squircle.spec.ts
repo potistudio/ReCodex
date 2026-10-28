@@ -50,3 +50,50 @@ test("squircle fallback preserves interactive controls and theme colors", async 
 	await page.getByRole("button", { name: "Hide sidebar" }).click();
 	await expect(page.getByRole("button", { name: "Show sidebar" })).toBeVisible();
 });
+
+test("workspace fallback keeps its border and clips content while resizing", async ({ page }) => {
+	await page.addInitScript(() => {
+		const supports = CSS.supports.bind(CSS);
+		CSS.supports = ((property: string, value?: string) => {
+			if (property === "corner-shape" && value === "squircle") return false;
+			return value === undefined ? supports(property) : supports(property, value);
+		}) as typeof CSS.supports;
+	});
+	await page.goto("/");
+	const outer = page.locator(".main-workspace");
+	const inner = page.locator(".workspace-body");
+	for (const element of [outer, inner]) {
+		await expect.poll(() => element.evaluate((node) => getComputedStyle(node).clipPath)).toMatch(/^path\(/);
+	}
+	const borders = await outer.evaluate((element) => {
+		const inner = element.querySelector<HTMLElement>(".workspace-body");
+		if (!inner) throw new Error("Workspace content is missing");
+		const outerRect = element.getBoundingClientRect();
+		const innerRect = inner.getBoundingClientRect();
+		return {
+			inset: innerRect.left - outerRect.left,
+			borderWidth: getComputedStyle(element).borderTopWidth,
+			outerBackground: getComputedStyle(element).backgroundColor,
+			innerBackground: getComputedStyle(inner).backgroundColor,
+		};
+	});
+	expect(borders.inset).toBe(2);
+	expect(borders.borderWidth).toBe("1px");
+	expect(borders.outerBackground).not.toBe(borders.innerBackground);
+	const hit = await inner.evaluate((element) => {
+		const testContent = document.createElement("div");
+		testContent.style.cssText = "position:absolute;inset:0;z-index:999;background:red";
+		element.append(testContent);
+		const rect = element.getBoundingClientRect();
+		const corner = document.elementFromPoint(rect.left + 0.5, rect.top + 0.5) === testContent;
+		const center =
+			document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) === testContent;
+		testContent.remove();
+		return { corner, center };
+	});
+	expect(hit).toEqual({ corner: false, center: true });
+	const before = await outer.boundingBox();
+	await page.getByRole("button", { name: "Hide sidebar" }).click();
+	await expect.poll(async () => (await outer.boundingBox())?.width ?? 0).toBeGreaterThan(before?.width ?? 0);
+	await expect.poll(() => inner.evaluate((node) => getComputedStyle(node).clipPath)).toMatch(/^path\(/);
+});

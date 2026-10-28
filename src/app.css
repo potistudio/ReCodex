@@ -124,6 +124,8 @@
 	.connection-dot,
 	.rate-limit-indicator,
 	.model-effort-popover,
+	.main-workspace,
+	.workspace-body,
 	.effort-track,
 	.effort-thumb,
 	.effort-ticks span,
@@ -361,57 +363,9 @@ textarea,
 	border: 1px solid var(--border);
 	border-radius: 12px;
 	corner-shape: squircle;
-	background: var(--background);
-	outline: 1px solid rgb(255 255 255 / 35%);
-	outline-offset: -2px;
+	background: color-mix(in srgb, white 12.5%, var(--background));
 }
 
-
-/* WKWebView versions without corner-shape can still clip the main panel to a continuous corner. */
-@supports not (corner-shape: squircle) {
-	@supports (clip-path: shape(from 12px 0, line to 100% 100%, close)) {
-		.main-workspace {
-			--workspace-shape: shape(
-				from 12px 0,
-				line to calc(100% - 12px) 0,
-				curve to 100% 12px with calc(100% - 2.4px) 0 /
-				100% 2.4px,
-				line to 100% calc(100% - 12px),
-				curve to calc(100% - 12px) 100% with 100% calc(100% - 2.4px) /
-				calc(100% - 2.4px) 100%,
-				line to 12px 100%,
-				curve to 0 calc(100% - 12px) with 2.4px 100% /
-				0 calc(100% - 2.4px),
-				line to 0 12px,
-				curve to 12px 0 with 0 2.4px /
-				2.4px 0,
-				close
-			);
-			isolation: isolate;
-			border: 0;
-			border-radius: 0;
-			outline: 0;
-			background: var(--border);
-			clip-path: var(--workspace-shape);
-		}
-		.main-workspace::before,
-		.main-workspace::after {
-			position: absolute;
-			z-index: -1;
-			clip-path: var(--workspace-shape);
-			content: "";
-			pointer-events: none;
-		}
-		.main-workspace::before {
-			inset: 1px;
-			background: color-mix(in srgb, white 12.5%, var(--background));
-		}
-		.main-workspace::after {
-			inset: 2px;
-			background: var(--background);
-		}
-	}
-}
 
 .topbar {
 	position: relative;
@@ -783,9 +737,15 @@ textarea,
 	background: var(--muted);
 }
 .workspace-body {
-	flex: 1;
-	min-height: 0;
+	position: relative;
 	display: flex;
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	margin: 1px;
+	overflow: hidden;
+	border-radius: 10px;
+	background: var(--background);
 }
 .chat-pane {
 	flex: 1;
