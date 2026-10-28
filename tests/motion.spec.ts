@@ -93,6 +93,13 @@ test("settings dialog animates and restores focus", async ({ page }) => {
 	await expect(account).toBeFocused();
 });
 
+test("workspace and model picker use squircle corners when supported", async ({ page }) => {
+	test.skip(!(await page.evaluate(() => CSS.supports("corner-shape", "squircle"))), "corner-shape is unsupported");
+	await expect(page.locator(".main-workspace")).toHaveCSS("corner-shape", "superellipse(2)");
+	await page.locator(".model-effort-trigger").click();
+	await expect(page.locator(".model-effort-popover")).toHaveCSS("corner-shape", "superellipse(2)");
+});
+
 test("model list morphs in place and returns to the slider", async ({ page }) => {
 	await page.locator(".model-effort-trigger").click();
 	const dialog = page.getByRole("dialog", { name: "Model and reasoning effort" });
