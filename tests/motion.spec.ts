@@ -211,6 +211,21 @@ test("the lever supports keyboard shifts and spatial dragging", async ({ page })
 		.not.toBeCloseTo(initialWidth, 1);
 });
 
+test("the workspace fills the space below the title bar at any header height", async ({ page }) => {
+	const header = page.locator(".topbar");
+	const shell = page.locator(".app-shell");
+	for (const height of [44, 72]) {
+		await header.evaluate((element, value) => {
+			(element as HTMLElement).style.height = `${value}px`;
+		}, height);
+		const bounds = await shell.boundingBox();
+		expect(bounds).not.toBeNull();
+		if (!bounds) throw new Error("Missing workspace bounds");
+		expect(bounds.y).toBe(height);
+		expect(bounds.y + bounds.height).toBe(860);
+	}
+});
+
 test("the whole title bar can be dragged without blocking its controls", async ({ page }) => {
 	const header = page.locator(".topbar");
 	const hits = await header.evaluate((element) => {

@@ -123,11 +123,17 @@ textarea,
 	-webkit-user-select: text;
 	user-select: text;
 }
+.app-frame {
+	display: flex;
+	flex-direction: column;
+	height: 100dvh;
+}
 .app-shell {
 	position: relative;
 	background: var(--sidebar);
 	display: flex;
-	height: calc(100dvh - 48px);
+	flex: 1;
+	min-height: 0;
 	overflow: hidden;
 }
 .sidebar {
