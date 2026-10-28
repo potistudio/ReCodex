@@ -88,6 +88,8 @@ function updatePointerProgress(event: PointerEvent) {
 	);
 	const intervals = efforts.length - 1;
 	const position = progress * intervals;
+	const option = efforts[Math.round(position)];
+	if (option) effort = option.reasoningEffort;
 	const interval = Math.floor(position);
 	const t = position - interval;
 	// Zero slope at each step creates spatial detents without time-based interpolation.
@@ -99,7 +101,9 @@ function updatePointerProgress(event: PointerEvent) {
 
 function startPointerDrag(event: PointerEvent) {
 	if (disabled || efforts.length < 2 || !event.isPrimary || event.button !== 0) return;
+	event.preventDefault();
 	const slider = event.currentTarget as HTMLInputElement;
+	slider.focus();
 	const thumb = slider.parentElement?.querySelector(".effort-thumb")?.getBoundingClientRect();
 	const grabOffset =
 		thumb && event.clientX >= thumb.left && event.clientX <= thumb.right

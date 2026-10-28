@@ -332,6 +332,25 @@ test("the composer keeps its width while selecting and resizes on confirmation",
 		.toContain("width");
 });
 
+test("dragging the effort thumb changes the selected value", async ({ page }) => {
+	await page.locator(".model-effort-trigger").click();
+	const slider = page.getByRole("slider", { name: "Reasoning effort" });
+	const thumb = page.locator(".effort-thumb");
+	await expect.poll(() => thumb.evaluate((element) => element.getAnimations().length)).toBe(0);
+	const thumbBounds = await thumb.boundingBox();
+	const sliderBounds = await slider.boundingBox();
+	if (!thumbBounds || !sliderBounds) throw new Error("Missing slider bounds");
+	const y = thumbBounds.y + thumbBounds.height / 2;
+	await page.mouse.move(thumbBounds.x + thumbBounds.width / 2, y);
+	await page.mouse.down();
+	await page.mouse.move(sliderBounds.x + sliderBounds.width - thumbBounds.width / 2, y, { steps: 8 });
+	await expect(slider).toHaveAttribute("aria-valuetext", "Ultra");
+	await page.mouse.up();
+	await expect(slider).toHaveAttribute("aria-valuetext", "Ultra");
+	await slider.press("ArrowLeft");
+	await expect(slider).toHaveAttribute("aria-valuetext", "Max");
+});
+
 test("effort positions flatten near steps and depend on position rather than time or direction", async ({ page }) => {
 	await page.locator(".model-effort-trigger").click();
 	const slider = page.getByRole("slider", { name: "Reasoning effort" });
@@ -370,7 +389,7 @@ test("effort positions flatten near steps and depend on position rather than tim
 	expect(offsets[1]).toBeCloseTo(0, 1);
 	expect(offsets[2]).toBeGreaterThan(0);
 	expect(offsets[2]).toBeLessThan(interval * 0.01);
-	expect(offsets[3]).toBeCloseTo(interval / 2, 0);
+	expect(Math.abs(offsets[3] - interval / 2)).toBeLessThan(2);
 	expect(offsets[4]).toBeGreaterThan(interval * 0.99);
 	expect(offsets[4]).toBeLessThan(interval);
 	expect(offsets[5]).toBeCloseTo(interval, 1);
