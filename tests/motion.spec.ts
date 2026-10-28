@@ -101,6 +101,7 @@ test("model list morphs in place and returns to the slider", async ({ page }) =>
 	const views = page.locator(".model-picker-views");
 	await dialog.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
 	const before = await views.boundingBox();
+	expect(before?.height).toBe(28);
 	await choose.click();
 	await expect(choose).toHaveAttribute("aria-expanded", "true");
 	await expect(page.locator(".model-picker-effort")).toHaveJSProperty("inert", true);
@@ -111,8 +112,7 @@ test("model list morphs in place and returns to the slider", async ({ page }) =>
 				element
 					.getAnimations()
 					.some(
-						(animation) =>
-							animation instanceof CSSTransition && animation.transitionProperty === "grid-template-rows",
+						(animation) => animation instanceof CSSTransition && animation.transitionProperty === "height",
 					),
 			),
 		)
@@ -121,9 +121,11 @@ test("model list morphs in place and returns to the slider", async ({ page }) =>
 	await expect(page.locator(".model-picker-effort")).toHaveCSS("opacity", "0");
 	const after = await views.boundingBox();
 	expect(after?.x).toBe(before?.x);
+	expect(after?.height).toBeGreaterThan(28);
 	await page.keyboard.press("Escape");
 	await expect(dialog).toBeVisible();
 	await expect(slider).toBeVisible();
+	await expect.poll(async () => (await views.boundingBox())?.height).toBe(28);
 	await expect(choose).toBeFocused();
 	await choose.click();
 	await modelB.click();

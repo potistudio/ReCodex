@@ -22,6 +22,7 @@ let {
 let open = $state(false);
 let choosingModel = $state(false);
 let modelList = $state<HTMLFieldSetElement>();
+let modelListHeight = $state(0);
 let modelButton = $state<HTMLButtonElement>();
 let triggerLabelElement = $state<HTMLSpanElement>();
 let triggerLabelBounds = $state<DOMRectReadOnly>();
@@ -227,7 +228,11 @@ $effect(() => {
 					<RotateCcw size={14} aria-hidden="true" />
 				</button>
 			</div>
-			<div class="model-picker-views" class:choosing-model={choosingModel}>
+			<div
+				class="model-picker-views"
+				class:choosing-model={choosingModel}
+				style:height={`${choosingModel ? modelListHeight : efforts.length ? 28 : 0}px`}
+			>
 				<div class="model-picker-view model-picker-effort" inert={choosingModel}>
 					{#if efforts.length}
 						<div
@@ -276,6 +281,7 @@ $effect(() => {
 						class="model-picker-list"
 						id="model-picker-list"
 						bind:this={modelList}
+						bind:offsetHeight={modelListHeight}
 						aria-label="Models"
 					>
 						{#each models as option (option.model)}

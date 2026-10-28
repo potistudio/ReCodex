@@ -508,15 +508,12 @@ textarea,
 	overflow: clip;
 }
 .model-picker-views {
-	display: grid;
-	grid-template-rows: 1fr 0fr;
-	transition: grid-template-rows var(--motion-panel) var(--motion-ease);
-}
-.model-picker-views.choosing-model {
-	grid-template-rows: 0fr 1fr;
+	position: relative;
+	transition: height var(--motion-panel) var(--motion-ease);
 }
 .model-picker-view {
-	min-height: 0;
+	position: absolute;
+	inset: 0;
 	overflow: hidden;
 	transition:
 		opacity var(--motion-normal) ease,
