@@ -136,7 +136,6 @@ textarea,
 	background: var(--sidebar);
 	display: flex;
 	flex-direction: column;
-	border-right: 1px solid var(--border);
 }
 .brand-row {
 	display: flex;
