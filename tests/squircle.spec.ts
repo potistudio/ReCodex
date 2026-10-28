@@ -61,25 +61,31 @@ test("workspace fallback keeps its border and clips content while resizing", asy
 	});
 	await page.goto("/");
 	const outer = page.locator(".main-workspace");
+	const rim = page.locator(".workspace-rim");
 	const inner = page.locator(".workspace-body");
-	for (const element of [outer, inner]) {
+	for (const element of [outer, rim, inner]) {
 		await expect.poll(() => element.evaluate((node) => getComputedStyle(node).clipPath)).toMatch(/^path\(/);
 	}
 	const borders = await outer.evaluate((element) => {
 		const inner = element.querySelector<HTMLElement>(".workspace-body");
-		if (!inner) throw new Error("Workspace content is missing");
+		const rim = element.querySelector<HTMLElement>(".workspace-rim");
+		if (!inner || !rim) throw new Error("Workspace content is missing");
 		const outerRect = element.getBoundingClientRect();
 		const innerRect = inner.getBoundingClientRect();
 		return {
 			inset: innerRect.left - outerRect.left,
-			borderWidth: getComputedStyle(element).borderTopWidth,
+			padding: getComputedStyle(element).paddingTop,
+			rimBackground: getComputedStyle(rim).backgroundColor,
+			image: getComputedStyle(element).backgroundImage,
 			outerBackground: getComputedStyle(element).backgroundColor,
 			innerBackground: getComputedStyle(inner).backgroundColor,
 		};
 	});
 	expect(borders.inset).toBe(2);
-	expect(borders.borderWidth).toBe("1px");
-	expect(borders.outerBackground).not.toBe(borders.innerBackground);
+	expect(borders.padding).toBe("1px");
+	expect(borders.image).toBe("none");
+	expect(borders.outerBackground).not.toBe(borders.rimBackground);
+	expect(borders.rimBackground).not.toBe(borders.innerBackground);
 	const hit = await inner.evaluate((element) => {
 		const testContent = document.createElement("div");
 		testContent.style.cssText = "position:absolute;inset:0;z-index:999;background:red";
@@ -96,4 +102,24 @@ test("workspace fallback keeps its border and clips content while resizing", asy
 	await page.getByRole("button", { name: "Hide sidebar" }).click();
 	await expect.poll(async () => (await outer.boundingBox())?.width ?? 0).toBeGreaterThan(before?.width ?? 0);
 	await expect.poll(() => inner.evaluate((node) => getComputedStyle(node).clipPath)).toMatch(/^path\(/);
+	const samples = await page.evaluate(async () => {
+		const frames: string[] = [];
+		let running = true;
+		function sample() {
+			const outer = document.querySelector(".main-workspace");
+			if (outer) frames.push(getComputedStyle(outer).backgroundImage);
+			if (running) requestAnimationFrame(sample);
+		}
+		requestAnimationFrame(sample);
+		for (let i = 0; i < 16; i++) {
+			document
+				.querySelector<HTMLButtonElement>('[aria-label="Hide sidebar"], [aria-label="Show sidebar"]')
+				?.click();
+			await new Promise((resolve) => setTimeout(resolve, 75));
+		}
+		running = false;
+		return frames;
+	});
+	expect(samples.length).toBeGreaterThan(10);
+	expect(samples.every((image) => image === "none")).toBe(true);
 });

@@ -496,187 +496,189 @@ function shortcuts(event: KeyboardEvent) {
 	{/if}
 	<main class="main-workspace">
 
-		<div class="workspace-body">
-			<section class="chat-pane" aria-label="Chat">
-				{#if !isTauri()}
-					<div class="preview-banner">
-						Browser preview · Open the desktop app to connect to Codex and your files.
+		<div class="workspace-rim">
+			<div class="workspace-body">
+				<section class="chat-pane" aria-label="Chat">
+					{#if !isTauri()}
+						<div class="preview-banner">
+							Browser preview · Open the desktop app to connect to Codex and your files.
+						</div>
+					{/if}
+					{#if app.error}
+						<div class="error-banner" role="alert" transition:reveal>
+							<span>{app.error}</span
+							><Button
+								variant="ghost"
+								size="icon-xs"
+								aria-label="Dismiss error"
+								onclick={() => (app.error = "")}
+								><X /></Button
+							>
+						</div>
+					{/if}
+					<div class="chat-scroll-frame">
+						<div class="chat-scroll" bind:this={chatScroll} use:trackManualScroll onscroll={updateScrollMode}>
+							{#if app.items.length === 0}
+								<div class="welcome" in:appear>
+									{#if !app.project}
+										<Button
+											variant="outline"
+											size="lg"
+											onclick={addProject}
+											disabled={!isTauri() || app.busy}
+											><FolderPlus size={16} />Open a project<ArrowUpRight size={14} /></Button
+										>
+									{:else}
+										<div class="workspace-pill">
+											<Folder size={14} /><span>{app.project.name}</span><span class="pill-dot"></span
+											><span>Ready to create</span>
+										</div>
+									{/if}
+								</div>
+							{:else}
+								<div class="messages">
+									{#each app.items as item (item.renderKey ?? item.id)}
+										<Message
+											{item}
+											tokenUsage={item.turnId ? app.tokenUsageForTurn(item.turnId) : null}
+										/>
+									{/each}
+									{#if app.activeTurn || app.sending}
+										<div class="working">
+											<span class="working-dot"></span>
+											<span class="working-label">
+												{#each Array(workTokenCount) as _, index (index)}
+													<span class="working-label-token" style:--label-index={index}>
+														{#if outgoingWorkLabel}
+															<span
+																class="working-label-token-text working-label-token-outgoing"
+																>{outgoingWorkTokens[index] ?? "\u00a0"}</span
+															>
+														{/if}
+														{#key displayedWorkLabel}
+															<span
+																class="working-label-token-text"
+																class:working-label-token-incoming={outgoingWorkLabel}
+																>{displayedWorkTokens[index] ?? "\u00a0"}</span
+															>
+														{/key}
+													</span>
+												{/each}
+											</span>
+											{#if activeWork.detail}
+												<span class="working-detail">{activeWork.detail}</span>
+											{/if}
+										</div>
+									{/if}
+									{#each app.approvals as event (event.id)}
+										<Approval
+											{event}
+											respond={(event, result) => app.respond(event, result)}
+											requestAlternative={(event) => app.requestAlternative(event)}
+										/>
+									{/each}
+									{#if app.activeTurn || app.sending || scrollMode === "free"}
+										<div class="message-scroll-spacer" aria-hidden="true"></div>
+									{/if}
+								</div>
+							{/if}
+						</div>
+						{#if scrollMode === "free"}
+							<button
+								class="scroll-to-latest"
+								transition:appear
+								type="button"
+								aria-label="Scroll to latest"
+								onclick={followLatest}
+							>
+								<ChevronDown size={18} />
+							</button>
+						{/if}
 					</div>
-				{/if}
-				{#if app.error}
-					<div class="error-banner" role="alert" transition:reveal>
-						<span>{app.error}</span
-						><Button
-							variant="ghost"
-							size="icon-xs"
-							aria-label="Dismiss error"
-							onclick={() => (app.error = "")}
-							><X /></Button
+					<div class="composer-area">
+						<form
+							class="composer"
+							onsubmit={(event) => {
+								event.preventDefault();
+								void send();
+							}}
 						>
-					</div>
-				{/if}
-				<div class="chat-scroll-frame">
-					<div class="chat-scroll" bind:this={chatScroll} use:trackManualScroll onscroll={updateScrollMode}>
-						{#if app.items.length === 0}
-							<div class="welcome" in:appear>
-								{#if !app.project}
-									<Button
-										variant="outline"
-										size="lg"
-										onclick={addProject}
-										disabled={!isTauri() || app.busy}
-										><FolderPlus size={16} />Open a project<ArrowUpRight size={14} /></Button
+							<textarea
+								bind:this={composer}
+								bind:value={draft}
+								onkeydown={inputKey}
+								oncompositionstart={() => (composing = true)}
+								oncompositionend={() => (composing = false)}
+								aria-label="Message Codex"
+								placeholder={app.project
+									? "Ask Codex to build, explain, or fix anything…"
+									: "What would you like to create?"}
+								rows="2"
+							></textarea>
+							<div class="composer-toolbar">
+								<div class="composer-context">
+									<Folder size={14} />
+									<span
+										>{app.project?.name ||
+											"Select a project"}</span
+									>
+									<span class="toolbar-divider"></span>
+									<ModelEffortPicker
+										models={app.models}
+										model={app.model}
+										bind:effort={app.effort}
+										disabled={app.busy}
+										onModelChange={(model) => app.selectModel(model)}
+									/>
+								</div>
+								{#if app.activeTurn}
+									<Button size="icon" aria-label="Stop generation" onclick={() => app.stop()}
+										><Square size={13} fill="currentColor" /></Button
 									>
 								{:else}
-									<div class="workspace-pill">
-										<Folder size={14} /><span>{app.project.name}</span><span class="pill-dot"></span
-										><span>Ready to create</span>
-									</div>
+									<Button
+										type="submit"
+										size="icon"
+										class="send-button"
+										aria-label="Send message"
+										disabled={!draft.trim() ||
+											!ready ||
+											app.busy}
+										>{#if app.sending}
+											<LoaderCircle class="spin" />
+										{:else}
+											<ArrowUp size={18} />
+										{/if}</Button
+									>
 								{/if}
 							</div>
-						{:else}
-							<div class="messages">
-								{#each app.items as item (item.renderKey ?? item.id)}
-									<Message
-										{item}
-										tokenUsage={item.turnId ? app.tokenUsageForTurn(item.turnId) : null}
-									/>
-								{/each}
-								{#if app.activeTurn || app.sending}
-									<div class="working">
-										<span class="working-dot"></span>
-										<span class="working-label">
-											{#each Array(workTokenCount) as _, index (index)}
-												<span class="working-label-token" style:--label-index={index}>
-													{#if outgoingWorkLabel}
-														<span
-															class="working-label-token-text working-label-token-outgoing"
-															>{outgoingWorkTokens[index] ?? "\u00a0"}</span
-														>
-													{/if}
-													{#key displayedWorkLabel}
-														<span
-															class="working-label-token-text"
-															class:working-label-token-incoming={outgoingWorkLabel}
-															>{displayedWorkTokens[index] ?? "\u00a0"}</span
-														>
-													{/key}
-												</span>
-											{/each}
-										</span>
-										{#if activeWork.detail}
-											<span class="working-detail">{activeWork.detail}</span>
-										{/if}
-									</div>
-								{/if}
-								{#each app.approvals as event (event.id)}
-									<Approval
-										{event}
-										respond={(event, result) => app.respond(event, result)}
-										requestAlternative={(event) => app.requestAlternative(event)}
-									/>
-								{/each}
-								{#if app.activeTurn || app.sending || scrollMode === "free"}
-									<div class="message-scroll-spacer" aria-hidden="true"></div>
-								{/if}
+						</form>
+						{#if isTauri() && !app.connected}
+							<div class="connection-action">
+								<Button variant="outline" size="sm" disabled={app.connecting} onclick={() => app.connect()}
+									>{app.connecting
+										? "Connecting to Codex…"
+										: "Connect to Codex"}</Button
+								>
+							</div>
+						{:else if app.connected && app.requiresAuth && !app.account}
+							<div class="connection-action">
+								<Button size="sm" onclick={() => app.login()}>Sign in with ChatGPT</Button>
 							</div>
 						{/if}
 					</div>
-					{#if scrollMode === "free"}
-						<button
-							class="scroll-to-latest"
-							transition:appear
-							type="button"
-							aria-label="Scroll to latest"
-							onclick={followLatest}
-						>
-							<ChevronDown size={18} />
-						</button>
-					{/if}
-				</div>
-				<div class="composer-area">
-					<form
-						class="composer"
-						onsubmit={(event) => {
-							event.preventDefault();
-							void send();
-						}}
-					>
-						<textarea
-							bind:this={composer}
-							bind:value={draft}
-							onkeydown={inputKey}
-							oncompositionstart={() => (composing = true)}
-							oncompositionend={() => (composing = false)}
-							aria-label="Message Codex"
-							placeholder={app.project
-								? "Ask Codex to build, explain, or fix anything…"
-								: "What would you like to create?"}
-							rows="2"
-						></textarea>
-						<div class="composer-toolbar">
-							<div class="composer-context">
-								<Folder size={14} />
-								<span
-									>{app.project?.name ||
-										"Select a project"}</span
-								>
-								<span class="toolbar-divider"></span>
-								<ModelEffortPicker
-									models={app.models}
-									model={app.model}
-									bind:effort={app.effort}
-									disabled={app.busy}
-									onModelChange={(model) => app.selectModel(model)}
-								/>
-							</div>
-							{#if app.activeTurn}
-								<Button size="icon" aria-label="Stop generation" onclick={() => app.stop()}
-									><Square size={13} fill="currentColor" /></Button
-								>
-							{:else}
-								<Button
-									type="submit"
-									size="icon"
-									class="send-button"
-									aria-label="Send message"
-									disabled={!draft.trim() ||
-										!ready ||
-										app.busy}
-									>{#if app.sending}
-										<LoaderCircle class="spin" />
-									{:else}
-										<ArrowUp size={18} />
-									{/if}</Button
-								>
-							{/if}
-						</div>
-					</form>
-					{#if isTauri() && !app.connected}
-						<div class="connection-action">
-							<Button variant="outline" size="sm" disabled={app.connecting} onclick={() => app.connect()}
-								>{app.connecting
-									? "Connecting to Codex…"
-									: "Connect to Codex"}</Button
-							>
-						</div>
-					{:else if app.connected && app.requiresAuth && !app.account}
-						<div class="connection-action">
-							<Button size="sm" onclick={() => app.login()}>Sign in with ChatGPT</Button>
-						</div>
-					{/if}
-				</div>
-			</section>
-			{#if filesOpen && app.project}
-				{#key app.project.path}
-					<FilePanel
-						project={app.project}
-						revision={app.fileRevision}
-						onclose={() => (filesOpen = false)}
-						ondirty={(dirty) => (fileDirty = dirty)}
-					/>
-				{/key}
-			{/if}
+				</section>
+				{#if filesOpen && app.project}
+					{#key app.project.path}
+						<FilePanel
+							project={app.project}
+							revision={app.fileRevision}
+							onclose={() => (filesOpen = false)}
+							ondirty={(dirty) => (fileDirty = dirty)}
+						/>
+					{/key}
+				{/if}
+			</div>
 		</div>
 	</main>
 </div>
