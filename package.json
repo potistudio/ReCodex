@@ -31,6 +31,7 @@
     "@tauri-apps/plugin-os": "^2.3.2",
     "clsx": "^2.1.1",
     "dompurify": "^3.4.15",
+    "hyperellipse": "1.0.5",
     "marked": "^18.0.11",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3",

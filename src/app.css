@@ -113,6 +113,54 @@
 		scrollbar-color: var(--border) transparent;
 	}
 }
+/* Preserve squircle corners on WebViews that do not yet support corner-shape. */
+:where(
+	button,
+	input:not([type="range"]),
+	select,
+	textarea,
+	[class*="rounded"],
+	.avatar,
+	.connection-dot,
+	.rate-limit-indicator,
+	.model-effort-popover,
+	.effort-track,
+	.effort-thumb,
+	.effort-ticks span,
+	.workspace-pill,
+	.pill-dot,
+	.composer,
+	.user-message > p,
+	.markdown code,
+	.markdown pre,
+	.tool-item,
+	.working-dot,
+	.approval-card,
+	.error-banner,
+	.theme-count,
+	.theme-option,
+	.theme-preview,
+	.theme-preview-sidebar > span,
+	.theme-preview-title,
+	.theme-preview-composer,
+	.theme-preview-composer > span,
+	.rate-limit-row
+) {
+	--corner-shape: squircle;
+}
+/* The fallback reads the original paint styles to draw its SVG layer. Animating
+   those styles while it reads them would make the layer fade to transparent. */
+@supports not (corner-shape: squircle) {
+	[data-slot="dialog-content"] {
+		/* biome-ignore lint/complexity/noImportantStyles: Override the dialog utility shadow for the fallback. */
+		box-shadow: none !important;
+	}
+	[data-hyperellipse-host~="layer"] {
+		transition-property:
+			color, opacity, transform, translate, scale, width, height, left, right, top, bottom, margin, padding,
+			filter !important;
+	}
+}
 /* Keep text selection inside message content and editable fields. */
 .user-message > p,
 .markdown,
@@ -430,7 +478,6 @@ textarea,
 	color: var(--muted-foreground);
 	padding: 6px 10px;
 	border-radius: 999px;
-	corner-shape: round;
 	background: color-mix(in srgb, var(--muted) 75%, transparent);
 }
 .model-effort-trigger:hover,
@@ -487,6 +534,11 @@ textarea,
 	z-index: 50;
 	outline: none;
 }
+@supports not (corner-shape: squircle) {
+	.model-effort-popover {
+		border-color: color-mix(in srgb, var(--foreground) 40%, transparent);
+	}
+}
 .dark .model-effort-popover {
 	--effort-accent: #9691ff;
 	box-shadow:
@@ -524,12 +576,17 @@ textarea,
 	background: color-mix(in srgb, var(--foreground) 5%, transparent);
 }
 .model-picker-trigger {
+	outline: none;
 	display: grid;
 	gap: 1px;
 	min-width: 0;
 	padding: 0 4px;
 	border-radius: 7px;
 	text-align: center;
+}
+.model-picker-trigger:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 1px;
 }
 .model-effort-label {
 	display: flex;
@@ -628,7 +685,6 @@ textarea,
 	inset: 2px 0;
 	overflow: hidden;
 	border-radius: 999px;
-	corner-shape: round;
 	background: color-mix(in srgb, var(--foreground) 12%, var(--popover));
 	pointer-events: none;
 }
@@ -655,7 +711,6 @@ textarea,
 	width: 4px;
 	height: 4px;
 	border-radius: 50%;
-	corner-shape: round;
 	background: color-mix(in srgb, var(--muted-foreground) 45%, transparent);
 	transform: translate(-50%, -50%);
 }
@@ -670,7 +725,6 @@ textarea,
 	height: 28px;
 	margin: 0;
 	border-radius: 999px;
-	corner-shape: round;
 	background: transparent;
 	cursor: pointer;
 	touch-action: pan-y;
@@ -685,7 +739,6 @@ textarea,
 	height: 28px;
 	border: 0;
 	border-radius: 50%;
-	corner-shape: round;
 	background: transparent;
 }
 .effort-slider::-moz-range-track {
@@ -1060,15 +1113,6 @@ textarea,
 	animation: pulse 1.5s infinite;
 }
 
-.avatar,
-.connection-dot,
-.scroll-to-latest,
-.welcome-eyebrow > span,
-.pill-dot,
-.send-button,
-.working-dot {
-	corner-shape: round;
-}
 .working-label {
 	display: inline-flex;
 	overflow: hidden;
@@ -1375,6 +1419,7 @@ textarea,
 	border: 0;
 }
 .theme-option {
+	background: var(--popover);
 	display: flex;
 	flex-direction: column;
 	gap: 9px;
@@ -1394,6 +1439,15 @@ textarea,
 .theme-option:focus-within {
 	outline: 2px solid var(--ring);
 	outline-offset: 2px;
+}
+@supports not (corner-shape: squircle) {
+	.theme-option.selected,
+	.theme-option:focus-within {
+		padding: 6px;
+		border: 2px solid var(--ring);
+		outline: none;
+		box-shadow: none;
+	}
 }
 .theme-preview {
 	display: flex;

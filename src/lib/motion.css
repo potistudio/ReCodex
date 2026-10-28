@@ -181,7 +181,6 @@ button:not(:disabled):not([aria-haspopup]):active {
 	height: 28px;
 	border: 1px solid #0000000a;
 	border-radius: 50%;
-	corner-shape: round;
 	background: #fff;
 	box-shadow: 0 1px 3px #0000001f;
 	pointer-events: none;
