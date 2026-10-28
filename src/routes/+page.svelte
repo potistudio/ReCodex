@@ -354,17 +354,6 @@ function shortcuts(event: KeyboardEvent) {
 	{#if sidebar}
 		<aside class="sidebar" transition:reveal={{ axis: "x" }}>
 			<div class="panel-content">
-				<div class="brand-row">
-					<a
-						href="/"
-						class="brand"
-						onclick={(event) => {
-						event.preventDefault();
-						newChat();
-					}}
-						><span class="brand-mark"><Code2 size={21} strokeWidth={2.1} /></span>ReCodex</a
-					>
-				</div>
 				<nav class="primary-nav" aria-label="Workspace">
 					<button type="button" onclick={newChat} disabled={!app.connected || app.loading}>
 						<SquarePen size={18} /><span>New chat</span><kbd>Ctrl ⇧ O</kbd>

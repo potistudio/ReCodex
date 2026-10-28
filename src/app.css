@@ -143,27 +143,6 @@ textarea,
 	display: flex;
 	flex-direction: column;
 }
-.brand-row {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 0 2px 27px 11px;
-}
-.brand {
-	display: flex;
-	gap: 10px;
-	align-items: center;
-	font-size: 18px;
-	font-weight: 650;
-	letter-spacing: -0.65px;
-	text-decoration: none;
-	color: var(--foreground);
-}
-.brand-mark {
-	color: var(--primary);
-	display: grid;
-	place-items: center;
-}
 .primary-nav {
 	display: grid;
 	gap: 3px;
