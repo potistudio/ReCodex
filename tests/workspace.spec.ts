@@ -22,6 +22,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 		type Payload = Record<string, unknown>;
 		const host = window as unknown as Payload;
 		host.isTauri = true;
+		host.__TAURI_OS_PLUGIN_INTERNALS__ = { platform: "macos" };
 		const callbacks = new Map<number, (event: unknown) => void>();
 		let listener = 0;
 		let callbackId = 0;

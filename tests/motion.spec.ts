@@ -6,6 +6,7 @@ test.beforeEach(async ({ page }) => {
 	await page.addInitScript(() => {
 		const host = window as unknown as Record<string, unknown>;
 		host.isTauri = true;
+		host.__TAURI_OS_PLUGIN_INTERNALS__ = { platform: "macos" };
 		host.motionEvents = [];
 		document.addEventListener("animationstart", (event) => {
 			(host.motionEvents as string[]).push(event.animationName);
@@ -210,11 +211,38 @@ test("the lever supports keyboard shifts and spatial dragging", async ({ page })
 		.not.toBeCloseTo(initialWidth, 1);
 });
 
+test("the title bar stays fixed while the sidebar changes width", async ({ page }) => {
+	const header = page.locator(".topbar");
+	const button = page.getByRole("button", { name: "Hide sidebar" });
+	const before = await button.boundingBox();
+	const headerBounds = await header.boundingBox();
+	const sidebarBounds = await page.locator(".sidebar").boundingBox();
+	const mainBounds = await page.locator(".main-workspace").boundingBox();
+	expect(before).not.toBeNull();
+	expect(headerBounds).not.toBeNull();
+	expect(sidebarBounds).not.toBeNull();
+	expect(mainBounds).not.toBeNull();
+	if (!before || !headerBounds || !sidebarBounds || !mainBounds) throw new Error("Missing layout bounds");
+	expect(headerBounds.height).toBe(48);
+	expect(sidebarBounds.y).toBe(headerBounds.y + headerBounds.height);
+	expect(mainBounds.y).toBe(sidebarBounds.y);
+	await button.click();
+	const during = await page.getByRole("button", { name: "Show sidebar" }).boundingBox();
+	expect(during?.x).toBe(before.x);
+	expect(during?.y).toBe(before.y);
+	await expect(page.locator(".sidebar")).toHaveCount(0);
+	const after = await page.getByRole("button", { name: "Show sidebar" }).boundingBox();
+	expect(after?.x).toBe(before.x);
+	expect(after?.y).toBe(before.y);
+	await expect.poll(async () => (await page.locator(".main-workspace").boundingBox())?.width).toBe(1280);
+});
+
 test("panels reverse cleanly and reduced motion keeps controls immediate", async ({ page }) => {
 	const contentWidth = await page
 		.locator(".sidebar > .panel-content")
 		.evaluate((element) => element.getBoundingClientRect().width);
 	await page.getByRole("button", { name: "Hide sidebar" }).click();
+	await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 	const movingContentWidth = await page.locator(".sidebar").evaluate((element) => {
 		const animation = element
 			.getAnimations()

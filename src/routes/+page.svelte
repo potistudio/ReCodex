@@ -289,8 +289,8 @@ function shortcuts(event: KeyboardEvent) {
 	}}
 />
 
-{#if macTitlebar}
-	<div class="sidebar-toggle-fixed">
+<header class="topbar" class:mac-window={macTitlebar}>
+	<div class="topbar-left">
 		<Button
 			variant="ghost"
 			size="icon"
@@ -303,14 +303,56 @@ function shortcuts(event: KeyboardEvent) {
 				<PanelLeftOpen />
 			{/if}
 		</Button>
+		{#if macTitlebar}
+			<div class="topbar-drag-area" data-tauri-drag-region></div>
+		{/if}
 	</div>
-{/if}
-<div class="app-shell" class:sidebar-hidden={!sidebar} class:mac-window={macTitlebar}>
+	<div class="topbar-right">
+		<span
+			class="rate-limit-indicator"
+			role="status"
+			title="Remaining Codex rate-limit allowance"
+			aria-label="Codex rate-limit allowance"
+		>
+			<span>Rate limit</span>
+			<strong
+				>{app.rateLimits?.rateLimits.primary
+					? `${remainingPercent(app.rateLimits.rateLimits.primary.usedPercent)}% left`
+					: "—"}</strong
+			>
+		</span>
+		{#if app.project}
+			<span class="project-breadcrumb"><Folder size={14} />{app.project.name}</span
+			><Button
+				variant="ghost"
+				size="sm"
+				class={filesOpen ? "files-active" : ""}
+				onclick={() => (filesOpen = true)}
+				><FileCode size={16} />Files</Button
+			><Dropdown.Root
+				><Dropdown.Trigger class="icon-button" aria-label="Project options" disabled={app.busy}
+					><MoreHorizontal size={18} /></Dropdown.Trigger
+				><Dropdown.Content align="end"
+					><Dropdown.Item
+						onclick={() => {
+							const project = app.project;
+							if (!project) return;
+							projectName = project.name;
+							renameOpen = true;
+						}}
+						><Pencil size={14} />Rename project</Dropdown.Item
+					><Dropdown.Item onclick={relocateProject}>Change working directory</Dropdown.Item
+					><Dropdown.Item onclick={removeProject}>Remove project</Dropdown.Item></Dropdown.Content
+				></Dropdown.Root
+			>
+		{:else}
+			<span class="topbar-hint">Your ideas, in progress.</span>
+		{/if}
+	</div>
+</header>
+<div class="app-shell" class:sidebar-hidden={!sidebar}>
 	{#if sidebar}
 		<aside class="sidebar" transition:reveal={{ axis: "x" }}>
-			{#if macTitlebar}
-				<div class="sidebar-drag-area" data-tauri-drag-region></div>
-			{/if}
 			<div class="panel-content">
 				<div class="brand-row">
 					<a
@@ -322,11 +364,6 @@ function shortcuts(event: KeyboardEvent) {
 					}}
 						><span class="brand-mark"><Code2 size={21} strokeWidth={2.1} /></span>ReCodex</a
 					>
-					{#if !macTitlebar}
-						<Button variant="ghost" size="icon" aria-label="Hide sidebar" onclick={() => (sidebar = false)}
-							><PanelLeftClose /></Button
-						>
-					{/if}
 				</div>
 				<nav class="primary-nav" aria-label="Workspace">
 					<button type="button" onclick={newChat} disabled={!app.connected || app.loading}>
@@ -445,60 +482,7 @@ function shortcuts(event: KeyboardEvent) {
 		</aside>
 	{/if}
 	<main class="main-workspace">
-		<header class="topbar">
-			<div class="topbar-left">
-				{#if !sidebar && !macTitlebar}
-					<Button variant="ghost" size="icon" aria-label="Show sidebar" onclick={() => (sidebar = true)}
-						><PanelLeftOpen /></Button
-					>
-				{/if}
-				{#if macTitlebar}
-					<div class="topbar-drag-area" data-tauri-drag-region></div>
-				{/if}
-			</div>
-			<div class="topbar-right">
-				<span
-					class="rate-limit-indicator"
-					role="status"
-					title="Remaining Codex rate-limit allowance"
-					aria-label="Codex rate-limit allowance"
-				>
-					<span>Rate limit</span>
-					<strong
-						>{app.rateLimits?.rateLimits.primary
-							? `${remainingPercent(app.rateLimits.rateLimits.primary.usedPercent)}% left`
-							: "—"}</strong
-					>
-				</span>
-				{#if app.project}
-					<span class="project-breadcrumb"><Folder size={14} />{app.project.name}</span
-					><Button
-						variant="ghost"
-						size="sm"
-						class={filesOpen ? "files-active" : ""}
-						onclick={() => (filesOpen = true)}
-						><FileCode size={16} />Files</Button
-					><Dropdown.Root
-						><Dropdown.Trigger class="icon-button" aria-label="Project options" disabled={app.busy}
-							><MoreHorizontal size={18} /></Dropdown.Trigger
-						><Dropdown.Content align="end"
-							><Dropdown.Item
-								onclick={() => {
-									const project = app.project;
-									if (!project) return;
-									projectName = project.name;
-									renameOpen = true;
-								}}
-								><Pencil size={14} />Rename project</Dropdown.Item
-							><Dropdown.Item onclick={relocateProject}>Change working directory</Dropdown.Item
-							><Dropdown.Item onclick={removeProject}>Remove project</Dropdown.Item></Dropdown.Content
-						></Dropdown.Root
-					>
-				{:else}
-					<span class="topbar-hint">Your ideas, in progress.</span>
-				{/if}
-			</div>
-		</header>
+
 		<div class="workspace-body">
 			<section class="chat-pane" aria-label="Chat">
 				{#if !isTauri()}
