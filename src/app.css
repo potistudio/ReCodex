@@ -149,7 +149,7 @@ textarea,
 }
 .primary-nav > button,
 .project-list > button,
-.thread-list > button {
+.thread-row > button:first-child {
 	display: flex;
 	align-items: center;
 	gap: 11px;
@@ -163,7 +163,7 @@ textarea,
 }
 .primary-nav > button:hover,
 .project-list > button:hover,
-.thread-list > button:hover {
+.thread-row > button:first-child:hover {
 	background: var(--muted);
 }
 .primary-nav > button:first-child {
@@ -195,7 +195,7 @@ textarea,
 	overflow: auto;
 }
 .project-list > button.selected,
-.thread-list > button.selected {
+.thread-row > button:first-child.selected {
 	background: var(--sidebar-accent);
 	color: var(--sidebar-accent-foreground);
 }
@@ -210,9 +210,31 @@ textarea,
 	min-height: 0;
 	overflow: auto;
 }
-.thread-list > button {
+.thread-row > button:first-child {
 	min-height: 35px;
 	font-size: 12px;
+}
+.thread-row {
+	position: relative;
+}
+.thread-row > button:first-child {
+	padding-right: 38px;
+}
+.thread-row .thread-delete {
+	position: absolute;
+	top: 50%;
+	right: 8px;
+	translate: 0 -50%;
+	opacity: 0;
+}
+.thread-row:hover .thread-delete,
+.thread-row:focus-within .thread-delete {
+	opacity: 1;
+}
+@media (hover: none) {
+	.thread-row .thread-delete {
+		opacity: 1;
+	}
 }
 .sidebar-empty {
 	color: var(--muted-foreground);

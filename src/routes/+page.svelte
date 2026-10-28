@@ -17,6 +17,7 @@ import {
 	Settings2,
 	Square,
 	SquarePen,
+	Trash2,
 	X,
 } from "@lucide/svelte";
 import { isTauri } from "@tauri-apps/api/core";
@@ -35,7 +36,7 @@ import * as Dropdown from "$lib/components/ui/dropdown-menu";
 import { Input } from "$lib/components/ui/input";
 import { appear, reveal } from "$lib/motion";
 import { applyTheme, readTheme } from "$lib/themes";
-import type { Project, RateLimitSnapshot, RateLimitWindow } from "$lib/types";
+import type { Project, RateLimitSnapshot, RateLimitWindow, Thread } from "$lib/types";
 import { formatResetTime, formatTokenCount, formatUsageWindow, remainingPercent } from "$lib/usage";
 import { workingState } from "$lib/working";
 
@@ -259,6 +260,18 @@ async function removeProject() {
 		await app.removeProject();
 	}
 }
+async function deleteThread(thread: Thread) {
+	const name = thread.name || thread.preview || "Untitled chat";
+	if (
+		await confirm(`Permanently delete “${name}” and any chats it spawned? This cannot be undone.`, {
+			title: "Delete chat",
+			kind: "warning",
+			okLabel: "Delete",
+		})
+	) {
+		await app.deleteThread(thread);
+	}
+}
 function shortcuts(event: KeyboardEvent) {
 	if ((event.ctrlKey || event.metaKey) && event.key === "k") {
 		event.preventDefault();
@@ -401,29 +414,40 @@ function shortcuts(event: KeyboardEvent) {
 				</div>
 				<div class="thread-list">
 					{#each filteredThreads as thread}
-						<button
-							type="button"
-							class:selected={app.thread?.id === thread.id}
-							disabled={app.loading || !app.connected}
-							onclick={() => {
-							scrollMode = "follow";
-							void app.resume(thread);
-						}}
-							title={thread.name || thread.preview}
-						>
-							<span class="thread-summary">
-								<span class="truncate">{thread.name || thread.preview || "Untitled chat"}</span>
-								{#if app.tokenUsageFor(thread.id)}
-									<small title="Total tokens reported by Codex for this session"
-										>{formatTokenCount(app.tokenUsageFor(thread.id).total.totalTokens)}
-										tokens</small
-									>
+						<div class="thread-row">
+							<button
+								type="button"
+								class:selected={app.thread?.id === thread.id}
+								disabled={app.loading || !app.connected || app.deletingThreadId === thread.id}
+								onclick={() => {
+								scrollMode = "follow";
+								void app.resume(thread);
+							}}
+								title={thread.name || thread.preview}
+							>
+								<span class="thread-summary">
+									<span class="truncate">{thread.name || thread.preview || "Untitled chat"}</span>
+									{#if app.tokenUsageFor(thread.id)}
+										<small title="Total tokens reported by Codex for this session"
+											>{formatTokenCount(app.tokenUsageFor(thread.id).total.totalTokens)}
+											tokens</small
+										>
+									{/if}
+								</span>
+								{#if app.isThreadRunning(thread.id) && app.thread?.id !== thread.id}
+									<LoaderCircle class="spin thread-running" size={14} aria-hidden="true" />
 								{/if}
-							</span>
-							{#if app.isThreadRunning(thread.id) && app.thread?.id !== thread.id}
-								<LoaderCircle class="spin thread-running" size={14} aria-hidden="true" />
-							{/if}
-						</button>
+							</button>
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								class="thread-delete"
+								aria-label={`Delete chat: ${thread.name || thread.preview || "Untitled chat"}`}
+								disabled={!app.connected || app.loading || !!app.deletingThreadId || app.isThreadRunning(thread.id) || (app.thread?.id === thread.id && app.sending)}
+								onclick={() => deleteThread(thread)}
+								><Trash2 /></Button
+							>
+						</div>
 					{/each}
 					{#if !filteredThreads.length}
 						<div class="sidebar-empty">

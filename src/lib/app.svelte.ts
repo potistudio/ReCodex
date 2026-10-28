@@ -27,6 +27,7 @@ export class App {
 	projects = $state<Project[]>([]);
 	project = $state<Project | null>(null);
 	threads = $state<Thread[]>([]);
+	deletingThreadId = $state<string | null>(null);
 	cursor = $state<string | null>(null);
 	thread = $state<Thread | null>(null);
 	items = $state<Item[]>([]);
@@ -57,6 +58,7 @@ export class App {
 	private disposed = false;
 	private alternativeTurnIds = new Set<string>();
 	private navigationRevision = 0;
+	private threadListRevision = 0;
 
 	async guard(action: () => Promise<unknown>) {
 		this.error = "";
@@ -140,6 +142,7 @@ export class App {
 			return;
 		}
 		const project = this.project;
+		const revision = this.threadListRevision;
 		const paths = [...new Set([project.path, ...project.historyPaths])];
 		const results = await Promise.all(
 			paths.map((cwd, index) =>
@@ -151,7 +154,7 @@ export class App {
 				}),
 			),
 		);
-		if (this.project?.path !== project.path) return;
+		if (this.project?.path !== project.path || revision !== this.threadListRevision) return;
 		const threads = results.flatMap((result) => result.data);
 		this.threads = more
 			? [...this.threads, ...threads.filter((thread) => !this.threads.some((entry) => entry.id === thread.id))]
@@ -159,6 +162,39 @@ export class App {
 					(a, b) => b.updatedAt - a.updatedAt,
 				);
 		this.cursor = results[0].nextCursor;
+	}
+	async deleteThread(thread: Thread) {
+		if (
+			!this.connected ||
+			this.loading ||
+			this.deletingThreadId ||
+			this.isThreadRunning(thread.id) ||
+			(this.thread?.id === thread.id && this.sending)
+		)
+			return;
+		this.deletingThreadId = thread.id;
+		try {
+			await this.guard(async () => {
+				await rpc("thread/delete", { threadId: thread.id });
+				this.forgetThread(thread.id);
+			});
+		} finally {
+			this.deletingThreadId = null;
+		}
+	}
+	private forgetThread(threadId: string) {
+		this.threadListRevision += 1;
+		this.threads = this.threads.filter((thread) => thread.id !== threadId);
+		for (const item of this.itemsByThread[threadId] ?? []) {
+			if (item.turnId) delete this.tokenUsageByTurn[item.turnId];
+		}
+		delete this.itemsByThread[threadId];
+		delete this.activeTurnsByThread[threadId];
+		delete this.approvalsByThread[threadId];
+		delete this.thinkingLabelsByThread[threadId];
+		delete this.configurationsByThread[threadId];
+		delete this.tokenUsageByThread[threadId];
+		if (this.thread?.id === threadId) this.newChat();
 	}
 	async chooseProject(project: Project) {
 		if (this.busy) return;
@@ -234,6 +270,7 @@ export class App {
 		this.error = "";
 	}
 	async resume(thread: Thread) {
+		if (this.deletingThreadId === thread.id) return;
 		if (this.selectRunningThread(thread)) return;
 		if (this.loading) return;
 		const navigationRevision = ++this.navigationRevision;
@@ -403,6 +440,10 @@ export class App {
 				);
 		if (!params.threadId) return;
 		const threadId = params.threadId;
+		if (method === "thread/deleted") {
+			this.forgetThread(threadId);
+			return;
+		}
 		if (method === "thread/tokenUsage/updated" && params.tokenUsage) {
 			this.setThreadTokenUsage(threadId, params.turnId, params.tokenUsage);
 			return;
