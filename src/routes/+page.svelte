@@ -303,9 +303,6 @@ function shortcuts(event: KeyboardEvent) {
 				<PanelLeftOpen />
 			{/if}
 		</Button>
-		{#if macTitlebar}
-			<div class="topbar-drag-area" data-tauri-drag-region></div>
-		{/if}
 	</div>
 	<div class="topbar-right">
 		<span
@@ -349,6 +346,9 @@ function shortcuts(event: KeyboardEvent) {
 			<span class="topbar-hint">Your ideas, in progress.</span>
 		{/if}
 	</div>
+	{#if macTitlebar}
+		<div class="topbar-drag-area" data-tauri-drag-region></div>
+	{/if}
 </header>
 <div class="app-shell" class:sidebar-hidden={!sidebar}>
 	{#if sidebar}

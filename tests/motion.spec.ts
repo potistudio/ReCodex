@@ -211,6 +211,21 @@ test("the lever supports keyboard shifts and spatial dragging", async ({ page })
 		.not.toBeCloseTo(initialWidth, 1);
 });
 
+test("the whole title bar can be dragged without blocking its controls", async ({ page }) => {
+	const header = page.locator(".topbar");
+	const hits = await header.evaluate((element) => {
+		const bounds = element.getBoundingClientRect();
+		return [2, bounds.width / 2, bounds.width - 2].map((x) =>
+			document.elementFromPoint(bounds.left + x, bounds.top + 2)?.hasAttribute("data-tauri-drag-region"),
+		);
+	});
+	expect(hits).toEqual([true, true, true]);
+	await page.getByRole("button", { name: "Hide sidebar" }).click();
+	await expect(page.getByRole("button", { name: "Show sidebar" })).toBeVisible();
+	await page.getByRole("button", { name: "Files", exact: true }).click();
+	await expect(page.getByRole("complementary", { name: "Project files" })).toBeVisible();
+});
+
 test("the title bar stays fixed while the sidebar changes width", async ({ page }) => {
 	const header = page.locator(".topbar");
 	const button = page.getByRole("button", { name: "Hide sidebar" });

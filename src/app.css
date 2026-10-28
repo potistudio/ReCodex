@@ -309,6 +309,7 @@ textarea,
 	background: var(--background);
 }
 .topbar {
+	position: relative;
 	background: var(--sidebar);
 	color: var(--sidebar-foreground);
 	height: 48px;
@@ -321,9 +322,16 @@ textarea,
 }
 .topbar-left,
 .topbar-right {
+	position: relative;
+	z-index: 1;
+	pointer-events: none;
 	display: flex;
 	gap: 12px;
 	align-items: center;
+}
+.topbar-left button,
+.topbar-right button {
+	pointer-events: auto;
 }
 .topbar.mac-window {
 	padding-left: 128px;
@@ -334,8 +342,8 @@ textarea,
 	min-width: 0;
 }
 .topbar-drag-area {
-	align-self: stretch;
-	flex: 1;
+	position: absolute;
+	inset: 0;
 }
 .rate-limit-indicator {
 	display: flex;
