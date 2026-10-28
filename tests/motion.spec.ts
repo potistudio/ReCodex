@@ -93,6 +93,45 @@ test("settings dialog animates and restores focus", async ({ page }) => {
 	await expect(account).toBeFocused();
 });
 
+test("model list morphs in place and returns to the slider", async ({ page }) => {
+	await page.locator(".model-effort-trigger").click();
+	const dialog = page.getByRole("dialog", { name: "Model and reasoning effort" });
+	const choose = page.getByRole("button", { name: "Choose model" });
+	const slider = page.getByRole("slider", { name: "Reasoning effort" });
+	const views = page.locator(".model-picker-views");
+	await dialog.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+	const before = await views.boundingBox();
+	await choose.click();
+	await expect(choose).toHaveAttribute("aria-expanded", "true");
+	await expect(page.locator(".model-picker-effort")).toHaveJSProperty("inert", true);
+	const modelB = page.getByRole("button", { name: /Model B/ });
+	await expect
+		.poll(() =>
+			views.evaluate((element) =>
+				element
+					.getAnimations()
+					.some(
+						(animation) =>
+							animation instanceof CSSTransition && animation.transitionProperty === "grid-template-rows",
+					),
+			),
+		)
+		.toBe(true);
+	await expect(modelB).toBeVisible();
+	await expect(page.locator(".model-picker-effort")).toHaveCSS("opacity", "0");
+	const after = await views.boundingBox();
+	expect(after?.x).toBe(before?.x);
+	await page.keyboard.press("Escape");
+	await expect(dialog).toBeVisible();
+	await expect(slider).toBeVisible();
+	await expect(choose).toBeFocused();
+	await choose.click();
+	await modelB.click();
+	await expect(slider).toHaveAttribute("aria-valuetext", "High");
+	await expect(choose).toHaveAttribute("aria-expanded", "false");
+	await expect(choose).toBeFocused();
+});
+
 test("effort fill and thumb update together without position transitions", async ({ page }) => {
 	await page.locator(".model-effort-trigger").click();
 	const slider = page.getByRole("slider", { name: "Reasoning effort" });
@@ -187,13 +226,13 @@ test("model labels roll in the direction of the selected model", async ({ page }
 
 	const chooseModel = page.getByRole("button", { name: "Choose model", exact: true });
 	await chooseModel.click();
-	await page.getByRole("menuitemradio", { name: /Model B/ }).click();
+	await page.getByRole("button", { name: /Model B/ }).click();
 	const raised = await sampleRoll();
 	expect(raised.find(({ label }) => label === "Model B")?.y).toBeLessThan(0);
 
 	await page.waitForTimeout(200);
 	await chooseModel.click();
-	await page.getByRole("menuitemradio", { name: /Model A/ }).click();
+	await page.getByRole("button", { name: /Model A/ }).click();
 	const lowered = await sampleRoll();
 	expect(lowered.find(({ label }) => label === "Model A")?.y).toBeGreaterThan(0);
 });

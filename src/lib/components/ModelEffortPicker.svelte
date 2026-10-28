@@ -1,7 +1,7 @@
 <script lang="ts">
 import { ChevronDown, ChevronRight, RotateCcw, Zap } from "@lucide/svelte";
 import { Popover } from "bits-ui";
-import * as Dropdown from "$lib/components/ui/dropdown-menu";
+import { tick } from "svelte";
 import { appear, rollIn, rollOut } from "$lib/motion";
 import type { Model } from "$lib/types";
 
@@ -20,6 +20,9 @@ let {
 } = $props();
 
 let open = $state(false);
+let choosingModel = $state(false);
+let modelList = $state<HTMLFieldSetElement>();
+let modelButton = $state<HTMLButtonElement>();
 let triggerLabelElement = $state<HTMLSpanElement>();
 let triggerLabelBounds = $state<DOMRectReadOnly>();
 let triggerLabelWidth = $state<number>();
@@ -116,7 +119,10 @@ function endPointerDrag(event?: PointerEvent) {
 
 $effect(() => {
 	if (disabled) open = false;
-	if (!open) endPointerDrag();
+	if (!open) {
+		endPointerDrag();
+		choosingModel = false;
+	}
 	return endPointerDrag;
 });
 </script>
@@ -169,40 +175,47 @@ $effect(() => {
 			align="center"
 			sideOffset={8}
 			collisionPadding={12}
+			onEscapeKeydown={(event) => {
+				if (choosingModel) {
+					event.preventDefault();
+					choosingModel = false;
+					void tick().then(() => modelButton?.focus());
+				}
+			}}
 		>
 			<div class="model-effort-summary">
 				<span class="model-effort-icon" aria-hidden="true"><Zap size={15} fill="currentColor" /></span>
-				<Dropdown.Root>
-					<Dropdown.Trigger class="model-picker-trigger" aria-label="Choose model" {disabled}>
-						<span>
-							<span class="model-effort-label">
-								{@render effortText()}
-								<ChevronRight size={12} aria-hidden="true" />
-							</span>
-							<span class="motion-copy model-effort-name-copy">
-								{#key model}
-									<span
-										class="model-effort-name"
-										in:rollIn={{ y: 8 * modelRollDirection }}
-										out:rollOut={{ y: -8 * modelRollDirection }}
-									>
-										{selectedModel?.displayName || "Codex"}
-									</span>
-								{/key}
-							</span>
+				<button
+					type="button"
+					class="model-picker-trigger"
+					aria-label="Choose model"
+					aria-expanded={choosingModel}
+					aria-controls="model-picker-list"
+					bind:this={modelButton}
+					{disabled}
+					onclick={() => {
+						choosingModel = !choosingModel;
+						if (choosingModel) void tick().then(() => modelList?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus());
+					}}
+				>
+					<span>
+						<span class="model-effort-label">
+							{@render effortText()}
+							<ChevronRight size={12} aria-hidden="true" />
 						</span>
-					</Dropdown.Trigger>
-					<Dropdown.Content class="model-picker-menu" side="right" align="start" sideOffset={12}>
-						<Dropdown.Label>Model</Dropdown.Label>
-						<Dropdown.RadioGroup value={model} onValueChange={onModelChange}>
-							{#each models as option (option.model)}
-								<Dropdown.RadioItem value={option.model} class="model-option" {disabled}>
-									<div><strong>{option.displayName}</strong><small>{option.description}</small></div>
-								</Dropdown.RadioItem>
-							{/each}
-						</Dropdown.RadioGroup>
-					</Dropdown.Content>
-				</Dropdown.Root>
+						<span class="motion-copy model-effort-name-copy">
+							{#key model}
+								<span
+									class="model-effort-name"
+									in:rollIn={{ y: 8 * modelRollDirection }}
+									out:rollOut={{ y: -8 * modelRollDirection }}
+								>
+									{selectedModel?.displayName || "Codex"}
+								</span>
+							{/key}
+						</span>
+					</span>
+				</button>
 				<button
 					type="button"
 					class="effort-reset"
@@ -214,47 +227,78 @@ $effect(() => {
 					<RotateCcw size={14} aria-hidden="true" />
 				</button>
 			</div>
-			{#if efforts.length}
-				<div
-					class="effort-control"
-					class:dragging={pointerProgress !== null}
-					style:--effort-progress={pointerProgress ?? effortProgress}
-				>
-					<div class="effort-track" aria-hidden="true">
-						<div class="effort-fill"></div>
-						<div class="effort-ticks">
-							{#each efforts as option, index (option.reasoningEffort)}
-								<span
-									class:filled={index <= effortIndex}
-									style:left={`${efforts.length > 1 ? (index / (efforts.length - 1)) * 100 : 0}%`}
-								></span>
-							{/each}
+			<div class="model-picker-views" class:choosing-model={choosingModel}>
+				<div class="model-picker-view model-picker-effort" inert={choosingModel}>
+					{#if efforts.length}
+						<div
+							class="effort-control"
+							class:dragging={pointerProgress !== null}
+							style:--effort-progress={pointerProgress ?? effortProgress}
+						>
+							<div class="effort-track" aria-hidden="true">
+								<div class="effort-fill"></div>
+								<div class="effort-ticks">
+									{#each efforts as option, index (option.reasoningEffort)}
+										<span
+											class:filled={index <= effortIndex}
+											style:left={`${efforts.length > 1 ? (index / (efforts.length - 1)) * 100 : 0}%`}
+										></span>
+									{/each}
+								</div>
+							</div>
+							<span class="effort-thumb" aria-hidden="true"></span>
+							<input
+								type="range"
+								class="effort-slider"
+								aria-label="Reasoning effort"
+								aria-valuetext={effortLabel(selectedEffort)}
+								title={efforts[effortIndex]?.description}
+								min="0"
+								max={Math.max(1, efforts.length - 1)}
+								step="1"
+								value={effortIndex}
+								disabled={disabled || efforts.length < 2}
+								onpointerdown={startPointerDrag}
+								onpointermove={updatePointerProgress}
+								onpointerup={endPointerDrag}
+								onpointercancel={endPointerDrag}
+								onlostpointercapture={endPointerDrag}
+								oninput={(event) => {
+									const option = efforts[event.currentTarget.valueAsNumber];
+									if (option) effort = option.reasoningEffort;
+								}}
+							>
 						</div>
-					</div>
-					<span class="effort-thumb" aria-hidden="true"></span>
-					<input
-						type="range"
-						class="effort-slider"
-						aria-label="Reasoning effort"
-						aria-valuetext={effortLabel(selectedEffort)}
-						title={efforts[effortIndex]?.description}
-						min="0"
-						max={Math.max(1, efforts.length - 1)}
-						step="1"
-						value={effortIndex}
-						disabled={disabled || efforts.length < 2}
-						onpointerdown={startPointerDrag}
-						onpointermove={updatePointerProgress}
-						onpointerup={endPointerDrag}
-						onpointercancel={endPointerDrag}
-						onlostpointercapture={endPointerDrag}
-						oninput={(event) => {
-							const option = efforts[event.currentTarget.valueAsNumber];
-							if (option) effort = option.reasoningEffort;
-						}}
-					>
+					{/if}
 				</div>
-			{/if}
+				<div class="model-picker-view model-picker-models" inert={!choosingModel}>
+					<fieldset
+						class="model-picker-list"
+						id="model-picker-list"
+						bind:this={modelList}
+						aria-label="Models"
+					>
+						{#each models as option (option.model)}
+							<button
+								type="button"
+								class="model-option"
+								aria-pressed={option.model === model}
+								{disabled}
+								onclick={() => {
+									onModelChange(option.model);
+									choosingModel = false;
+									void tick().then(() => modelButton?.focus());
+								}}
+							>
+								<span><strong>{option.displayName}</strong><small>{option.description}</small></span>
+								{#if option.model === model}
+									<span aria-hidden="true">✓</span>
+								{/if}
+							</button>
+						{/each}
+					</fieldset>
+				</div>
+			</div>
 		</Popover.Content>
 	</Popover.Portal>
 </Popover.Root>

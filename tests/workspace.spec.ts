@@ -393,8 +393,8 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(page.getByRole("dialog", { name: "Model and reasoning effort" })).toBeVisible();
 	await expect(page.locator(".model-effort-summary")).toContainText("Model A");
 	await page.getByRole("button", { name: "Choose model", exact: true }).click();
-	await expect(page.getByRole("menuitemradio", { name: /Model A/ })).toBeChecked();
-	await page.getByRole("menuitemradio", { name: /Model B/ }).click();
+	await expect(page.getByRole("button", { name: /Model A/ })).toHaveAttribute("aria-pressed", "true");
+	await page.getByRole("button", { name: /Model B/ }).click();
 	await expect(modelEffortTrigger).toHaveAccessibleName("Selecting model...");
 	await expect(page.locator(".model-effort-summary")).toContainText("Model B");
 	const effortSlider = page.getByRole("slider", { name: "Reasoning effort", exact: true });
