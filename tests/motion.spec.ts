@@ -93,7 +93,7 @@ test("settings dialog animates and restores focus", async ({ page }) => {
 	await expect(account).toBeFocused();
 });
 
-test("model list opens above the slider and returns to the compact view", async ({ page }) => {
+test("model list morphs in place and returns to the slider", async ({ page }) => {
 	await page.locator(".model-effort-trigger").click();
 	const dialog = page.getByRole("dialog", { name: "Model and reasoning effort" });
 	const choose = page.getByRole("button", { name: "Choose model" });
@@ -101,10 +101,14 @@ test("model list opens above the slider and returns to the compact view", async 
 	const views = page.locator(".model-picker-views");
 	await dialog.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
 	const before = await views.boundingBox();
-	expect(before?.height).toBe(0);
+	const initialSummary = await page.locator(".model-effort-summary").boundingBox();
+	const initialSlider = await slider.boundingBox();
+	if (!initialSummary || !initialSlider) throw new Error("Missing slider or summary bounds");
+	expect(initialSlider.y).toBeGreaterThanOrEqual(initialSummary.y + initialSummary.height);
+	expect(before?.height).toBe(28);
 	await choose.click();
 	await expect(choose).toHaveAttribute("aria-expanded", "true");
-	await expect(slider).toBeVisible();
+	await expect(page.locator(".model-picker-effort")).toHaveJSProperty("inert", true);
 	const modelB = page.getByRole("button", { name: /Model B/ });
 	await expect
 		.poll(() =>
@@ -118,23 +122,19 @@ test("model list opens above the slider and returns to the compact view", async 
 		)
 		.toBe(true);
 	await expect(modelB).toBeVisible();
+	await expect(page.locator(".model-picker-effort")).toHaveCSS("opacity", "0");
 	await views.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
 	const summary = await page.locator(".model-effort-summary").boundingBox();
 	const list = await page.locator(".model-picker-list").boundingBox();
 	if (!summary || !list) throw new Error("Missing model selector bounds");
 	expect(list.y + list.height).toBeLessThanOrEqual(summary.y);
-	const sliderBounds = await slider.boundingBox();
-	if (!sliderBounds) throw new Error("Missing slider bounds");
-	expect(sliderBounds.y).toBeGreaterThanOrEqual(summary.y + summary.height);
-	await slider.fill("0");
-	await expect(slider).toHaveAttribute("aria-valuetext", "Low");
 	const after = await views.boundingBox();
 	expect(after?.x).toBe(before?.x);
-	expect(after?.height).toBeGreaterThan(0);
+	expect(after?.height).toBeGreaterThan(28);
 	await page.keyboard.press("Escape");
 	await expect(dialog).toBeVisible();
 	await expect(slider).toBeVisible();
-	await expect.poll(async () => (await views.boundingBox())?.height).toBe(0);
+	await expect.poll(async () => (await views.boundingBox())?.height).toBe(28);
 	await expect(choose).toBeFocused();
 	await choose.click();
 	await modelB.click();
