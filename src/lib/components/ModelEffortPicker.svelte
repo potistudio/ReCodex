@@ -169,7 +169,7 @@ $effect(() => {
 	</Popover.Trigger>
 	<Popover.Portal>
 		<Popover.Content
-			class={choosingModel ? "model-effort-popover choosing-model" : "model-effort-popover"}
+			class="model-effort-popover"
 			role="dialog"
 			aria-label="Model and reasoning effort"
 			side="top"
@@ -231,51 +231,8 @@ $effect(() => {
 			<div
 				class="model-picker-views"
 				class:choosing-model={choosingModel}
-				style:height={`${choosingModel ? modelListHeight : efforts.length ? 28 : 0}px`}
+				style:height={`${choosingModel ? modelListHeight + 12 : 0}px`}
 			>
-				<div class="model-picker-view model-picker-effort" inert={choosingModel}>
-					{#if efforts.length}
-						<div
-							class="effort-control"
-							class:dragging={pointerProgress !== null}
-							style:--effort-progress={pointerProgress ?? effortProgress}
-						>
-							<div class="effort-track" aria-hidden="true">
-								<div class="effort-fill"></div>
-								<div class="effort-ticks">
-									{#each efforts as option, index (option.reasoningEffort)}
-										<span
-											class:filled={index <= effortIndex}
-											style:left={`${efforts.length > 1 ? (index / (efforts.length - 1)) * 100 : 0}%`}
-										></span>
-									{/each}
-								</div>
-							</div>
-							<span class="effort-thumb" aria-hidden="true"></span>
-							<input
-								type="range"
-								class="effort-slider"
-								aria-label="Reasoning effort"
-								aria-valuetext={effortLabel(selectedEffort)}
-								title={efforts[effortIndex]?.description}
-								min="0"
-								max={Math.max(1, efforts.length - 1)}
-								step="1"
-								value={effortIndex}
-								disabled={disabled || efforts.length < 2}
-								onpointerdown={startPointerDrag}
-								onpointermove={updatePointerProgress}
-								onpointerup={endPointerDrag}
-								onpointercancel={endPointerDrag}
-								onlostpointercapture={endPointerDrag}
-								oninput={(event) => {
-									const option = efforts[event.currentTarget.valueAsNumber];
-									if (option) effort = option.reasoningEffort;
-								}}
-							>
-						</div>
-					{/if}
-				</div>
 				<div class="model-picker-view model-picker-models" inert={!choosingModel}>
 					<fieldset
 						class="model-picker-list"
@@ -305,6 +262,47 @@ $effect(() => {
 					</fieldset>
 				</div>
 			</div>
+			{#if efforts.length}
+				<div
+					class="effort-control"
+					class:dragging={pointerProgress !== null}
+					style:--effort-progress={pointerProgress ?? effortProgress}
+				>
+					<div class="effort-track" aria-hidden="true">
+						<div class="effort-fill"></div>
+						<div class="effort-ticks">
+							{#each efforts as option, index (option.reasoningEffort)}
+								<span
+									class:filled={index <= effortIndex}
+									style:left={`${efforts.length > 1 ? (index / (efforts.length - 1)) * 100 : 0}%`}
+								></span>
+							{/each}
+						</div>
+					</div>
+					<span class="effort-thumb" aria-hidden="true"></span>
+					<input
+						type="range"
+						class="effort-slider"
+						aria-label="Reasoning effort"
+						aria-valuetext={effortLabel(selectedEffort)}
+						title={efforts[effortIndex]?.description}
+						min="0"
+						max={Math.max(1, efforts.length - 1)}
+						step="1"
+						value={effortIndex}
+						disabled={disabled || efforts.length < 2}
+						onpointerdown={startPointerDrag}
+						onpointermove={updatePointerProgress}
+						onpointerup={endPointerDrag}
+						onpointercancel={endPointerDrag}
+						onlostpointercapture={endPointerDrag}
+						oninput={(event) => {
+							const option = efforts[event.currentTarget.valueAsNumber];
+							if (option) effort = option.reasoningEffort;
+						}}
+					>
+				</div>
+			{/if}
 		</Popover.Content>
 	</Popover.Portal>
 </Popover.Root>

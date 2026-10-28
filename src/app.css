@@ -453,10 +453,6 @@ textarea,
 	gap: 4px;
 	margin-bottom: 12px;
 }
-.model-effort-popover.choosing-model .model-effort-summary {
-	margin-top: 12px;
-	margin-bottom: 0;
-}
 .model-effort-icon,
 .effort-reset {
 	display: grid;
@@ -515,10 +511,8 @@ textarea,
 }
 .model-picker-views {
 	position: relative;
-	transition: height var(--motion-panel) var(--motion-ease);
-}
-.model-picker-views.choosing-model {
 	order: -1;
+	transition: height var(--motion-panel) var(--motion-ease);
 }
 .model-picker-view {
 	position: absolute;
@@ -529,8 +523,8 @@ textarea,
 		transform var(--motion-panel) var(--motion-ease),
 		filter var(--motion-normal) ease;
 }
-.model-picker-models,
-.choosing-model .model-picker-effort {
+.model-picker-models {
+	bottom: 12px;
 	opacity: 0;
 	filter: blur(3px);
 	transform: scale(0.96);
