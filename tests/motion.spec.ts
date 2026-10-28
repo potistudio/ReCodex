@@ -104,7 +104,7 @@ test("model list morphs in place and returns to the slider", async ({ page }) =>
 	const initialSummary = await page.locator(".model-effort-summary").boundingBox();
 	const initialSlider = await slider.boundingBox();
 	if (!initialSummary || !initialSlider) throw new Error("Missing slider or summary bounds");
-	expect(initialSlider.y).toBeGreaterThanOrEqual(initialSummary.y + initialSummary.height);
+	expect(initialSlider.y + initialSlider.height).toBeLessThanOrEqual(initialSummary.y);
 	expect(before?.height).toBe(28);
 	await choose.click();
 	await expect(choose).toHaveAttribute("aria-expanded", "true");

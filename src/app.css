@@ -451,11 +451,7 @@ textarea,
 	grid-template-columns: 24px minmax(0, 1fr) 24px;
 	align-items: start;
 	gap: 4px;
-	margin-bottom: 12px;
-}
-.model-effort-popover.choosing-model .model-effort-summary {
 	margin-top: 12px;
-	margin-bottom: 0;
 }
 .model-effort-icon,
 .effort-reset {
@@ -515,10 +511,8 @@ textarea,
 }
 .model-picker-views {
 	position: relative;
-	transition: height var(--motion-panel) var(--motion-ease);
-}
-.model-picker-views.choosing-model {
 	order: -1;
+	transition: height var(--motion-panel) var(--motion-ease);
 }
 .model-picker-view {
 	position: absolute;
