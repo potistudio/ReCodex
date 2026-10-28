@@ -61,6 +61,7 @@ pub fn run() {
         .manage(Connection::default())
         .manage(workspace::Workspace::default())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             server_connect,

@@ -21,6 +21,7 @@ import {
 } from "@lucide/svelte";
 import { isTauri } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
+import { platform } from "@tauri-apps/plugin-os";
 import { onMount, tick } from "svelte";
 import { App } from "$lib/app.svelte";
 import Approval from "$lib/components/Approval.svelte";
@@ -100,7 +101,7 @@ function startWorkLabelTransition(nextLabel: string) {
 	}, labelTransitionDuration);
 }
 onMount(() => {
-	macTitlebar = isTauri() && /Macintosh|Mac OS X/.test(navigator.userAgent);
+	macTitlebar = isTauri() && platform() === "macos";
 	void app.init();
 	return () => {
 		if (labelTransitionTimer) clearTimeout(labelTransitionTimer);
