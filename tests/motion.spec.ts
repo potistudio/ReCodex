@@ -119,6 +119,11 @@ test("model list morphs in place and returns to the slider", async ({ page }) =>
 		.toBe(true);
 	await expect(modelB).toBeVisible();
 	await expect(page.locator(".model-picker-effort")).toHaveCSS("opacity", "0");
+	await views.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+	const summary = await page.locator(".model-effort-summary").boundingBox();
+	const list = await page.locator(".model-picker-list").boundingBox();
+	if (!summary || !list) throw new Error("Missing model selector bounds");
+	expect(list.y + list.height).toBeLessThanOrEqual(summary.y);
 	const after = await views.boundingBox();
 	expect(after?.x).toBe(before?.x);
 	expect(after?.height).toBeGreaterThan(28);

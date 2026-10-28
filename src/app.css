@@ -419,6 +419,8 @@ textarea,
 	visibility: hidden;
 }
 .model-effort-popover {
+	display: flex;
+	flex-direction: column;
 	--effort-accent: #6665d8;
 	width: 256px;
 	max-width: calc(100vw - 24px);
@@ -450,6 +452,10 @@ textarea,
 	align-items: start;
 	gap: 4px;
 	margin-bottom: 12px;
+}
+.model-effort-popover.choosing-model .model-effort-summary {
+	margin-top: 12px;
+	margin-bottom: 0;
 }
 .model-effort-icon,
 .effort-reset {
@@ -510,6 +516,9 @@ textarea,
 .model-picker-views {
 	position: relative;
 	transition: height var(--motion-panel) var(--motion-ease);
+}
+.model-picker-views.choosing-model {
+	order: -1;
 }
 .model-picker-view {
 	position: absolute;

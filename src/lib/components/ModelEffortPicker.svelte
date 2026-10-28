@@ -169,7 +169,7 @@ $effect(() => {
 	</Popover.Trigger>
 	<Popover.Portal>
 		<Popover.Content
-			class="model-effort-popover"
+			class={choosingModel ? "model-effort-popover choosing-model" : "model-effort-popover"}
 			role="dialog"
 			aria-label="Model and reasoning effort"
 			side="top"
