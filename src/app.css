@@ -312,16 +312,10 @@ textarea,
 	border: 1px solid var(--border);
 	border-radius: 12px;
 	background: var(--background);
+	outline: 1px solid rgb(255 255 255 / 35%);
+	outline-offset: -2px;
 }
-.main-workspace::after {
-	position: absolute;
-	z-index: 5;
-	inset: 0;
-	border: 1px solid rgb(255 255 255 / 35%);
-	border-radius: inherit;
-	content: "";
-	pointer-events: none;
-}
+
 
 .topbar {
 	position: relative;
