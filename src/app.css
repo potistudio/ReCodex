@@ -302,6 +302,8 @@ textarea,
 	flex-direction: column;
 }
 .topbar {
+	background: var(--sidebar);
+	color: var(--sidebar-foreground);
 	height: 48px;
 	flex-shrink: 0;
 	padding: 0 29px;
