@@ -274,38 +274,26 @@ function trackManualScroll(node: HTMLElement) {
 }
 function followLatest() {
 	scrollMode = "follow";
-	void tick().then(() => chatScroll?.scrollTo({ behavior: "smooth", top: chatScroll.scrollHeight }));
 }
-function centerLatestUserMessage() {
-	if (!chatScroll) return;
-	const messages = chatScroll.querySelectorAll<HTMLElement>(".user-message");
-	const message = messages[messages.length - 1];
-	if (!message) return;
-	const scrollBounds = chatScroll.getBoundingClientRect();
-	const messageBounds = message.getBoundingClientRect();
-	chatScroll.scrollTo({
-		behavior: "auto",
-		top: Math.max(
-			0,
-			chatScroll.scrollTop +
-				messageBounds.top -
-				scrollBounds.top -
-				(chatScroll.clientHeight - messageBounds.height) / 2,
-		),
+function followChatResize(node: HTMLElement) {
+	const observer = new ResizeObserver(() => {
+		if (scrollMode === "follow" && chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight;
 	});
+	observer.observe(node);
+	if (node.parentElement) observer.observe(node.parentElement);
+	return {
+		destroy() {
+			observer.disconnect();
+		},
+	};
 }
 async function send() {
 	const text = draft.trim();
 	if (!text || composing || !ready || app.busy) return;
-	const wasFollowing = scrollMode === "follow";
+	scrollMode = "follow";
 	draft = "";
 	const target = app;
 	const sending = target.send(text);
-	if (wasFollowing) {
-		scrollMode = "free";
-		await tick();
-		centerLatestUserMessage();
-	}
 	if (!(await sending)) {
 		if (app === target) draft = text;
 		else drafts[target.hostId] = text;
@@ -690,7 +678,7 @@ function shortcuts(event: KeyboardEvent) {
 							onscroll={updateScrollMode}
 						>
 							{#if app.items.length > 0}
-								<div class="messages">
+								<div class="messages" use:followChatResize>
 									{#each app.items as item, itemIndex (item.renderKey ?? item.id)}
 										<Message
 											{item}
@@ -733,9 +721,6 @@ function shortcuts(event: KeyboardEvent) {
 											requestAlternative={(event) => app.requestAlternative(event)}
 										/>
 									{/each}
-									{#if app.activeTurn || app.sending || scrollMode === "free"}
-										<div class="message-scroll-spacer" aria-hidden="true"></div>
-									{/if}
 								</div>
 							{/if}
 						</div>
