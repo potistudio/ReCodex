@@ -741,7 +741,7 @@ function shortcuts(event: KeyboardEvent) {
 						</div>
 						{#each ["top", "bottom"] as edge}
 							<div class="chat-edge-blur chat-edge-blur-{edge}" aria-hidden="true">
-								{#each [1, 2, 3, 4, 5, 6] as layer}
+								{#each [1, 2, 3, 4] as layer}
 									<span class="chat-edge-blur-layer chat-edge-blur-layer-{layer}"></span>
 								{/each}
 							</div>

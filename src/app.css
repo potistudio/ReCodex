@@ -833,7 +833,7 @@ textarea,
 	right: 0;
 	left: 0;
 	z-index: 1;
-	height: 96px;
+	height: 48px;
 	pointer-events: none;
 	user-select: none;
 }
@@ -844,7 +844,6 @@ textarea,
 .chat-edge-blur-bottom {
 	bottom: 0;
 	--blur-direction: to bottom;
-	transform: translateY(32px);
 }
 .chat-edge-blur-layer {
 	position: absolute;
@@ -854,32 +853,22 @@ textarea,
 	mask-image: linear-gradient(var(--blur-direction), transparent var(--blur-start), black var(--blur-end));
 }
 .chat-edge-blur-layer-1 {
-	--blur-radius: 2px;
+	--blur-radius: 0.5px;
 	--blur-start: 0%;
-	--blur-end: 35%;
+	--blur-end: 40%;
 }
 .chat-edge-blur-layer-2 {
-	--blur-radius: 4px;
-	--blur-start: 10%;
-	--blur-end: 50%;
+	--blur-radius: 1px;
+	--blur-start: 20%;
+	--blur-end: 60%;
 }
 .chat-edge-blur-layer-3 {
-	--blur-radius: 8px;
-	--blur-start: 20%;
-	--blur-end: 65%;
-}
-.chat-edge-blur-layer-4 {
-	--blur-radius: 16px;
-	--blur-start: 30%;
+	--blur-radius: 2px;
+	--blur-start: 40%;
 	--blur-end: 80%;
 }
-.chat-edge-blur-layer-5 {
-	--blur-radius: 32px;
-	--blur-start: 45%;
-	--blur-end: 90%;
-}
-.chat-edge-blur-layer-6 {
-	--blur-radius: 64px;
+.chat-edge-blur-layer-4 {
+	--blur-radius: 4px;
 	--blur-start: 60%;
 	--blur-end: 100%;
 }
@@ -887,7 +876,12 @@ textarea,
 	content: "";
 	position: absolute;
 	inset: 0;
-	background: linear-gradient(var(--blur-direction), transparent, var(--background));
+	background: linear-gradient(
+		var(--blur-direction),
+		transparent,
+		color-mix(in srgb, var(--background) 65%, transparent) 50%,
+		var(--background) 85%
+	);
 }
 .chat-scroll {
 	height: 100%;
