@@ -9,25 +9,18 @@ use std::{
     collections::{HashMap, VecDeque},
     path::PathBuf,
     sync::{Arc, Mutex as StdMutex},
-    time::{Duration, Instant},
 };
 use tokio::sync::{broadcast, Mutex};
 use uuid::Uuid;
 
-const LEASE_TIME: Duration = Duration::from_secs(35);
 pub const LOCAL: &str = "local";
 
-struct Lease {
-    owner: String,
-    expires: Instant,
-}
 #[derive(Default)]
 struct Runtime {
     approvals: HashMap<String, (Value, Value)>,
     active: HashMap<String, Value>,
     completed: VecDeque<String>,
     thread_roots: HashMap<String, String>,
-    leases: HashMap<String, Lease>,
     sequence: u64,
     history: VecDeque<Value>,
     history_bytes: usize,
@@ -40,7 +33,7 @@ pub struct Host {
     pub workspace: Workspace,
     pub events: broadcast::Sender<Value>,
     server: Mutex<Option<Arc<Server>>>,
-    // One gate covers checking ownership and accepting a mutation, including approvals.
+    // Serialize operation acceptance, including same-chat starts, saves, and approval answers.
     gate: Mutex<()>,
     runtime: StdMutex<Runtime>,
     pub shared: StdMutex<Vec<String>>,
@@ -218,6 +211,13 @@ impl Host {
         event["params"]["threadId"]
             .as_str()
             .is_some_and(|id| self.is_shared(state, id))
+            || (method == "recodex/fileChanged"
+                && self
+                    .shared
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|root| event["params"]["projectId"] == project_id(root)))
             || matches!(
                 method,
                 "recodex/disconnected"
@@ -251,43 +251,6 @@ impl Host {
             "activeTurns":state.active.iter().filter(|(id,_)| !remote || self.is_shared(state,id)).collect::<HashMap<_,_>>()})
     }
 
-    pub fn keepalive(&self, owner: &str) {
-        for lease in self
-            .runtime
-            .lock()
-            .unwrap()
-            .leases
-            .values_mut()
-            .filter(|l| l.owner == owner)
-        {
-            lease.expires = Instant::now() + LEASE_TIME;
-        }
-    }
-    pub fn release(&self, owner: &str) {
-        self.runtime
-            .lock()
-            .unwrap()
-            .leases
-            .retain(|_, l| l.owner != owner);
-    }
-    fn claim(&self, root: &str, owner: &str) -> Result<(), String> {
-        let mut state = self.runtime.lock().unwrap();
-        if state
-            .leases
-            .get(root)
-            .is_some_and(|l| l.owner != owner && l.expires > Instant::now())
-        {
-            return Err("Another device controls this project. Use Take control in Connections to hand it over.".into());
-        }
-        state.leases.insert(
-            root.into(),
-            Lease {
-                owner: owner.into(),
-                expires: Instant::now() + LEASE_TIME,
-            },
-        );
-        Ok(())
-    }
     fn root(&self, key: &str, remote: bool) -> Result<String, String> {
         let projects = self.workspace.0.lock().unwrap();
         let project = projects
@@ -333,7 +296,6 @@ impl Host {
 
     pub async fn request(
         self: &Arc<Self>,
-        owner: &str,
         remote: bool,
         method: &str,
         params: Value,
@@ -377,25 +339,6 @@ impl Host {
                     json!({"reset":reset,"epoch":epoch,"sequence":sequence,"events":events,"snapshot":snapshot}),
                 )
             }
-            "host/keepalive" => {
-                self.keepalive(owner);
-                Ok(Value::Null)
-            }
-            "host/release" => {
-                self.release(owner);
-                Ok(Value::Null)
-            }
-            "host/acquire" => {
-                let root = self.root(&string("project")?, remote)?;
-                self.runtime.lock().unwrap().leases.insert(
-                    root,
-                    Lease {
-                        owner: owner.into(),
-                        expires: Instant::now() + LEASE_TIME,
-                    },
-                );
-                Ok(Value::Null)
-            }
             "projects/list" => {
                 let projects = self.workspace.0.lock().unwrap();
                 let shared = self.shared.lock().unwrap();
@@ -423,14 +366,14 @@ impl Host {
                     }
                     "files/read" => Ok(json!(workspace::file_read(&self.workspace, root, path)?)),
                     _ => {
-                        self.claim(&root, owner)?;
                         workspace::file_save(
                             &self.workspace,
-                            root,
-                            path,
+                            root.clone(),
+                            path.clone(),
                             string("content")?,
                             string("expected")?,
                         )?;
+                        self.publish(json!({"method":"recodex/fileChanged","params":{"projectId":project_id(&root),"cwd":root,"path":path}}));
                         Ok(Value::Null)
                     }
                 }
@@ -455,7 +398,6 @@ impl Host {
             }
             "thread/start" => {
                 let root = self.root(&string("cwd")?, remote)?;
-                self.claim(&root, owner)?;
                 let mut input = pick(&params, &["model"]);
                 input["cwd"] = json!(root);
                 input["sandbox"] = json!("workspace-write");
@@ -464,10 +406,7 @@ impl Host {
             }
             "thread/read" | "thread/resume" | "thread/delete" | "turn/start" | "turn/interrupt" => {
                 let id = string("threadId")?;
-                let root = self.thread_root(&id, remote).await?;
-                if method != "thread/read" && method != "thread/resume" {
-                    self.claim(&root, owner)?;
-                }
+                self.thread_root(&id, remote).await?;
                 if method == "turn/start" {
                     let inputs = params["input"]
                         .as_array()
@@ -502,15 +441,8 @@ impl Host {
                     input["includeTurns"] = json!(true);
                 }
                 if method == "thread/resume" {
-                    // Resuming can change runtime configuration; observers only read an already loaded thread.
-                    let observing = {
-                        let state = self.runtime.lock().unwrap();
-                        state.active.contains_key(&id)
-                            || state
-                                .leases
-                                .get(&root)
-                                .is_some_and(|l| l.owner != owner && l.expires > Instant::now())
-                    };
+                    // Read running conversations without reconfiguring or restarting their turn.
+                    let observing = self.runtime.lock().unwrap().active.contains_key(&id);
                     if observing {
                         let mut read = self
                             .codex("thread/read", json!({"threadId":id,"includeTurns":true}))
@@ -550,8 +482,7 @@ impl Host {
                         "This request has already been resolved or belongs to an old Codex session",
                     )?;
                 if let Some(thread) = event["params"]["threadId"].as_str() {
-                    let root = self.thread_root(thread, remote).await?;
-                    self.claim(&root, owner)?;
+                    self.thread_root(thread, remote).await?;
                 } else if remote {
                     return Err("This request must be answered on the host PC".into());
                 }
@@ -566,6 +497,15 @@ impl Host {
                     .await
                     .clone()
                     .ok_or("Codex is not connected")?;
+                if !self
+                    .runtime
+                    .lock()
+                    .unwrap()
+                    .approvals
+                    .contains_key(&public_id)
+                {
+                    return Err("This request has already been resolved".into());
+                }
                 server.write(response).await?;
                 self.runtime.lock().unwrap().approvals.remove(&public_id);
                 self.publish(
@@ -672,12 +612,13 @@ impl Drop for Fixture {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
     #[tokio::test]
     async fn published_roots_paths_and_method_policy_are_enforced() {
         let fixture = Fixture::new().await;
         let host = &fixture.host;
         let list = host
-            .request("device", true, "projects/list", json!({}))
+            .request(true, "projects/list", json!({}))
             .await
             .unwrap();
         assert_eq!(list.as_array().unwrap().len(), 1);
@@ -689,10 +630,7 @@ mod tests {
             "config/value/write",
             "process/spawn",
         ] {
-            assert!(host
-                .request("device", true, method, json!({}))
-                .await
-                .is_err());
+            assert!(host.request(true, method, json!({})).await.is_err());
         }
         for root in [
             project_id(&fixture.private),
@@ -700,18 +638,12 @@ mod tests {
             "unknown".into(),
         ] {
             assert!(host
-                .request(
-                    "device",
-                    true,
-                    "files/read",
-                    json!({"root":root,"path":"secret.txt"})
-                )
+                .request(true, "files/read", json!({"root":root,"path":"secret.txt"}))
                 .await
                 .is_err());
         }
         assert!(host
             .request(
-                "device",
                 true,
                 "files/read",
                 json!({"root":project_id(&fixture.root),"path":"../private/secret.txt"})
@@ -719,95 +651,15 @@ mod tests {
             .await
             .is_err());
         assert!(host
-            .request(
-                "device",
-                true,
-                "thread/read",
-                json!({"threadId":"private-thread"})
-            )
+            .request(true, "thread/read", json!({"threadId":"private-thread"}))
             .await
             .is_err());
-        let started = host.request("device",true,"thread/start",json!({"cwd":project_id(&fixture.root),"sandbox":"danger-full-access","approvalPolicy":"never","config":{"bad":true}})).await.unwrap();
+        let started = host.request(true,"thread/start",json!({"cwd":project_id(&fixture.root),"sandbox":"danger-full-access","approvalPolicy":"never","config":{"bad":true}})).await.unwrap();
         assert_eq!(started["received"]["sandbox"], "workspace-write");
         assert_eq!(started["received"]["approvalPolicy"], "on-request");
         assert!(started["received"].get("config").is_none());
         assert_eq!(started["received"]["cwd"], fixture.root);
-        assert!(host.request("device",true,"turn/start",json!({"threadId":"shared-thread","input":[{"type":"localImage","path":"/private/secret"}]})).await.is_err());
-        host.shutdown().await;
-    }
-    #[tokio::test]
-    async fn control_includes_local_editor_and_approvals_are_answered_once() {
-        let fixture = Fixture::new().await;
-        let host = &fixture.host;
-        host.request(
-            "device-a",
-            true,
-            "thread/start",
-            json!({"cwd":project_id(&fixture.root)}),
-        )
-        .await
-        .unwrap();
-        assert!(host.request(LOCAL,false,"files/save",json!({"root":fixture.root,"path":"main.txt","content":"local","expected":"original"})).await.is_err());
-        // Another device can observe without stealing control.
-        host.request(
-            "device-b",
-            true,
-            "thread/resume",
-            json!({"threadId":"shared-thread"}),
-        )
-        .await
-        .unwrap();
-        host.request(
-            "device-a",
-            true,
-            "turn/start",
-            json!({"threadId":"shared-thread","input":[{"type":"text","text":"hello"}]}),
-        )
-        .await
-        .unwrap();
-        let snapshot = host.snapshot(true);
-        let approval = snapshot["approvals"][0]["id"].clone();
-        assert!(approval.as_str().unwrap().contains(':'));
-        assert!(host
-            .request(
-                "device-b",
-                true,
-                "approval/respond",
-                json!({"id":approval,"result":{"decision":"accept"}})
-            )
-            .await
-            .is_err());
-        host.request(
-            "device-a",
-            true,
-            "approval/respond",
-            json!({"id":approval,"result":{"decision":"accept"}}),
-        )
-        .await
-        .unwrap();
-        assert!(host
-            .request(
-                "device-a",
-                true,
-                "approval/respond",
-                json!({"id":approval,"result":{"decision":"accept"}})
-            )
-            .await
-            .is_err());
-        host.release("device-a");
-        host.request(
-            LOCAL,
-            false,
-            "files/save",
-            json!({"root":fixture.root,"path":"main.txt","content":"local","expected":"original"}),
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            std::fs::read_to_string(PathBuf::from(&fixture.root).join("main.txt")).unwrap(),
-            "local"
-        );
-        assert!(host.request(LOCAL,false,"files/save",json!({"root":fixture.root,"path":"main.txt","content":"stale","expected":"original"})).await.is_err());
+        assert!(host.request(true,"turn/start",json!({"threadId":"shared-thread","input":[{"type":"localImage","path":"/private/secret"}]})).await.is_err());
         host.shutdown().await;
     }
     #[tokio::test]
@@ -820,7 +672,6 @@ mod tests {
         host.publish(json!({"method":"item/agentMessage/delta","params":{"threadId":"private","delta":"secret"}}));
         let replay = host
             .request(
-                "device",
                 true,
                 "host/replay",
                 json!({"epoch":before["epoch"],"sequence":before["sequence"]}),
@@ -832,14 +683,9 @@ mod tests {
         assert!(!replay.to_string().contains("secret"));
         assert!(replay["sequence"].as_u64() > before["sequence"].as_u64());
         assert_eq!(
-            host.request(
-                "device",
-                true,
-                "host/replay",
-                json!({"epoch":"old","sequence":0})
-            )
-            .await
-            .unwrap()["reset"],
+            host.request(true, "host/replay", json!({"epoch":"old","sequence":0}))
+                .await
+                .unwrap()["reset"],
             true
         );
         {
@@ -848,7 +694,6 @@ mod tests {
         }
         assert_eq!(
             host.request(
-                "device",
                 true,
                 "host/replay",
                 json!({"epoch":before["epoch"],"sequence":0})
@@ -856,41 +701,6 @@ mod tests {
             .await
             .unwrap()["reset"],
             true
-        );
-        host.shutdown().await;
-    }
-    #[tokio::test]
-    async fn expired_control_cannot_be_renewed_over_a_new_owner() {
-        let fixture = Fixture::new().await;
-        let host = &fixture.host;
-        host.claim(&fixture.root, "old-session").unwrap();
-        host.runtime
-            .lock()
-            .unwrap()
-            .leases
-            .get_mut(&fixture.root)
-            .unwrap()
-            .expires = Instant::now() - Duration::from_secs(1);
-        host.claim(&fixture.root, "new-session").unwrap();
-        host.keepalive("old-session");
-        assert!(host.claim(&fixture.root, "old-session").is_err());
-        host.release("old-session");
-        assert_eq!(
-            host.runtime.lock().unwrap().leases[&fixture.root].owner,
-            "new-session"
-        );
-        host.request(
-            LOCAL,
-            false,
-            "host/acquire",
-            json!({"project":fixture.root}),
-        )
-        .await
-        .unwrap();
-        assert!(host.claim(&fixture.root, "new-session").is_err());
-        assert_eq!(
-            host.runtime.lock().unwrap().leases[&fixture.root].owner,
-            LOCAL
         );
         host.shutdown().await;
     }
@@ -929,6 +739,137 @@ mod tests {
             "original"
         );
         listener.shutdown().await;
+        host.shutdown().await;
+    }
+    #[tokio::test]
+    async fn clients_can_save_without_handoff_and_stale_concurrent_saves_fail() {
+        let fixture = Fixture::new().await;
+        let host = &fixture.host;
+        let mut events = host.events.subscribe();
+        let (local, remote) = tokio::join!(
+            host.request(false,"files/save",json!({"root":fixture.root,"path":"main.txt","content":"local","expected":"original"})),
+            host.request(true,"files/save",json!({"root":project_id(&fixture.root),"path":"main.txt","content":"remote","expected":"original"})),
+        );
+        assert_eq!(usize::from(local.is_ok()) + usize::from(remote.is_ok()), 1);
+        let changed = events.recv().await.unwrap();
+        assert_eq!(changed["event"]["method"], "recodex/fileChanged");
+        assert!(host.remote_event(&changed).is_some());
+        assert!(events.try_recv().is_err());
+        let current =
+            workspace::file_read(&host.workspace, fixture.root.clone(), "main.txt".into()).unwrap();
+        host.request(false,"files/save",json!({"root":fixture.root,"path":"main.txt","content":"local again","expected":current})).await.unwrap();
+        host.request(true,"files/save",json!({"root":project_id(&fixture.root),"path":"main.txt","content":"remote again","expected":"local again"})).await.unwrap();
+        host.request(false,"files/save",json!({"root":fixture.private,"path":"secret.txt","content":"still private","expected":"secret"})).await.unwrap();
+        events.recv().await.unwrap();
+        events.recv().await.unwrap();
+        let private = events.recv().await.unwrap();
+        assert!(host.remote_event(&private).is_none());
+        host.shutdown().await;
+    }
+    #[tokio::test]
+    async fn approvals_are_answered_once_across_clients_without_handoff() {
+        let fixture = Fixture::new().await;
+        let host = &fixture.host;
+        host.request(false, "thread/start", json!({"cwd":fixture.root}))
+            .await
+            .unwrap();
+        host.request(
+            false,
+            "turn/start",
+            json!({"threadId":"shared-thread","input":[{"type":"text","text":"run"}]}),
+        )
+        .await
+        .unwrap();
+        let approval = host.snapshot(true)["approvals"][0]["id"].clone();
+        assert!(approval.as_str().unwrap().contains(':'));
+        let mut events = host.events.subscribe();
+        let (local, remote) = tokio::join!(
+            host.request(
+                false,
+                "approval/respond",
+                json!({"id":approval,"result":{"decision":"accept"}})
+            ),
+            host.request(
+                true,
+                "approval/respond",
+                json!({"id":approval,"result":{"decision":"decline"}})
+            ),
+        );
+        assert_eq!(usize::from(local.is_ok()) + usize::from(remote.is_ok()), 1);
+        assert!(host.snapshot(true)["approvals"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let event = events.recv().await.unwrap();
+                if event["event"]["method"] == "serverRequest/resolved" {
+                    assert_eq!(event["event"]["params"]["requestId"], approval);
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        host.shutdown().await;
+    }
+    #[tokio::test]
+    async fn same_chat_starts_serialize_while_other_chats_and_cross_client_stop_work() {
+        let fixture = Fixture::new().await;
+        let host = &fixture.host;
+        let message = json!({"threadId":"shared-thread","input":[{"type":"text","text":"run"}]});
+        let (local, remote) = tokio::join!(
+            host.request(false, "turn/start", message.clone()),
+            host.request(true, "turn/start", message)
+        );
+        assert_eq!(usize::from(local.is_ok()) + usize::from(remote.is_ok()), 1);
+        assert_eq!(
+            local.as_ref().or(remote.as_ref()).unwrap()["turn"]["id"],
+            "turn-1"
+        );
+        let observed = host
+            .request(true, "thread/resume", json!({"threadId":"shared-thread"}))
+            .await
+            .unwrap();
+        assert!(observed["received"].get("sandbox").is_none());
+        host.request(
+            true,
+            "turn/start",
+            json!({"threadId":"other-thread","input":[{"type":"text","text":"another chat"}]}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            host.snapshot(true)["activeTurns"]
+                .as_object()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(host
+            .request(true, "thread/delete", json!({"threadId":"shared-thread"}))
+            .await
+            .is_err());
+        host.request(
+            true,
+            "turn/interrupt",
+            json!({"threadId":"shared-thread","turnId":"turn-1"}),
+        )
+        .await
+        .unwrap();
+        assert!(host.snapshot(true)["activeTurns"]
+            .get("shared-thread")
+            .is_none());
+        assert!(host.snapshot(true)["activeTurns"]
+            .get("other-thread")
+            .is_some());
+        host.request(
+            true,
+            "turn/start",
+            json!({"threadId":"shared-thread","input":[{"type":"text","text":"continue"}]}),
+        )
+        .await
+        .unwrap();
         host.shutdown().await;
     }
 }

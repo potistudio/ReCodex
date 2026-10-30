@@ -110,7 +110,7 @@ impl Connections {
         params: Value,
     ) -> Result<Value, String> {
         match id.unwrap_or(LOCAL) {
-            LOCAL => self.local.request(LOCAL, false, method, params).await,
+            LOCAL => self.local.request(false, method, params).await,
             id => {
                 let remote = self
                     .remotes

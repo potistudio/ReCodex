@@ -349,14 +349,11 @@ fn check_origin(request: &Request, response: Response) -> Result<Response, Error
     }
 }
 struct Session {
-    host: Arc<Host>,
-    owner: String,
     worker: JoinHandle<()>,
 }
 impl Drop for Session {
     fn drop(&mut self) {
         self.worker.abort();
-        self.host.release(&self.owner);
     }
 }
 
@@ -399,11 +396,9 @@ async fn serve(
         }
     };
     socket.send(text(json!({"version":PROTOCOL,"hostId":listener.id,"name":listener.name,"deviceId":device.id,"token":token}))).await.map_err(error)?;
-    let owner = format!("{}:{}", device.name, Uuid::new_v4());
     let (requests, mut incoming) = mpsc::channel::<Value>(16);
     let (responses, mut outgoing) = mpsc::channel::<Value>(16);
     let worker_host = host.clone();
-    let worker_owner = owner.clone();
     let mut worker_revoked = revoked.clone();
     let worker = tokio::spawn(async move {
         while let Some(request) = incoming.recv().await {
@@ -411,7 +406,7 @@ async fn serve(
             let result = tokio::select! {
                 biased;
                 _ = worker_revoked.changed() => break,
-                result = worker_host.request(&worker_owner,true,request["method"].as_str().unwrap_or_default(),request["params"].clone()) => result,
+                result = worker_host.request(true,request["method"].as_str().unwrap_or_default(),request["params"].clone()) => result,
             };
             let response = match result {
                 Ok(result) => json!({"id":id,"result":result}),
@@ -422,11 +417,7 @@ async fn serve(
             }
         }
     });
-    let _session = Session {
-        host: host.clone(),
-        owner: owner.clone(),
-        worker,
-    };
+    let _session = Session { worker };
     let mut events = host.events.subscribe();
     let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
     let mut last_seen = Instant::now();
@@ -445,7 +436,7 @@ async fn serve(
             }
             message = socket.next() => {
                 let Some(message) = message else { break; };
-                last_seen = Instant::now(); host.keepalive(&owner);
+                last_seen = Instant::now();
                 match message.map_err(error)? {
                     Message::Text(message) => {
                         let request: Value = serde_json::from_str(&message).map_err(error)?;
@@ -704,7 +695,7 @@ impl Drop for Remote {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::{project_id, Fixture, LOCAL};
+    use crate::host::{project_id, Fixture};
 
     #[tokio::test]
     async fn tls_pairing_files_chat_approval_and_reconnection() {
@@ -744,16 +735,7 @@ mod tests {
             "original"
         );
         remote.request("files/save",json!({"root":project_id(&fixture.root),"path":"main.txt","content":"remote","expected":"original"})).await.unwrap();
-        assert!(fixture
-            .host
-            .request(
-                LOCAL,
-                false,
-                "files/save",
-                json!({"root":fixture.root,"path":"main.txt","content":"local","expected":"remote"})
-            )
-            .await
-            .is_err());
+        fixture.host.request(false,"files/save",json!({"root":fixture.root,"path":"main.txt","content":"local","expected":"remote"})).await.unwrap();
         remote
             .request("thread/start", json!({"cwd":project_id(&fixture.root)}))
             .await
@@ -775,14 +757,46 @@ mod tests {
         })
         .await
         .unwrap();
-        remote
+        let peer = Remote::new(listener.address.clone(), listener.invite());
+        peer.connect(|_| {}).await.unwrap();
+        let pending = peer.request("host/snapshot", json!({})).await.unwrap();
+        assert_eq!(pending["approvals"][0]["id"], approval);
+        peer.request(
+            "approval/respond",
+            json!({"id":approval,"result":{"decision":"accept"}}),
+        )
+        .await
+        .unwrap();
+        assert!(remote
             .request(
                 "approval/respond",
-                json!({"id":approval,"result":{"decision":"accept"}}),
+                json!({"id":approval,"result":{"decision":"decline"}})
             )
             .await
-            .unwrap();
-        remote.request("host/release", json!({})).await.unwrap();
+            .is_err());
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let event = received.recv().await.unwrap();
+                if event["event"]["method"] == "serverRequest/resolved" {
+                    assert_eq!(event["event"]["params"]["requestId"], approval);
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        peer.request("files/save",json!({"root":project_id(&fixture.root),"path":"main.txt","content":"peer edit","expected":"local"})).await.unwrap();
+        assert_eq!(
+            remote
+                .request(
+                    "files/read",
+                    json!({"root":project_id(&fixture.root),"path":"main.txt"})
+                )
+                .await
+                .unwrap(),
+            "peer edit"
+        );
+        peer.disconnect().await;
         // Simulate a broken socket, retaining the device credential for reconnect.
         remote.task.lock().unwrap().take().unwrap().abort();
         *remote.outgoing.lock().await = None;
@@ -791,11 +805,9 @@ mod tests {
             remote.request("projects/list", json!({})).await.unwrap(),
             projects
         );
-        let device_id = listener.status()["devices"][0]["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        listener.revoke(&device_id).unwrap();
+        for device in listener.status()["devices"].as_array().unwrap() {
+            listener.revoke(device["id"].as_str().unwrap()).unwrap();
+        }
         assert!(remote
             .request(
                 "files/read",

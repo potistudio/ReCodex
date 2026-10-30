@@ -889,18 +889,6 @@ function shortcuts(event: KeyboardEvent) {
 				>{app.connecting ? "Connecting…" : "Reconnect"}</Button
 			>
 		</div>
-		<div class="settings-row">
-			<span
-				><strong>Project control</strong
-				><small>Take over this project's changes, or release control for another device.</small></span
-			>
-			<Button variant="outline" disabled={!app.connected || !app.project} onclick={() => app.takeControl()}
-				>Take control</Button
-			>
-			<Button variant="outline" disabled={!app.connected} onclick={() => app.releaseControl()}
-				>Release control</Button
-			>
-		</div>
 		{#if app.remote}
 			<Button variant="outline" onclick={forgetHost}>Disconnect and forget {app.hostName}</Button>
 		{/if}

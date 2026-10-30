@@ -93,7 +93,6 @@ test("hosts explicitly selected projects and isolates remote chats, files, and b
 							events: [],
 							snapshot: { activeTurns: {}, approvals: [] },
 						};
-					if (args.method === "host/keepalive" || args.method === "host/release") return;
 					if (args.method === "model/list")
 						return {
 							data: [
@@ -130,6 +129,7 @@ test("hosts explicitly selected projects and isolates remote chats, files, and b
 	await page.getByRole("button", { name: "Send message", exact: true }).click();
 	await expect(page.getByRole("button", { name: "Stop generation" })).toBeVisible();
 	await page.getByRole("button", { name: "Connections", exact: true }).click();
+	await expect(page.getByRole("button", { name: /^(Take control|Release control)$/ })).toHaveCount(0);
 	const start = page.getByRole("button", { name: "Start hosting", exact: true });
 	await expect(start).toBeDisabled();
 	await page.getByRole("checkbox", { name: "Local project" }).check();

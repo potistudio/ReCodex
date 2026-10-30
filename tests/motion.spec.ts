@@ -31,8 +31,6 @@ test.beforeEach(async ({ page }) => {
 						events: [],
 						snapshot: { activeTurns: {}, approvals: [] },
 					};
-				if (command === "server_request" && ["host/keepalive", "host/release"].includes(args.method as string))
-					return;
 				if (command === "plugin:event|listen") return 1;
 				if (command === "plugin:event|unlisten" || command === "server_connect") return;
 				if (command === "projects_load")
