@@ -710,7 +710,7 @@ packages:
     resolution: {integrity: sha512-ixkJoqQvAP88E6wLydLGGqCJsrFUnqoH6HnaczB8XmDH1oaWU+xxdptvikTgaEhtZ53Ky6YXiBuUI2WXLMCwjw==}
 
   hyperellipse@1.0.5:
-    resolution: {integrity: sha512-kXHjOE7xShPPfD5wT6bTSxyuzspBmsTXnzN4rxZm3eIbRHWW2OIAc/TCCfIi8uIQDi2OHDU3mzO7g==}
+    resolution: {integrity: sha512-kXHjOE7xShPPfD5wT6bTSxyuzspBmsTXnzN4rxZm3eIbRHWW2OIAc/TCCfIiJ9fAqppmi8uIQDi2OHDU3mzO7g==}
 
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}

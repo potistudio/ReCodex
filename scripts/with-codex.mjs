@@ -4,7 +4,6 @@ import { createRequire } from "node:module";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
-const codexRequire = createRequire(require.resolve("@openai/codex/package.json"));
 const architecture = { x64: "x86_64", arm64: "aarch64" }[process.arch];
 const target = {
 	win32: `${architecture}-pc-windows-msvc`,
@@ -15,6 +14,7 @@ const target = {
 let executable = process.env.RECODEX_CODEX_PATH;
 if (!executable) {
 	if (!architecture || !target) throw new Error("Set RECODEX_CODEX_PATH for this platform.");
+	const codexRequire = createRequire(require.resolve("@openai/codex/package.json"));
 	const platformPackage = codexRequire.resolve(`@openai/codex-${process.platform}-${process.arch}/package.json`);
 	executable = path.join(
 		path.dirname(platformPackage),
