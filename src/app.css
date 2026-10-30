@@ -821,6 +821,8 @@ textarea,
 	min-height: 0;
 	margin-bottom: -12px;
 	overflow: clip;
+	/* Keep rounded ancestor clips from overriding the backdrop blur masks. */
+	clip-path: inset(0);
 }
 .chat-scroll-frame-empty {
 	display: none;
