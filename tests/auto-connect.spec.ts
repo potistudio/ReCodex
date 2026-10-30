@@ -108,7 +108,6 @@ test("restores trusted hosts, reconnects on discovery without resending turns, a
 							approvals: [],
 						},
 					};
-				if (["host/keepalive", "host/release"].includes(args.method as string)) return;
 				if (args.method === "turn/start") {
 					if (params.threadId !== "chat") throw Error("Wrong chat");
 					counts.start++;

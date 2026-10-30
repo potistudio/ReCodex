@@ -4,7 +4,7 @@ Each ReCodex desktop app is a client and can optionally host explicitly selected
 
 ## Ownership and routing
 
-`Host` in `src-tauri/src/host.rs` owns the local Codex process, workspace registry, active turns, approvals, project control, and event history. It takes a storage directory rather than a Tauri handle. `workspace.rs` contains filesystem and registry operations. Tauri commands in `lib.rs` adapt these operations for the desktop UI.
+`Host` in `src-tauri/src/host.rs` owns the local Codex process, workspace registry, active turns, approvals, ordered operations, and event history. It takes a storage directory rather than a Tauri handle. `workspace.rs` contains filesystem and registry operations. Tauri commands in `lib.rs` adapt these operations for the desktop UI.
 
 Every UI `App` instance has a host ID. Each instance keeps its own projects, model catalog, account, chat state, event cursor, and saved project/model preferences. File IPC includes the same host ID. Events carry their source host ID, so equal thread or item IDs on different hosts cannot mix. Changing the selected host does not cancel the previous host's turn.
 
@@ -42,13 +42,13 @@ Pairing authorizes use of the host's Codex account and approval UI. As with loca
 
 Browser `Origin` requests are rejected during the WebSocket handshake. TLS and pairing handshakes have timeouts. The listener bounds concurrent connections, incoming message size, per-peer request queues, and outgoing queues. Slow or overflowing event consumers disconnect and reload state on reconnect.
 
-## Project control
+## Concurrent operations
 
-A project has at most one current controlling session. The first mutation acquires its control lease. Local editor writes, remote file saves, thread creation/deletion, turn submission/interruption, and approval responses all check the same host-side lease. Observing a conversation does not acquire control.
+All paired devices and the local UI can send messages, stop turns, answer approvals, and save files without acquiring a device-level lease. The host orders operation acceptance through a gate. A second turn in the same running chat is rejected while its draft remains available in the sending UI; a different chat in the same project can run independently. Reading a running chat does not reconfigure it. Deleting a running chat is rejected until its turn stops.
 
-An authorized device can explicitly use Take control to take over the selected project. The previous holder's subsequent changes are rejected by the same lease check. The holder can use Release control to hand over all of its project leases. Connected clients send heartbeats every ten seconds. Leases expire after 35 seconds without renewal; remote socket closure also releases that session's leases. An old session cannot renew or release a newer session's lease. All operations pass through a host gate so ownership checks and accepted mutations are ordered.
+Any authorized device can answer a pending approval. The host accepts the answer once and broadcasts its resolution so other views remove the prompt. A device that races with an already accepted answer receives an already-resolved error. Stopping a turn from another device broadcasts the completed/interrupted turn state to every subscribed view.
 
-File saves compare the current disk contents with the version the editor read. ReCodex saves are serialized, so a stale second save fails rather than overwriting another ReCodex client's edit. This detects external edits present at comparison time; it is not a transaction with arbitrary external editors.
+File saves compare the current disk contents with the version the editor read. ReCodex saves are serialized, so a stale second save fails rather than overwriting another ReCodex client's edit. This detects external edits present at comparison time; it is not a transaction with arbitrary external editors. Successful saves publish a project-scoped change event to all eligible clients. Their file browsers refresh without overwriting open editor buffers; a stale editor still needs to reload before saving.
 
 Approval IDs include the Codex process generation. The host retains pending requests and accepts an answer once, then broadcasts their resolution. Reconnecting does not auto-approve or resubmit them. Unsupported server-initiated tools receive an explicit protocol error from the host even without an attached UI.
 
@@ -56,7 +56,7 @@ Approval IDs include the Codex process generation. The host retains pending requ
 
 Registered remote host views are recreated automatically on launch, and the UI restores the last selected host. After connection loss, each view retries connection and state synchronization with a one-second initial delay, doubling to a maximum thirty-second retry delay. Discovering a known PC or an updated address wakes its retry immediately. Forgetting a host disposes its retry loop. Reconnection restores transport and conversation state; it does not resubmit chat messages or approvals.
 
-Disconnecting a client, switching hosts, or stopping LAN hosting does not stop the host's Codex turn. A pending approval waits for a permitted controlling device. Exiting the host app terminates the owned Codex child process and ends LAN hosting.
+Disconnecting a client, switching hosts, or stopping LAN hosting does not stop the host's Codex turn. A pending approval waits for an authorized device to answer. Exiting the host app terminates the owned Codex child process and ends LAN hosting.
 
 Host events have a process epoch and sequence number. The host retains up to 8,192 events within a 4 MiB history budget. Reconnection replays missing accessible events and refreshes pending approvals and active turns. If the process changed or the cursor fell outside the retained history, the UI reloads conversation state from Codex. Live events received during this handshake are queued and reconciled against the replay cursor.
 
@@ -66,6 +66,6 @@ Mutations are not automatically retried after a timeout or lost response: they m
 
 The macOS bundle declares its Bonjour service and local-network usage description in `src-tauri/Info.plist`. OS local-network permissions and firewall rules still apply. Discovery failure is shown in Connections; a manual address remains available.
 
-Rust tests start a deterministic Node.js app-server fixture with no sign-in, external network access, or model calls. They cover project/method boundaries, sandbox policy enforcement, ownership including local editing, approval resolution, replay privacy, certificate validation, invitation expiry/reuse, revocation, real TLS WebSocket chat/file/reconnect flows, pairing across host/client restarts, durable revocation/forgetting, and discovery record changes/removal. The opt-in `live_mdns_discovery_and_removal` test runs real publisher/browser daemons on a separate UDP multicast port.
+Rust tests start a deterministic Node.js app-server fixture with no sign-in, external network access, or model calls. They cover project/method boundaries, sandbox policy enforcement, cross-device local/remote editing, concurrent-save conflicts, same-chat start races, independent chats, cross-device stopping, single-answer approval races and notifications, replay privacy, certificate validation, invitation expiry/reuse, revocation, real TLS WebSocket chat/file/reconnect flows, pairing across host/client restarts, durable revocation/forgetting, and discovery record changes/removal. The opt-in `live_mdns_discovery_and_removal` test runs real publisher/browser daemons on a separate UDP multicast port.
 
 The Playwright host test mocks Tauri IPC to verify explicit project selection, host switching during an active local turn, isolation of equal thread/item IDs across hosts, routing of remote editor saves, restoring registered PCs without an invitation, automatic reconnection after discovery updates, avoiding turn resubmission, and stopping retries after forgetting. It complements the Rust transport tests; it does not emulate OS firewall behavior or prove a connection across two physical PCs.

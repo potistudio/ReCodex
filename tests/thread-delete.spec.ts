@@ -35,8 +35,6 @@ test("deletes a chat only after confirmation and preserves it on failure", async
 						events: [],
 						snapshot: { activeTurns: {}, approvals: [] },
 					};
-				if (command === "server_request" && ["host/keepalive", "host/release"].includes(args.method as string))
-					return;
 				if (command === "plugin:event|listen") {
 					if (args.event === "codex-event") listener = args.handler as number;
 					return 1;

@@ -12,7 +12,7 @@ A local desktop workspace for Codex, built with Tauri 2, SvelteKit, Svelte 5, an
 - ChatGPT sign-in through Codex and reconnect controls with connection diagnostics.
 - Theme previews with instant switching and a saved appearance preference.
 - Host selected projects on a home LAN and connect to other PCs over authenticated TLS WebSockets.
-- Switch hosts while work continues, edit remote files, answer approvals, and release project control to another device.
+- Switch hosts while work continues, and send messages, edit files, stop runs, or answer approvals from any authorized device.
 
 ## Themes
 
@@ -54,7 +54,7 @@ Run the desktop app and sign in to Codex on each PC. Open the projects you want 
 
 The host PC supplies its files, CLI, Codex account, and execution environment. Work continues when the controlling UI switches hosts or a client disconnects. Hosting runs while the host app is open and resumes automatically on the next launch until you choose **Stop hosting**. Registered device permissions, connection profiles, and certificate pins survive app restarts. **Disconnect and forget** removes a saved client connection and stops its retries; **Revoke** on the host invalidates that device's credential, including after host restarts. Each authorized device can operate and approve requests for all projects you share.
 
-One device at a time can change each project, including through the local editor. Choose **Take control** in Connections to explicitly take over the selected project, or **Release control** on the current device to hand it over. Reads remain available to other paired devices. Codex sign-in and project registration are performed on the host PC.
+All authorized devices can operate on a shared project without taking or releasing control. The host orders operations, rejects a second turn in an already-running chat, accepts each approval answer once, and rejects saves based on stale file contents. Different chats in the same project can run independently. Codex sign-in and project registration are performed on the host PC.
 
 Automatic discovery uses UDP 5353 on the local link; allow local-network access and the listening TCP port on your private LAN when requested by the OS. If multicast is unavailable, **Manual address (optional)** accepts a LAN IP or hostname and port; registered connections also retry their saved addresses. `0.0.0.0` is a bind address, not a destination. See [LAN architecture and behavior](docs/lan.md) for transport, recovery, and access-control details.
 
@@ -87,7 +87,7 @@ Biome handles frontend formatting and linting. Use `pnpm format`, `pnpm format:c
 
 ## Architecture and scope
 
-- `src-tauri/src/host.rs` owns the transport-independent workspace, Codex lifecycle, project control, approval state, and bounded event replay.
+- `src-tauri/src/host.rs` owns the transport-independent workspace, Codex lifecycle, operation ordering, approval state, and bounded event replay.
 - `src-tauri/src/discovery.rs` browses and advertises LAN hosts using mDNS/DNS-SD; `lan_store.rs` persists trust and hosting preferences with atomic file replacement.
 - `src-tauri/src/lan.rs` provides certificate-verified TLS WebSockets, single-use pairing invitations, persistent device credentials, revocation, and remote request correlation.
 - `src-tauri/src/server.rs` owns the child process, initialization, concurrent request correlation, response timeouts, and event forwarding. The child terminates when the app exits.

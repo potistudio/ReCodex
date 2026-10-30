@@ -50,7 +50,6 @@ export class App {
 	private initialized = false;
 	private retryAt = 0;
 	private retryDelay = 1000;
-	private keepaliveAt = 0;
 	reconnectSoon() {
 		this.retryAt = 0;
 		if (this.initialized && this.remote && !this.connected && !this.connecting) void this.connect();
@@ -77,12 +76,6 @@ export class App {
 	}
 	private preference(key: string) {
 		return this.remote ? `${key}:${this.hostId}` : key;
-	}
-	async releaseControl() {
-		await this.guard(() => this.rpc("host/release"));
-	}
-	async takeControl() {
-		if (this.project) await this.guard(() => this.rpc("host/acquire", { project: this.project?.path }));
 	}
 
 	connected = $state(false);
@@ -149,16 +142,10 @@ export class App {
 			}
 			this.unlisten = unlisten;
 			this.initialized = true;
-			this.pulse = setInterval(() => {
-				const now = Date.now();
-				if (this.remote && !this.connected && !this.connecting && now >= this.retryAt) void this.connect();
-				if (this.connected && now >= this.keepaliveAt) {
-					this.keepaliveAt = now + 10_000;
-					void this.rpc("host/keepalive").catch(() => {
-						if (this.remote) this.connected = false;
-					});
-				}
-			}, 1000);
+			if (this.remote)
+				this.pulse = setInterval(() => {
+					if (!this.connected && !this.connecting && Date.now() >= this.retryAt) void this.connect();
+				}, 1000);
 			if (!this.remote) {
 				this.projects = await invoke<Project[]>("projects_load", { hostId: this.hostId });
 				const saved = localStorage.getItem(this.preference("recodex-project"));
@@ -520,6 +507,10 @@ export class App {
 			this.connected = false;
 			for (const turnId of Object.values(this.activeTurnsByThread)) delete this.generationByTurn[turnId];
 			this.error = "Codex disconnected. Reconnect to continue. Check the chat before retrying a change.";
+			return;
+		}
+		if (method === "recodex/fileChanged") {
+			if (this.project?.path === (this.remote ? params.projectId : params.cwd)) this.fileRevision += 1;
 			return;
 		}
 		if (method === "recodex/log") {
