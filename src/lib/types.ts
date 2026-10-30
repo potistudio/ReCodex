@@ -86,6 +86,7 @@ export interface ServerEvent {
 	method: string;
 	params: {
 		threadId?: string;
+		projectId?: string;
 		turnId?: string;
 		itemId?: string;
 		delta?: string;

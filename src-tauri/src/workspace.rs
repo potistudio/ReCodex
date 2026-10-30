@@ -4,7 +4,6 @@ use std::{
     path::{Path, PathBuf},
     sync::Mutex,
 };
-use tauri::{Manager, State};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,24 +22,19 @@ pub struct Entry {
     path: String,
     is_directory: bool,
 }
-fn storage(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let directory = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+fn storage(directory: &Path) -> Result<PathBuf, String> {
+    fs::create_dir_all(directory).map_err(|e| e.to_string())?;
     Ok(directory.join("projects.json"))
 }
-fn persist(app: &tauri::AppHandle, projects: &[Project]) -> Result<(), String> {
+fn persist(directory: &Path, projects: &[Project]) -> Result<(), String> {
     fs::write(
-        storage(app)?,
+        storage(directory)?,
         serde_json::to_vec_pretty(projects).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())
 }
-#[tauri::command]
-pub fn projects_load(
-    app: tauri::AppHandle,
-    state: State<Workspace>,
-) -> Result<Vec<Project>, String> {
-    let path = storage(&app)?;
+pub fn projects_load(directory: &Path, state: &Workspace) -> Result<Vec<Project>, String> {
+    let path = storage(directory)?;
     let projects = if path.exists() {
         serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?
@@ -50,10 +44,9 @@ pub fn projects_load(
     *state.0.lock().unwrap() = projects;
     Ok(state.0.lock().unwrap().clone())
 }
-#[tauri::command]
 pub fn project_save(
-    app: tauri::AppHandle,
-    state: State<Workspace>,
+    directory: &Path,
+    state: &Workspace,
     path: String,
     name: Option<String>,
 ) -> Result<Vec<Project>, String> {
@@ -83,14 +76,13 @@ pub fn project_save(
             history_paths: Vec::new(),
         });
     }
-    persist(&app, &updated)?;
+    persist(directory, &updated)?;
     *projects = updated;
     Ok(projects.clone())
 }
-#[tauri::command]
 pub fn project_remove(
-    app: tauri::AppHandle,
-    state: State<Workspace>,
+    directory: &Path,
+    state: &Workspace,
     path: String,
 ) -> Result<Vec<Project>, String> {
     let mut projects = state.0.lock().unwrap();
@@ -99,7 +91,7 @@ pub fn project_remove(
         .filter(|p| p.path != path)
         .cloned()
         .collect();
-    persist(&app, &updated)?;
+    persist(directory, &updated)?;
     *projects = updated;
     Ok(projects.clone())
 }
@@ -133,10 +125,9 @@ fn relocate_project(
     project.history_paths.retain(|path| path != &current_path);
     Ok(projects[source_index].clone())
 }
-#[tauri::command]
 pub fn project_relocate(
-    app: tauri::AppHandle,
-    state: State<Workspace>,
+    directory: &Path,
+    state: &Workspace,
     source_path: String,
     destination_path: String,
 ) -> Result<Project, String> {
@@ -151,7 +142,7 @@ pub fn project_relocate(
     let mut projects = state.0.lock().unwrap();
     let mut updated = projects.clone();
     let project = relocate_project(&mut updated, &source_path, destination_path)?;
-    persist(&app, &updated)?;
+    persist(directory, &updated)?;
     *projects = updated;
     Ok(project)
 }
@@ -172,13 +163,8 @@ fn registered(state: &Workspace, root: &str, path: &str) -> Result<PathBuf, Stri
     }
     resolve(Path::new(root), path)
 }
-#[tauri::command]
-pub fn files_list(
-    state: State<Workspace>,
-    root: String,
-    path: String,
-) -> Result<Vec<Entry>, String> {
-    let directory = registered(&state, &root, &path)?;
+pub fn files_list(state: &Workspace, root: String, path: String) -> Result<Vec<Entry>, String> {
+    let directory = registered(state, &root, &path)?;
     let mut entries = Vec::new();
     for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -216,9 +202,8 @@ fn read_text(path: &Path) -> Result<String, String> {
     }
     Ok(text)
 }
-#[tauri::command]
-pub fn file_read(state: State<Workspace>, root: String, path: String) -> Result<String, String> {
-    read_text(&registered(&state, &root, &path)?)
+pub fn file_read(state: &Workspace, root: String, path: String) -> Result<String, String> {
+    read_text(&registered(state, &root, &path)?)
 }
 fn save_text(path: &Path, content: &str, expected: &str) -> Result<(), String> {
     if content.len() > 2 * 1024 * 1024 {
@@ -232,15 +217,16 @@ fn save_text(path: &Path, content: &str, expected: &str) -> Result<(), String> {
     }
     fs::write(path, content).map_err(|e| e.to_string())
 }
-#[tauri::command]
 pub fn file_save(
-    state: State<Workspace>,
+    state: &Workspace,
     root: String,
     path: String,
     content: String,
     expected: String,
 ) -> Result<(), String> {
-    save_text(&registered(&state, &root, &path)?, &content, &expected)
+    let target = registered(state, &root, &path)?;
+    let _guard = state.0.lock().unwrap();
+    save_text(&target, &content, &expected)
 }
 #[cfg(test)]
 mod tests {

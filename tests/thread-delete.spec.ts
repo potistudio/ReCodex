@@ -24,6 +24,17 @@ test("deletes a chat only after confirmation and preserves it on failure", async
 				return nextCallback;
 			},
 			async invoke(command: string, args: Record<string, unknown> = {}) {
+				if (command === "host_status") return null;
+				if (command === "server_request" && args.method === "host/replay")
+					return {
+						reset: false,
+						epoch: "test",
+						sequence: 0,
+						events: [],
+						snapshot: { activeTurns: {}, approvals: [] },
+					};
+				if (command === "server_request" && ["host/keepalive", "host/release"].includes(args.method as string))
+					return;
 				if (command === "plugin:event|listen") {
 					listener = args.handler as number;
 					return 1;

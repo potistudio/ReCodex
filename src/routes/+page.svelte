@@ -20,7 +20,7 @@ import PanelLeftOpenIconData from "@iconify-icons/fluent/panel-left-expand-24-re
 import SearchIconData from "@iconify-icons/fluent/search-24-regular";
 import Settings2IconData from "@iconify-icons/fluent/settings-24-regular";
 import SquareIconData from "@iconify-icons/fluent/square-24-filled";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
 import { Popover } from "bits-ui";
@@ -28,6 +28,7 @@ import { onMount, tick } from "svelte";
 import { App } from "$lib/app.svelte";
 import Approval from "$lib/components/Approval.svelte";
 import FilePanel from "$lib/components/FilePanel.svelte";
+import HostSettings from "$lib/components/HostSettings.svelte";
 import Message from "$lib/components/Message.svelte";
 import ModelEffortPicker from "$lib/components/ModelEffortPicker.svelte";
 import ThemePicker from "$lib/components/ThemePicker.svelte";
@@ -41,7 +42,36 @@ import type { Project, RateLimitSnapshot, RateLimitWindow, Thread } from "$lib/t
 import { formatResetTime, formatTokenCount, formatUsageWindow, remainingPercent } from "$lib/usage";
 import { workingState } from "$lib/working";
 
-const app = new App();
+const localApp = new App();
+let hosts = $state([localApp]);
+let app = $state(localApp);
+const drafts: Record<string, string> = {};
+async function selectHost(id: string) {
+	if (id === app.hostId || !(await canLeaveFiles())) return;
+	const next = hosts.find((host) => host.hostId === id);
+	if (!next) return;
+	filesOpen = false;
+	fileDirty = false;
+	drafts[app.hostId] = draft;
+	draft = drafts[next.hostId] ?? "";
+	search = "";
+	scrollMode = "follow";
+	app = next;
+}
+async function addHost(host: { id: string; name: string }) {
+	const next = new App(host.id, host.name);
+	hosts = [...hosts, next];
+	await next.init();
+	await selectHost(host.id);
+}
+async function forgetHost() {
+	const previous = app;
+	await selectHost("local");
+	if (app === previous) return;
+	previous.dispose();
+	await invoke("host_forget", { hostId: previous.hostId });
+	hosts = hosts.filter((host) => host !== previous);
+}
 let draft = $state("");
 let search = $state("");
 let searchOpen = $state(false);
@@ -108,11 +138,11 @@ function startWorkLabelTransition(nextLabel: string) {
 
 onMount(() => {
 	isMacClient = isTauri() && platform() === "macos";
-	void app.init();
+	void localApp.init();
 
 	return () => {
 		if (labelTransitionTimer) clearTimeout(labelTransitionTimer);
-		app.dispose();
+		for (const host of hosts) host.dispose();
 	};
 });
 
@@ -206,13 +236,18 @@ async function send() {
 	if (!text || composing || !ready || app.busy) return;
 	const wasFollowing = scrollMode === "follow";
 	draft = "";
-	const sending = app.send(text);
+	const target = app;
+	const sending = target.send(text);
 	if (wasFollowing) {
 		scrollMode = "free";
 		await tick();
 		centerLatestUserMessage();
 	}
-	if (!(await sending)) draft = text;
+	if (!(await sending)) {
+		if (app === target) draft = text;
+		else drafts[target.hostId] = text;
+	}
+	if (app !== target) return;
 	await tick();
 	composer?.focus();
 }
@@ -356,6 +391,24 @@ function shortcuts(event: KeyboardEvent) {
 				<Icon icon={PanelLeftOpenIconData} width={24} />
 			{/if}
 		</Button>
+		<select
+			class="host-selector"
+			aria-label="Active host"
+			value={app.hostId}
+			onchange={(event) => { const select = event.currentTarget; void selectHost(select.value).then(() => { select.value = app.hostId; }); }}
+		>
+			{#each hosts as host (host.hostId)}
+				<option value={host.hostId}>{host.hostName}</option>
+			{/each}
+		</select>
+		<Button
+			variant="ghost"
+			size="icon"
+			aria-label="Connections"
+			title="LAN connections"
+			onclick={() => (settingsOpen = true)}
+			><Icon icon={Settings2IconData} width={18} /></Button
+		>
 	</div>
 
 	<div class="topbar-right">
@@ -386,7 +439,7 @@ function shortcuts(event: KeyboardEvent) {
 				><Icon icon={FileCodeIconData} width={16} />Files</Button
 			>
 			<Dropdown.Root>
-				<Dropdown.Trigger class="icon-button" aria-label="Project options" disabled={app.busy}>
+				<Dropdown.Trigger class="icon-button" aria-label="Project options" disabled={app.busy || app.remote}>
 					<Icon icon={MoreHorizontalIconData} width={18} /></Dropdown.Trigger
 				>
 				<Dropdown.Content align="end">
@@ -611,6 +664,7 @@ function shortcuts(event: KeyboardEvent) {
 									{/if}
 									{#each app.approvals as event (event.id)}
 										<Approval
+											hostName={app.hostName}
 											{event}
 											respond={(event, result) => app.respond(event, result)}
 											requestAlternative={(event) => app.requestAlternative(event)}
@@ -649,7 +703,7 @@ function shortcuts(event: KeyboardEvent) {
 										variant="outline"
 										size="lg"
 										onclick={addProject}
-										disabled={!isTauri() || app.busy}
+										disabled={!isTauri() || app.remote || app.busy}
 										><Icon icon={FolderPlusIconData} width={16} />Open a project<Icon
 											icon={ArrowUpRightIconData}
 											width={14}
@@ -727,14 +781,19 @@ function shortcuts(event: KeyboardEvent) {
 							</div>
 						{:else if app.connected && app.requiresAuth && !app.account}
 							<div class="connection-action">
-								<Button size="sm" onclick={() => app.login()}>Sign in with ChatGPT</Button>
+								{#if app.remote}
+									<span>Sign in to Codex on {app.hostName}, then reconnect.</span>
+								{:else}
+									<Button size="sm" onclick={() => app.login()}>Sign in with ChatGPT</Button>
+								{/if}
 							</div>
 						{/if}
 					</div>
 				</section>
 				{#if filesOpen && app.project}
-					{#key app.project.path}
+					{#key `${app.hostId}:${app.project.path}`}
 						<FilePanel
+							hostId={app.hostId}
 							project={app.project}
 							revision={app.fileRevision}
 							onclose={() => (filesOpen = false)}
@@ -757,18 +816,39 @@ function shortcuts(event: KeyboardEvent) {
 		<div class="settings-row">
 			<span
 				><strong>Codex connection</strong
-				><small>{app.connected ? "Connected to local app-server" : "Not connected"}</small></span
-			><Button variant="outline" disabled={!isTauri() || app.connecting || app.busy} onclick={() => app.connect()}
+				><small
+					>{app.connected ? `Connected to ${app.hostName}` : `Not connected to ${app.hostName}`}</small
+				></span
+			><Button
+				variant="outline"
+				disabled={!isTauri() || app.connecting || (app.connected && app.busy)}
+				onclick={() => app.connect()}
 				>{app.connecting ? "Connecting…" : "Reconnect"}</Button
 			>
 		</div>
+		<div class="settings-row">
+			<span
+				><strong>Project control</strong
+				><small>Take over this project's changes, or release control for another device.</small></span
+			>
+			<Button variant="outline" disabled={!app.connected || !app.project} onclick={() => app.takeControl()}
+				>Take control</Button
+			>
+			<Button variant="outline" disabled={!app.connected} onclick={() => app.releaseControl()}
+				>Release control</Button
+			>
+		</div>
+		{#if app.remote}
+			<Button variant="outline" onclick={forgetHost}>Disconnect and forget {app.hostName}</Button>
+		{/if}
+		<HostSettings projects={localApp.projects} onpaired={addHost} />
 		<div class="settings-row">
 			<span
 				><strong>Account</strong
 				><small>{app.account?.email || app.account?.type || "Not signed in"}</small></span
 			>
 			{#if !app.account}
-				<Button disabled={!app.connected} onclick={() => app.login()}>Sign in</Button>
+				<Button disabled={!app.connected || app.remote} onclick={() => app.login()}>Sign in</Button>
 			{:else}
 				<span class="account-plan">{app.account.planType || app.account.type}</span>
 			{/if}

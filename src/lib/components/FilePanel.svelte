@@ -16,11 +16,13 @@ import type { FileEntry, Project } from "$lib/types";
 
 let {
 	project,
+	hostId = "local",
 	revision,
 	onclose,
 	ondirty,
 }: {
 	project: Project;
+	hostId?: string;
 	revision: number;
 	onclose: () => void;
 	ondirty: (dirty: boolean) => void;
@@ -44,6 +46,7 @@ async function loadDirectory(path: string) {
 	loading = true;
 	try {
 		entries = await invoke<FileEntry[]>("files_list", {
+			hostId,
 			root: project.path,
 			path,
 		});
@@ -70,6 +73,7 @@ async function openFile(path: string) {
 	saved = false;
 	try {
 		const text = await invoke<string>("file_read", {
+			hostId,
 			root: project.path,
 			path,
 		});
@@ -89,6 +93,7 @@ async function save() {
 	const snapshot = content;
 	try {
 		await invoke("file_save", {
+			hostId,
 			root: project.path,
 			path: file,
 			content: snapshot,

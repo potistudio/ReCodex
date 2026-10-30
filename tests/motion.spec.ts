@@ -20,6 +20,17 @@ test.beforeEach(async ({ page }) => {
 				return 1;
 			},
 			async invoke(command: string, args: Record<string, unknown> = {}) {
+				if (command === "host_status") return null;
+				if (command === "server_request" && args.method === "host/replay")
+					return {
+						reset: false,
+						epoch: "test",
+						sequence: 0,
+						events: [],
+						snapshot: { activeTurns: {}, approvals: [] },
+					};
+				if (command === "server_request" && ["host/keepalive", "host/release"].includes(args.method as string))
+					return;
 				if (command === "plugin:event|listen") return 1;
 				if (command === "plugin:event|unlisten" || command === "server_connect") return;
 				if (command === "projects_load")

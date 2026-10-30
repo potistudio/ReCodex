@@ -167,7 +167,7 @@ test("themes remain usable when persistent storage is unavailable", async ({ pag
 		});
 	});
 	await page.goto("/");
-	await expect(page.getByRole("heading", { name: "What will you build?" })).toBeVisible();
+	await expect(page.getByRole("textbox", { name: "Message Codex" })).toBeVisible();
 	await page.getByRole("button", { name: /Your workspace/ }).click();
 	await page.getByRole("radio", { name: "Tokyo Night", exact: true }).check();
 	await expect(page.locator("body")).toHaveCSS("background-color", "rgb(26, 27, 38)");

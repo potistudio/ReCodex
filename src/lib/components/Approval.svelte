@@ -8,10 +8,12 @@ import type { ServerEvent } from "$lib/types";
 
 let {
 	event,
+	hostName = "This PC",
 	respond,
 	requestAlternative,
 }: {
 	event: ServerEvent;
+	hostName?: string;
 	respond: (event: ServerEvent, result: unknown) => Promise<void>;
 	requestAlternative: (event: ServerEvent) => Promise<void>;
 } = $props();
@@ -44,6 +46,7 @@ async function declineAndRequestAlternative() {
 			<Icon icon={ShieldCheckIconData} width={18} />Permission requested
 		{/if}
 	</h3>
+	<p class="muted">Run on {hostName}</p>
 	{#if event.params.reason}
 		<p>{event.params.reason}</p>
 	{/if}

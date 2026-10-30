@@ -6,7 +6,7 @@ export default defineConfig({
 	use: {
 		baseURL: "http://127.0.0.1:1420",
 		viewport: { width: 1280, height: 860 },
-		channel: "msedge",
+		channel: process.env.RECODEX_TEST_BROWSER || "msedge",
 		screenshot: "only-on-failure",
 	},
 	webServer: {
