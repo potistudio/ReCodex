@@ -1024,7 +1024,7 @@ textarea,
 	width: 100%;
 	max-width: 740px;
 	margin: 0 auto;
-	padding: 30px 0 calc(var(--chat-edge-blur-height) + 16px);
+	padding: calc(var(--chat-edge-blur-height) + 16px) 0;
 }
 .messages > :is(.tool-item, .activity, .approval-card) {
 	margin-block: 0;
