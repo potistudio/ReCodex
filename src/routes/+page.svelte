@@ -21,6 +21,7 @@ import SearchIconData from "@iconify-icons/fluent/search-24-regular";
 import Settings2IconData from "@iconify-icons/fluent/settings-24-regular";
 import SquareIconData from "@iconify-icons/fluent/square-24-filled";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
 import { Popover } from "bits-ui";
@@ -36,6 +37,7 @@ import { Button } from "$lib/components/ui/button";
 import * as Dialog from "$lib/components/ui/dialog";
 import * as Dropdown from "$lib/components/ui/dropdown-menu";
 import { Input } from "$lib/components/ui/input";
+import type { HostCatalog, HostSummary } from "$lib/hosts";
 import { appear, reveal } from "$lib/motion";
 import { applyTheme, readTheme } from "$lib/themes";
 import type { Project, RateLimitSnapshot, RateLimitWindow, Thread } from "$lib/types";
@@ -46,6 +48,39 @@ const localApp = new App();
 let hosts = $state([localApp]);
 let app = $state(localApp);
 const drafts: Record<string, string> = {};
+let catalog = $state<HostCatalog>({ registered: [], discovered: [], discoveryError: null, hostingError: null });
+let disposed = false;
+let refreshingHosts = false;
+let refreshHostsAgain = false;
+let unlistenHosts: UnlistenFn | undefined;
+async function syncHosts() {
+	if (disposed) return;
+	if (refreshingHosts) {
+		refreshHostsAgain = true;
+		return;
+	}
+	refreshingHosts = true;
+	try {
+		do {
+			refreshHostsAgain = false;
+			const next = await invoke<HostCatalog>("hosts_list");
+			if (disposed) return;
+			catalog = next;
+			for (const host of next.registered) {
+				let view = hosts.find((entry) => entry.hostId === host.id);
+				if (!view) {
+					view = new App(host.id, host.name);
+					hosts = [...hosts, view];
+					void view.init();
+				} else if (next.discovered.some((found) => found.id === host.id)) view.reconnectSoon();
+			}
+		} while (refreshHostsAgain);
+	} catch (e) {
+		catalog.discoveryError = String(e);
+	} finally {
+		refreshingHosts = false;
+	}
+}
 async function selectHost(id: string) {
 	if (id === app.hostId || !(await canLeaveFiles())) return;
 	const next = hosts.find((host) => host.hostId === id);
@@ -57,19 +92,26 @@ async function selectHost(id: string) {
 	search = "";
 	scrollMode = "follow";
 	app = next;
+	try {
+		localStorage.setItem("recodex-host", id);
+	} catch {}
 }
-async function addHost(host: { id: string; name: string }) {
-	const next = new App(host.id, host.name);
-	hosts = [...hosts, next];
-	await next.init();
+async function addHost(host: HostSummary) {
+	let next = hosts.find((entry) => entry.hostId === host.id);
+	if (!next) {
+		next = new App(host.id, host.name);
+		hosts = [...hosts, next];
+		await next.init();
+	} else await next.connect();
 	await selectHost(host.id);
 }
 async function forgetHost() {
 	const previous = app;
 	await selectHost("local");
 	if (app === previous) return;
+	await localApp.guard(() => invoke("host_forget", { hostId: previous.hostId }));
+	if (localApp.error) return;
 	previous.dispose();
-	await invoke("host_forget", { hostId: previous.hostId });
 	hosts = hosts.filter((host) => host !== previous);
 }
 let draft = $state("");
@@ -139,8 +181,29 @@ function startWorkLabelTransition(nextLabel: string) {
 onMount(() => {
 	isMacClient = isTauri() && platform() === "macos";
 	void localApp.init();
+	if (isTauri())
+		void (async () => {
+			const unlisten = await listen("hosts-changed", () => {
+				void syncHosts();
+			});
+			if (disposed) {
+				unlisten();
+				return;
+			}
+			unlistenHosts = unlisten;
+			await syncHosts();
+			let saved: string | null = null;
+			try {
+				saved = localStorage.getItem("recodex-host");
+			} catch {}
+			if (!disposed && saved) await selectHost(saved);
+		})().catch((e) => {
+			catalog.discoveryError = String(e);
+		});
 
 	return () => {
+		disposed = true;
+		unlistenHosts?.();
 		if (labelTransitionTimer) clearTimeout(labelTransitionTimer);
 		for (const host of hosts) host.dispose();
 	};
@@ -841,7 +904,12 @@ function shortcuts(event: KeyboardEvent) {
 		{#if app.remote}
 			<Button variant="outline" onclick={forgetHost}>Disconnect and forget {app.hostName}</Button>
 		{/if}
-		<HostSettings projects={localApp.projects} onpaired={addHost} />
+		<HostSettings
+			projects={localApp.projects}
+			{catalog}
+			connections={hosts.filter((host) => host.remote).map((host) => ({id:host.hostId,name:host.hostName,connected:host.connected,connecting:host.connecting,error:host.error}))}
+			onpaired={addHost}
+		/>
 		<div class="settings-row">
 			<span
 				><strong>Account</strong

@@ -1,5 +1,8 @@
 //! Native TLS WebSocket transport. Credentials never go in URLs, localStorage, or logs.
-use crate::host::Host;
+use crate::{
+    host::Host,
+    lan_store::{LanStore, RemoteProfile, SavedDevice},
+};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -102,14 +105,23 @@ impl Identity {
     }
 }
 
+pub fn local_id(directory: &Path) -> Result<String, String> {
+    Ok(Identity::load(directory)?.id)
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Invitation {
     version: u64,
     host_id: String,
-    name: String,
+    pub(crate) name: String,
     certificate: Vec<u8>,
     token: String,
+}
+impl Invitation {
+    pub fn host_id(&self) -> &str {
+        &self.host_id
+    }
 }
 struct Pairing {
     digest: [u8; 32],
@@ -132,6 +144,7 @@ pub struct Listener {
     pub name: String,
     pub address: String,
     certificate: Vec<u8>,
+    store: Arc<LanStore>,
     pairing: StdMutex<Option<Pairing>>,
     devices: StdMutex<HashMap<String, Credential>>,
     stop: watch::Sender<bool>,
@@ -155,8 +168,11 @@ impl Listener {
             token,
         }
     }
-    pub fn revoke(&self, id: &str) {
-        self.devices.lock().unwrap().remove(id);
+    pub fn revoke(&self, id: &str) -> Result<(), String> {
+        let mut devices = self.devices.lock().unwrap();
+        self.store.update(|s| s.devices.retain(|d| d.id != id))?;
+        devices.remove(id);
+        Ok(())
     }
     pub async fn shutdown(&self) {
         let _ = self.stop.send(true);
@@ -197,7 +213,6 @@ impl Listener {
                     .into(),
             );
         }
-        *invitation = None;
         let device = Device {
             id: Uuid::new_v4().to_string(),
             name: auth["name"]
@@ -208,6 +223,15 @@ impl Listener {
                 .collect(),
         };
         let token = secret();
+        let verifier = Sha256::digest(token.as_bytes()).into();
+        self.store.update(|s| {
+            s.devices.push(SavedDevice {
+                id: device.id.clone(),
+                name: device.name.clone(),
+                verifier,
+            })
+        })?;
+        *invitation = None;
         let (revoked, receiver) = watch::channel(false);
         self.devices.lock().unwrap().insert(
             device.id.clone(),
@@ -259,8 +283,29 @@ pub async fn listen(
         name,
         address,
         certificate: identity.certificate,
+        store: host.lan.clone(),
         pairing: StdMutex::new(None),
-        devices: StdMutex::new(HashMap::new()),
+        devices: StdMutex::new(
+            host.lan
+                .snapshot()
+                .devices
+                .into_iter()
+                .map(|saved| {
+                    let (revoked, _) = watch::channel(false);
+                    (
+                        saved.id.clone(),
+                        Credential {
+                            device: Device {
+                                id: saved.id,
+                                name: saved.name,
+                            },
+                            digest: saved.verifier,
+                            revoked,
+                        },
+                    )
+                })
+                .collect(),
+        ),
         stop,
         task: StdMutex::new(None),
     });
@@ -435,7 +480,7 @@ impl Drop for PendingRequest {
 pub struct Remote {
     pub id: String,
     pub name: String,
-    endpoint: String,
+    endpoints: StdMutex<Vec<String>>,
     invitation: StdMutex<Invitation>,
     pending: Pending,
     outgoing: Mutex<Option<mpsc::Sender<Value>>>,
@@ -447,13 +492,43 @@ impl Remote {
         Arc::new(Self {
             id: invitation.host_id.clone(),
             name: invitation.name.clone(),
-            endpoint,
+            endpoints: StdMutex::new(vec![endpoint]),
             invitation: StdMutex::new(invitation),
             pending: Arc::default(),
             outgoing: Mutex::new(None),
             task: StdMutex::new(None),
             next: std::sync::atomic::AtomicU64::new(1),
         })
+    }
+    pub fn restore(profile: RemoteProfile) -> Arc<Self> {
+        let remote = Self::new(
+            String::new(),
+            Invitation {
+                version: profile.version,
+                host_id: profile.id,
+                name: profile.name,
+                certificate: profile.certificate,
+                token: profile.token,
+            },
+        );
+        *remote.endpoints.lock().unwrap() = profile.endpoints;
+        remote
+    }
+    pub fn update_endpoints(&self, endpoints: Vec<String>) {
+        if !endpoints.is_empty() {
+            *self.endpoints.lock().unwrap() = endpoints;
+        }
+    }
+    pub fn profile(&self) -> RemoteProfile {
+        let invitation = self.invitation.lock().unwrap();
+        RemoteProfile {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            version: invitation.version,
+            certificate: invitation.certificate.clone(),
+            token: invitation.token.clone(),
+            endpoints: self.endpoints.lock().unwrap().clone(),
+        }
     }
     pub async fn connect(
         self: &Arc<Self>,
@@ -481,23 +556,36 @@ impl Remote {
         .map_err(error)?
         .with_root_certificates(roots)
         .with_no_client_auth();
-        let mut socket = tokio::time::timeout(Duration::from_secs(10), async {
-            let stream = TcpStream::connect(&self.endpoint).await.map_err(error)?;
-            let tls = TlsConnector::from(Arc::new(config))
-                .connect(ServerName::try_from("recodex.local").unwrap(), stream)
+        let endpoints = self.endpoints.lock().unwrap().clone();
+        let mut connected = None;
+        let mut failure = "Host not found on the LAN yet".to_string();
+        for endpoint in endpoints.iter().take(8) {
+            let result = tokio::time::timeout(Duration::from_secs(3), async {
+                let stream = TcpStream::connect(endpoint).await.map_err(error)?;
+                let tls = TlsConnector::from(Arc::new(config.clone()))
+                    .connect(ServerName::try_from("recodex.local").unwrap(), stream)
+                    .await
+                    .map_err(error)?;
+                let (socket, _) = tokio_tungstenite::client_async_with_config(
+                    format!("wss://{endpoint}/"),
+                    tls,
+                    Some(ws_config()),
+                )
                 .await
                 .map_err(error)?;
-            let (socket, _) = tokio_tungstenite::client_async_with_config(
-                format!("wss://{}/", self.endpoint),
-                tls,
-                Some(ws_config()),
-            )
+                Ok::<_, String>(socket)
+            })
             .await
-            .map_err(error)?;
-            Ok::<_, String>(socket)
-        })
-        .await
-        .map_err(|_| "Host connection timed out")??;
+            .unwrap_or_else(|_| Err("Host connection timed out".into()));
+            match result {
+                Ok(socket) => {
+                    connected = Some(socket);
+                    break;
+                }
+                Err(e) => failure = e,
+            }
+        }
+        let mut socket = connected.ok_or(failure)?;
         socket.send(text(json!({"version":PROTOCOL,"token":invitation.token,"name":std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or("ReCodex PC".into())}))).await.map_err(error)?;
         let response = receive(&mut socket).await?;
         if let Some(message) = response["error"].as_str() {
@@ -707,7 +795,7 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        listener.revoke(&device_id);
+        listener.revoke(&device_id).unwrap();
         assert!(remote
             .request(
                 "files/read",
@@ -749,6 +837,74 @@ mod tests {
             .unwrap();
         assert!(check_origin(&request, Response::new(())).is_err());
         listener.shutdown().await;
+        fixture.host.shutdown().await;
+    }
+    #[tokio::test]
+    async fn remembered_devices_reconnect_after_restarts_and_revocation_survives_restart() {
+        let fixture = Fixture::new().await;
+        let first = listen(
+            fixture.host.clone(),
+            "127.0.0.1:0",
+            "PC".into(),
+            vec![fixture.root.clone()],
+        )
+        .await
+        .unwrap();
+        let client = Remote::new(first.address.clone(), first.invite());
+        client.connect(|_| {}).await.unwrap();
+        let client_directory = tempfile::tempdir().unwrap();
+        let client_store = LanStore::load(client_directory.path()).unwrap();
+        client_store.remember(client.profile()).unwrap();
+        client.disconnect().await;
+        first.shutdown().await;
+        // A new Host and client load their trust independently, as after both apps restart.
+        let restarted = Host::new(fixture.host.directory.clone()).unwrap();
+        let second = listen(
+            restarted.clone(),
+            "127.0.0.1:0",
+            "PC".into(),
+            vec![fixture.root.clone()],
+        )
+        .await
+        .unwrap();
+        let restored = Remote::restore(
+            LanStore::load(client_directory.path())
+                .unwrap()
+                .snapshot()
+                .remotes
+                .remove(0),
+        );
+        restored.update_endpoints(vec!["127.0.0.1:0".into(), second.address.clone()]);
+        restored.connect(|_| {}).await.unwrap();
+        assert_eq!(
+            restored
+                .request(
+                    "files/read",
+                    json!({"root":project_id(&fixture.root),"path":"main.txt"})
+                )
+                .await
+                .unwrap(),
+            "original"
+        );
+        let id = second.status()["devices"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        second.revoke(&id).unwrap();
+        restored.disconnect().await;
+        second.shutdown().await;
+        let third = listen(
+            Host::new(fixture.host.directory.clone()).unwrap(),
+            "127.0.0.1:0",
+            "PC".into(),
+            vec![fixture.root.clone()],
+        )
+        .await
+        .unwrap();
+        let revoked = Remote::restore(client.profile());
+        revoked.update_endpoints(vec![third.address.clone()]);
+        assert!(revoked.connect(|_| {}).await.is_err());
+        third.shutdown().await;
         fixture.host.shutdown().await;
     }
 }

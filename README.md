@@ -47,17 +47,16 @@ Choose **Open a project**, select its directory, choose a model, and send a mess
 
 Run the desktop app and sign in to Codex on each PC. Open the projects you want to use on their respective PCs.
 
-1. On the PC that owns a project, open **Connections** in the title bar.
-2. Enter a name for that PC, select the projects to share, and choose **Start hosting**. The default listen address is `0.0.0.0:43177`.
-3. Copy the generated **Connection invitation** to the other PC through a trusted channel. Invitations expire after ten minutes and can be used once.
-4. On the other PC, open **Connections**, enter the host PC's LAN address, such as `192.168.1.20:43177`, paste its invitation, and choose **Connect to PC**.
-5. Use **Active host** in the title bar to switch between this PC and connected PCs. Repeat the setup in the opposite direction for mutual hosting.
+1. On the PC that owns a project, open **Connections**, select the projects to share, and choose **Start hosting**. The default listen address is `0.0.0.0:43177`.
+2. Other PCs find it automatically under **Nearby PCs** using mDNS. Copy its **Connection invitation** to a PC you want to authorize through a trusted channel. Invitations expire after ten minutes and can be used once.
+3. Paste the invitation into **Connect to another PC** and choose **Connect to PC**. ReCodex locates the matching host automatically; no IP address is required.
+4. Registered PCs reconnect automatically on launch, after connection loss, and when discovery finds a changed address. **Active host** restores your last selection and switches between connected PCs. Repeat the initial invitation exchange in the opposite direction for mutual hosting.
 
-The host PC supplies its files, CLI, Codex account, and execution environment. Work continues when the controlling UI switches hosts or a client disconnects. Hosting runs while the host app is open. Connection registrations and device credentials last for the hosting/app session; after restarting or stopping hosting, create a new invitation and forget the old connection before pairing again. Each paired device can operate and approve requests for all selected projects.
+The host PC supplies its files, CLI, Codex account, and execution environment. Work continues when the controlling UI switches hosts or a client disconnects. Hosting runs while the host app is open and resumes automatically on the next launch until you choose **Stop hosting**. Registered device permissions, connection profiles, and certificate pins survive app restarts. **Disconnect and forget** removes a saved client connection and stops its retries; **Revoke** on the host invalidates that device's credential, including after host restarts. Each authorized device can operate and approve requests for all projects you share.
 
 One device at a time can change each project, including through the local editor. Choose **Take control** in Connections to explicitly take over the selected project, or **Release control** on the current device to hand it over. Reads remain available to other paired devices. Codex sign-in and project registration are performed on the host PC.
 
-Allow the listening TCP port through the host's firewall for your private LAN if needed. Use the host's actual LAN IP or hostname when connecting; `0.0.0.0` is a bind address. See [LAN architecture and behavior](docs/lan.md) for transport, recovery, and access-control details.
+Automatic discovery uses UDP 5353 on the local link; allow local-network access and the listening TCP port on your private LAN when requested by the OS. If multicast is unavailable, **Manual address (optional)** accepts a LAN IP or hostname and port; registered connections also retry their saved addresses. `0.0.0.0` is a bind address, not a destination. See [LAN architecture and behavior](docs/lan.md) for transport, recovery, and access-control details.
 
 ## Build and verification
 
@@ -89,7 +88,8 @@ Biome handles frontend formatting and linting. Use `pnpm format`, `pnpm format:c
 ## Architecture and scope
 
 - `src-tauri/src/host.rs` owns the transport-independent workspace, Codex lifecycle, project control, approval state, and bounded event replay.
-- `src-tauri/src/lan.rs` provides certificate-verified TLS WebSockets, single-use pairing invitations, session device credentials, revocation, and remote request correlation.
+- `src-tauri/src/discovery.rs` browses and advertises LAN hosts using mDNS/DNS-SD; `lan_store.rs` persists trust and hosting preferences with atomic file replacement.
+- `src-tauri/src/lan.rs` provides certificate-verified TLS WebSockets, single-use pairing invitations, persistent device credentials, revocation, and remote request correlation.
 - `src-tauri/src/server.rs` owns the child process, initialization, concurrent request correlation, response timeouts, and event forwarding. The child terminates when the app exits.
 - `src-tauri/src/workspace.rs` stores project registrations in the supplied app-data directory and restricts editor paths to registered roots, including resolved symbolic links.
 - `src/lib/app.svelte.ts` coordinates projects, account state, models, conversations, streaming events, and server requests.
@@ -98,6 +98,6 @@ Biome handles frontend formatting and linting. Use `pnpm format`, `pnpm format:c
 
 Conversation history and authentication remain owned by Codex. The project registry is `projects.json` in the platform's application-data directory for `com.poti.recodex`; theme, model, and last project preferences use local storage.
 
-The basic editor handles existing UTF-8 text files up to 2 MB. It omits `.git`, `node_modules`, `target`, and `.svelte-kit` from browsing. Reload an open file to see external changes. Each host view keeps independent conversation state. Switching between hosts keeps their views and running work. Unsupported server-initiated tools return an explicit protocol error. LAN hosts use manual addresses and require the host desktop app to remain open. Full terminal emulation, attachments, and Git operations are outside this implementation.
+The basic editor handles existing UTF-8 text files up to 2 MB. It omits `.git`, `node_modules`, `target`, and `.svelte-kit` from browsing. Reload an open file to see external changes. Each host view keeps independent conversation state. Switching between hosts keeps their views and running work. Unsupported server-initiated tools return an explicit protocol error. LAN hosts are discovered automatically and require the host desktop app to remain open. Full terminal emulation, attachments, and Git operations are outside this implementation.
 
 The bridge follows the [official app-server documentation](https://developers.openai.com/codex/app-server/). Rhea is provided through the [shadcn-svelte registry](https://www.shadcn-svelte.com/docs/changelog).

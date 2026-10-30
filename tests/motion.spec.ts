@@ -20,6 +20,8 @@ test.beforeEach(async ({ page }) => {
 				return 1;
 			},
 			async invoke(command: string, args: Record<string, unknown> = {}) {
+				if (command === "hosts_list")
+					return { registered: [], discovered: [], discoveryError: null, hostingError: null };
 				if (command === "host_status") return null;
 				if (command === "server_request" && args.method === "host/replay")
 					return {

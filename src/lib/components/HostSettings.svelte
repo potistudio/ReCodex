@@ -3,14 +3,19 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { onMount } from "svelte";
 import { Button } from "$lib/components/ui/button";
 import { Input } from "$lib/components/ui/input";
+import type { HostCatalog, HostConnection } from "$lib/hosts";
 import type { Project } from "$lib/types";
 
 let {
 	projects,
 	onpaired,
+	catalog,
+	connections,
 }: {
 	projects: Project[];
 	onpaired: (host: { id: string; name: string }) => Promise<void>;
+	catalog: HostCatalog;
+	connections: HostConnection[];
 } = $props();
 interface Status {
 	id: string;
@@ -30,7 +35,11 @@ let busy = $state(false);
 let error = $state("");
 async function refresh() {
 	status = await invoke<Status | null>("host_status");
-	if (status?.sharedProjects) shared = status.sharedProjects;
+	if (status) {
+		name = status.name;
+		address = status.address;
+		if (status.sharedProjects) shared = status.sharedProjects;
+	}
 }
 onMount(() => {
 	if (isTauri()) void run(refresh);
@@ -62,7 +71,7 @@ async function stop() {
 async function pair() {
 	await run(async () => {
 		const host = await invoke<{ id: string; name: string }>("host_pair", {
-			address: remoteAddress.trim(),
+			address: remoteAddress.trim() || null,
 			invitation: remoteInvitation.trim(),
 		});
 		remoteInvitation = "";
@@ -137,19 +146,59 @@ async function pair() {
 			>Start hosting</Button
 		>
 	{/if}
+	<section class="nearby-hosts" aria-label="Nearby PCs">
+		<strong>Nearby PCs</strong>
+		{#each catalog.discovered as host (host.id)}
+			{@const known = connections.find((connection) => connection.id === host.id)}
+			<div class="settings-row">
+				<span
+					><strong>{host.name}</strong
+					><small
+						>{known?.connected ? "Connected automatically" : known?.connecting ? "Connecting automatically…" : known ? "Reconnecting automatically…" : "Invitation required for first connection"}</small
+					></span
+				>
+			</div>
+		{:else}
+			<p>Searching your LAN for ReCodex hosts…</p>
+		{/each}
+		{#each connections.filter((host) => !catalog.discovered.some((found) => found.id === host.id)) as host (host.id)}
+			<div class="settings-row">
+				<span
+					><strong>{host.name}</strong
+					><small
+						>{host.connected ? "Connected" : host.connecting ? "Connecting automatically…" : "Waiting for this PC to return…"}</small
+					></span
+				>
+			</div>
+		{/each}
+		{#if catalog.discoveryError}
+			<p>Automatic discovery: {catalog.discoveryError}. You can use a manual address.</p>
+		{/if}
+		{#if catalog.hostingError}
+			<p role="alert">Hosting: {catalog.hostingError}</p>
+		{/if}
+	</section>
 	<form onsubmit={(event) => { event.preventDefault(); void pair(); }}>
 		<strong>Connect to another PC</strong>
-		<label for="remote-address">Other PC's LAN address and port</label>
-		<Input id="remote-address" bind:value={remoteAddress} placeholder="192.168.1.20:43177" />
+		<p>
+			Paste an invitation once. ReCodex finds the matching PC automatically and remembers it for future
+			connections.
+		</p>
+		<details>
+			<summary>Manual address (optional)</summary>
+			<label for="remote-address">Other PC's LAN address and port</label>
+			<Input id="remote-address" bind:value={remoteAddress} placeholder="192.168.1.20:43177" />
+		</details>
 		<label for="remote-invitation">Invitation from the other PC</label>
 		<textarea id="remote-invitation" bind:value={remoteInvitation} rows="3" spellcheck="false"></textarea>
-		<Button type="submit" disabled={busy || !isTauri() || !remoteAddress.trim() || !remoteInvitation.trim()}
+		<Button type="submit" disabled={busy || !isTauri() || !remoteInvitation.trim()}
 			>{busy ? "Connecting…" : "Connect to PC"}</Button
 		>
 	</form>
 	<p>
-		Connections use TLS and verify the certificate in the invitation. Devices and credentials are kept for this app
-		session. Keep the app running on the host PC; closing it ends hosting.
+		Connections use TLS and verify the certificate in the invitation. Registered PCs reconnect automatically after
+		app restarts and address changes. Hosting resumes on launch until you choose Stop hosting. Keep ReCodex running
+		on each host PC.
 	</p>
 </section>
 

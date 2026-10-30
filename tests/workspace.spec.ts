@@ -53,6 +53,8 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 				return callbackId;
 			},
 			async invoke(command: string, args: Payload = {}) {
+				if (command === "hosts_list")
+					return { registered: [], discovered: [], discoveryError: null, hostingError: null };
 				if (command === "host_status") return null;
 				if (command === "server_request" && args.method === "host/replay")
 					return {
@@ -65,7 +67,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 				if (command === "server_request" && ["host/keepalive", "host/release"].includes(args.method as string))
 					return;
 				if (command === "plugin:event|listen") {
-					listener = args.handler as number;
+					if (args.event === "codex-event") listener = args.handler as number;
 					return 1;
 				}
 				if (command === "plugin:event|unlisten") return;

@@ -40,13 +40,15 @@ test("hosts explicitly selected projects and isolates remote chats, files, and b
 			async invoke(command: string, args: Args = {}) {
 				const id = (args.hostId as string) ?? "local";
 				if (command === "plugin:event|listen") {
-					listeners.add(args.handler as number);
+					if (args.event === "codex-event") listeners.add(args.handler as number);
 					return args.handler;
 				}
 				if (command === "plugin:event|unlisten") {
 					listeners.delete(args.eventId as number);
 					return;
 				}
+				if (command === "hosts_list")
+					return { registered: [], discovered: [], discoveryError: null, hostingError: null };
 				if (command === "host_status") return hosting;
 				if (command === "host_start") {
 					native.hostedProjects = args.projects;
@@ -64,7 +66,10 @@ test("hosts explicitly selected projects and isolates remote chats, files, and b
 					hosting = null;
 					return;
 				}
-				if (command === "host_pair") return { id: "desktop", name: "Desktop" };
+				if (command === "host_pair") {
+					native.pairAddress = args.address;
+					return { id: "desktop", name: "Desktop" };
+				}
 				if (command === "server_connect") return;
 				if (command === "projects_load") return [project(id)];
 				if (command === "files_list") return [{ name: "main.txt", path: "main.txt", isDirectory: false }];
@@ -136,10 +141,11 @@ test("hosts explicitly selected projects and isolates remote chats, files, and b
 		"/local",
 	]);
 	await page.getByRole("button", { name: "Stop hosting", exact: true }).click();
-	await page.getByRole("textbox", { name: "Other PC's LAN address and port" }).fill("192.168.1.20:43177");
+
 	await page.getByRole("textbox", { name: "Invitation from the other PC" }).fill("test-remote-invitation");
 	await page.getByRole("button", { name: "Connect to PC", exact: true }).click();
 	await expect(page.getByRole("combobox", { name: "Active host" })).toHaveValue("desktop");
+	expect(await page.evaluate(() => (window as unknown as { pairAddress: unknown }).pairAddress)).toBeNull();
 	await page.keyboard.press("Escape");
 	await page.getByRole("button", { name: "Remote chat", exact: true }).click();
 	await expect(page.getByRole("button", { name: "Stop generation" })).toHaveCount(0);

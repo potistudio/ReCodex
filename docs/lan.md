@@ -14,7 +14,11 @@ The host's Codex account, CLI, filesystem, sandbox, and environment are used for
 
 ## Opt-in hosting and pairing
 
-Hosting starts only after the user chooses registered projects and enables it in Connections. The default TCP bind address is `0.0.0.0:43177`; a specific interface or IPv6 bind address can also be entered. Peers enter an actual host IP/name and port separately.
+Hosting starts after the user chooses registered projects and enables it in Connections. The default TCP bind address is `0.0.0.0:43177`; a specific interface or IPv6 bind address can also be entered. This preference is saved and restored on subsequent app launches. Stop hosting disables that saved preference as well as the current listener. The host app still needs to remain open.
+
+Every desktop app browses `_recodex._tcp.local.` using mDNS/DNS-SD. An enabled host advertises its stable ID, display name, protocol version, addresses, and listening port. Publishing follows the listener's address family and interface; address checks refresh network interfaces every five seconds. A stopped host withdraws its advertisement. Nearby PCs excludes this PC and unsupported protocol versions, updates resolved addresses, and removes expired/withdrawn services. No credential, certificate, project path, or conversation is advertised.
+
+Pasting an invitation automatically selects discovered addresses for the matching host ID. A manual address remains available when multicast is blocked. Registered connections prefer current discovered addresses and retain saved addresses as fallbacks. Discovery changes reachability only: they never replace a saved certificate pin, authorize an unknown PC, or overwrite an existing credential. The TLS check occurs before sending authentication data to a newly discovered address.
 
 A local certificate/private key and stable host ID are generated on first use and saved as `lan-identity.json` in the application's data directory. On Unix, this file is created with mode `0600`. The private key is never included in invitations.
 
@@ -22,9 +26,9 @@ An invitation contains the public certificate, host ID, display name, protocol v
 
 The client trusts only the certificate supplied in that invitation and performs normal TLS certificate and name validation against the certificate's `recodex.local` identity. The TCP destination can be the host's LAN IP; the TLS identity is independent of that address. No certificate-verification bypass is used.
 
-Pairing exchanges the invitation for a separate random device credential. Credentials are exchanged inside TLS, compared using constant-time digest comparisons, and held in Rust memory rather than URLs, logs, or browser storage. Each invitation currently grants operation and approval privileges across all projects selected for that hosting session. Connections lists devices and can revoke them individually; revocation closes their connections and cancels requests still waiting for the host's operation gate.
+Pairing exchanges the invitation for a separate random device credential. Credentials are exchanged inside TLS, compared using constant-time digest comparisons, and persisted in the native app's `lan-settings.json` rather than URLs, logs, or browser storage. It is written by atomic replacement with owner-only permissions (`0600`) on Unix; Windows uses the per-user application-data directory's access controls. Client credentials are stored as bearer secrets in that file, not encrypted with an OS keychain; host-side device records contain only SHA-256 verifiers. Each invitation grants operation and approval privileges across the projects shared by that host, including after a restart. Connections lists devices and can revoke them individually; revocation closes their connections and cancels requests still waiting for the host's operation gate.
 
-Device records and remote connection registrations are session-only. Stopping hosting invalidates its devices. Restarting either application requires a new invitation; forget an existing remote entry before pairing it again. The certificate/host identity survives app restarts.
+Device records, remote connection profiles, and host preferences survive app restarts. Stopping hosting keeps paired devices registered for the next time hosting is enabled. Revocation removes the persisted verifier before disconnecting that device, so a revoked credential cannot become valid after a restart. Forgetting a client connection removes its saved credential and stops retries; a late reconnect cannot write the deleted profile back. A fresh invitation can replace a saved registration when the user needs to authorize that PC again. The certificate/host identity remains stable.
 
 ## Access boundaries
 
@@ -50,6 +54,8 @@ Approval IDs include the Codex process generation. The host retains pending requ
 
 ## Disconnects and recovery
 
+Registered remote host views are recreated automatically on launch, and the UI restores the last selected host. After connection loss, each view retries connection and state synchronization with a one-second initial delay, doubling to a maximum thirty-second retry delay. Discovering a known PC or an updated address wakes its retry immediately. Forgetting a host disposes its retry loop. Reconnection restores transport and conversation state; it does not resubmit chat messages or approvals.
+
 Disconnecting a client, switching hosts, or stopping LAN hosting does not stop the host's Codex turn. A pending approval waits for a permitted controlling device. Exiting the host app terminates the owned Codex child process and ends LAN hosting.
 
 Host events have a process epoch and sequence number. The host retains up to 8,192 events within a 4 MiB history budget. Reconnection replays missing accessible events and refreshes pending approvals and active turns. If the process changed or the cursor fell outside the retained history, the UI reloads conversation state from Codex. Live events received during this handshake are queued and reconciled against the replay cursor.
@@ -58,6 +64,8 @@ Mutations are not automatically retried after a timeout or lost response: they m
 
 ## Verification
 
-Rust tests start a deterministic Node.js app-server fixture with no sign-in, external network access, or model calls. They cover project/method boundaries, sandbox policy enforcement, ownership including local editing, approval resolution, replay privacy, certificate validation, invitation expiry/reuse, revocation, and real TLS WebSocket chat/file/reconnect flows.
+The macOS bundle declares its Bonjour service and local-network usage description in `src-tauri/Info.plist`. OS local-network permissions and firewall rules still apply. Discovery failure is shown in Connections; a manual address remains available.
 
-The Playwright host test mocks Tauri IPC to verify explicit project selection, host switching during an active local turn, isolation of equal thread/item IDs across hosts, and routing of remote editor saves. It complements the Rust transport tests; it does not emulate OS firewall behavior or prove a connection across two physical PCs.
+Rust tests start a deterministic Node.js app-server fixture with no sign-in, external network access, or model calls. They cover project/method boundaries, sandbox policy enforcement, ownership including local editing, approval resolution, replay privacy, certificate validation, invitation expiry/reuse, revocation, real TLS WebSocket chat/file/reconnect flows, pairing across host/client restarts, durable revocation/forgetting, and discovery record changes/removal. The opt-in `live_mdns_discovery_and_removal` test runs real publisher/browser daemons on a separate UDP multicast port.
+
+The Playwright host test mocks Tauri IPC to verify explicit project selection, host switching during an active local turn, isolation of equal thread/item IDs across hosts, routing of remote editor saves, restoring registered PCs without an invitation, automatic reconnection after discovery updates, avoiding turn resubmission, and stopping retries after forgetting. It complements the Rust transport tests; it does not emulate OS firewall behavior or prove a connection across two physical PCs.

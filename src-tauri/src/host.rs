@@ -35,6 +35,7 @@ struct Runtime {
 }
 
 pub struct Host {
+    pub lan: Arc<crate::lan_store::LanStore>,
     pub directory: PathBuf,
     pub workspace: Workspace,
     pub events: broadcast::Sender<Value>,
@@ -55,6 +56,7 @@ impl Host {
         workspace::projects_load(&directory, &workspace)?;
         let (events, _) = broadcast::channel(2048);
         Ok(Arc::new(Self {
+            lan: crate::lan_store::LanStore::load(&directory)?,
             directory,
             workspace,
             events,
@@ -913,7 +915,9 @@ mod tests {
             client.request("files/save",json!({"root":root,"path":"main.txt","content":"revoked","expected":"original"})).await
         });
         tokio::time::sleep(Duration::from_millis(20)).await;
-        listener.revoke(listener.status()["devices"][0]["id"].as_str().unwrap());
+        listener
+            .revoke(listener.status()["devices"][0]["id"].as_str().unwrap())
+            .unwrap();
         assert!(tokio::time::timeout(Duration::from_secs(2), request)
             .await
             .unwrap()

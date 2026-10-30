@@ -47,6 +47,14 @@ export class App {
 	private rpc = <T>(method: string, params: Record<string, unknown> = {}) =>
 		invoke<T>("server_request", { hostId: this.hostId, method, params });
 	private pulse?: ReturnType<typeof setInterval>;
+	private initialized = false;
+	private retryAt = 0;
+	private retryDelay = 1000;
+	private keepaliveAt = 0;
+	reconnectSoon() {
+		this.retryAt = 0;
+		if (this.initialized && this.remote && !this.connected && !this.connecting) void this.connect();
+	}
 	private epoch: string | null = null;
 	private sequence = 0;
 	private queuedEvents: HostEnvelope[] = [];
@@ -140,12 +148,22 @@ export class App {
 				return;
 			}
 			this.unlisten = unlisten;
+			this.initialized = true;
 			this.pulse = setInterval(() => {
-				if (this.connected) void this.rpc("host/keepalive").catch(() => {});
-			}, 10_000);
-			this.projects = await invoke<Project[]>("projects_load", { hostId: this.hostId });
-			const saved = localStorage.getItem(this.preference("recodex-project"));
-			this.project = this.projects.find((project) => project.path === saved) ?? this.projects[0] ?? null;
+				const now = Date.now();
+				if (this.remote && !this.connected && !this.connecting && now >= this.retryAt) void this.connect();
+				if (this.connected && now >= this.keepaliveAt) {
+					this.keepaliveAt = now + 10_000;
+					void this.rpc("host/keepalive").catch(() => {
+						if (this.remote) this.connected = false;
+					});
+				}
+			}, 1000);
+			if (!this.remote) {
+				this.projects = await invoke<Project[]>("projects_load", { hostId: this.hostId });
+				const saved = localStorage.getItem(this.preference("recodex-project"));
+				this.project = this.projects.find((project) => project.path === saved) ?? this.projects[0] ?? null;
+			}
 			await this.connect();
 		});
 	}
@@ -155,7 +173,7 @@ export class App {
 		if (this.pulse) clearInterval(this.pulse);
 	}
 	async connect() {
-		if (this.connecting) return;
+		if (this.disposed || this.connecting) return;
 		this.connecting = true;
 		let loaded = false;
 		await this.guard(async () => {
@@ -178,7 +196,8 @@ export class App {
 			);
 			await Promise.all([this.readAccount(), this.readRateLimits()]);
 			this.projects = await invoke<Project[]>("projects_load", { hostId: this.hostId });
-			this.project = this.projects.find((p) => p.path === this.project?.path) ?? this.projects[0] ?? null;
+			const selected = this.project?.path ?? localStorage.getItem(this.preference("recodex-project"));
+			this.project = this.projects.find((p) => p.path === selected) ?? this.projects[0] ?? null;
 			await this.loadThreads();
 			const replay = await this.rpc<HostReplay>("host/replay", { epoch: this.epoch, sequence: this.sequence });
 			if (replay.reset) {
@@ -202,7 +221,14 @@ export class App {
 			loaded = true;
 		});
 		this.connecting = false;
-		if (!loaded) this.connected = false;
+		if (!loaded) {
+			this.connected = false;
+			this.retryAt = Date.now() + this.retryDelay;
+			this.retryDelay = Math.min(this.retryDelay * 2, 30_000);
+		} else {
+			this.retryDelay = 1000;
+			this.retryAt = 0;
+		}
 		for (const envelope of this.queuedEvents) this.hostEvent(envelope);
 		this.queuedEvents = [];
 	}
