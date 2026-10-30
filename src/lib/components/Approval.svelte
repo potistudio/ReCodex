@@ -1,5 +1,7 @@
 <script lang="ts">
-import { MessageCircleQuestion, ShieldCheck } from "@lucide/svelte";
+import Icon from "@iconify/svelte";
+import MessageCircleQuestionIconData from "@iconify-icons/fluent/chat-help-24-regular";
+import ShieldCheckIconData from "@iconify-icons/fluent/shield-checkmark-24-regular";
 import { Button } from "$lib/components/ui/button";
 import { Input } from "$lib/components/ui/input";
 import type { ServerEvent } from "$lib/types";
@@ -37,9 +39,9 @@ async function declineAndRequestAlternative() {
 <section class="approval-card" aria-label={userInput ? "Input requested" : "Approval requested"}>
 	<h3>
 		{#if userInput}
-			<MessageCircleQuestion size={18} />Your input is needed
+			<Icon icon={MessageCircleQuestionIconData} width={18} />Your input is needed
 		{:else}
-			<ShieldCheck size={18} />Permission requested
+			<Icon icon={ShieldCheckIconData} width={18} />Permission requested
 		{/if}
 	</h3>
 	{#if event.params.reason}
@@ -48,8 +50,7 @@ async function declineAndRequestAlternative() {
 	{#if event.params.networkApprovalContext}
 		<p>
 			Network access:
-			{event.params.networkApprovalContext
-				.protocol}://{event.params.networkApprovalContext.host}
+			{event.params.networkApprovalContext.protocol}://{event.params.networkApprovalContext.host}
 		</p>
 	{/if}
 	{#if event.params.command}
@@ -87,15 +88,11 @@ async function declineAndRequestAlternative() {
 			</fieldset>
 		{/each}
 		<Button
-			disabled={submitting ||
-				questions.some((question) => !answers[question.id]?.trim())}
+			disabled={submitting || questions.some((question) => !answers[question.id]?.trim())}
 			onclick={() =>
 				submit({
 					answers: Object.fromEntries(
-						questions.map((question) => [
-							question.id,
-							{ answers: [answers[question.id]] },
-						]),
+						questions.map((question) => [question.id, { answers: [answers[question.id]] }]),
 					),
 				})}
 			>Submit answer</Button
@@ -105,8 +102,7 @@ async function declineAndRequestAlternative() {
 			<Button
 				variant="outline"
 				disabled={submitting}
-				onclick={() =>
-					submit(permissions ? { permissions: {}, scope: "turn" } : { decision: "decline" })}
+				onclick={() => submit(permissions ? { permissions: {}, scope: "turn" } : { decision: "decline" })}
 				>Decline</Button
 			>
 			{#if !permissions}

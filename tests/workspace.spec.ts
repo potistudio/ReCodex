@@ -222,6 +222,8 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 				}
 				if (args.method === "thread/start") {
 					host.startParams = args.params;
+					if (host.delayThreadStart)
+						await new Promise<void>((resolve) => (host.releaseThreadStart = resolve));
 					return { thread };
 				}
 				if (args.method === "thread/resume") {
@@ -262,6 +264,10 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 					host.turnParams = args.params;
 					host.turnInputs = [...((host.turnInputs as unknown[] | undefined) ?? []), args.params];
 					setTimeout(() => {
+						emit({
+							method: "turn/started",
+							params: { threadId: thread.id, turn: { id: turnId, status: "inProgress", items: [] } },
+						});
 						if (turnId !== "turn-1") {
 							emit({
 								method: "turn/completed",
@@ -327,6 +333,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 										params: {
 											threadId: thread.id,
 											itemId: "answer-1",
+											turnId,
 											delta: "This is a **",
 										},
 									});
@@ -335,6 +342,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 										params: {
 											threadId: thread.id,
 											itemId: "answer-1",
+											turnId,
 											delta: "SvelteKit**",
 										},
 									});
@@ -385,6 +393,14 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await page.addStyleTag({ content: `${hideCssStudio} .messages { padding-top: 1200px !important; }` });
 	await expect(page.getByText("Codex connected", { exact: true })).toBeVisible();
 	await expect(page.getByLabel("Codex rate-limit allowance")).toContainText("39% left");
+	await expect(page.locator(".rate-limit-track > span")).toHaveCSS("width", /.+px/);
+	await page.getByRole("button", { name: "Hide sidebar" }).click();
+	await expect(page.getByRole("button", { name: "Codex rate-limit allowance" })).toBeVisible();
+	await page.getByRole("button", { name: "Codex rate-limit allowance" }).click();
+	await expect(page.locator(".rate-limit-popover").getByText("39% remaining")).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(page.locator(".rate-limit-popover")).toBeHidden();
+	await page.getByRole("button", { name: "Show sidebar" }).click();
 	const modelEffortTrigger = page.locator(".composer .model-effort-trigger");
 	await expect(modelEffortTrigger).toHaveAccessibleName("Model A · Medium");
 	await modelEffortTrigger.click();
@@ -429,9 +445,16 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await composer.fill("Explain this project");
 	await composer.press("Shift+Enter");
 	await expect(composer).toHaveValue("Explain this project\n");
+	await page.evaluate(() => ((window as unknown as { delayThreadStart: boolean }).delayThreadStart = true));
 	await composer.press("Enter");
 	await expect(page.locator(".user-message > .message-sent")).toBeVisible();
 	await expect(page.getByRole("button", { name: "Scroll to latest" })).toBeVisible();
+	await expect
+		.poll(() =>
+			page.evaluate(() => typeof (window as unknown as { releaseThreadStart?: unknown }).releaseThreadStart),
+		)
+		.toBe("function");
+	await page.evaluate(() => (window as unknown as { releaseThreadStart: () => void }).releaseThreadStart());
 	await expect
 		.poll(async () => (await page.locator(".working-label-token-incoming").allTextContents()).join("").trimEnd())
 		.toBe("Reviewing");
@@ -444,6 +467,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	).toBe(true);
 	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
 	await expect(page.locator(".streaming-markdown p")).toHaveText("This is a SvelteKit");
+	await expect(page.locator(".assistant-message").getByText(/estimated/)).toBeVisible();
 	await expect(page.locator(".streaming-markdown strong")).toHaveText("SvelteKit");
 	await expect(page.locator(".streaming-markdown strong .message-append")).toHaveText("SvelteKit");
 	expect(
@@ -493,6 +517,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(page.locator(".message-scroll-spacer")).toBeHidden();
 	await expect(page.locator(".thread-list").getByText("1,000 tokens", { exact: true })).toBeVisible();
 	await expect(page.locator(".assistant-message").getByText(/1,000 tokens/)).toBeVisible();
+	await expect(page.locator(".assistant-message").getByText(/stream average/)).toBeVisible();
 	await page.locator(".account-button").click();
 	await expect(
 		page.getByRole("region", { name: "Rate limits" }).getByText("39% remaining", { exact: true }),

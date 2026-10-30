@@ -1,5 +1,9 @@
 <script lang="ts">
-import { ChevronDown, ChevronRight, RotateCcw, Zap } from "@lucide/svelte";
+import Icon from "@iconify/svelte";
+import RotateCcwIconData from "@iconify-icons/fluent/arrow-reset-24-regular";
+import ChevronDownIconData from "@iconify-icons/fluent/chevron-down-24-regular";
+import ChevronRightIconData from "@iconify-icons/fluent/chevron-right-24-regular";
+import ZapIconData from "@iconify-icons/fluent/flash-24-filled";
 import { Popover } from "bits-ui";
 import { tick } from "svelte";
 import { appear, rollIn, rollOut } from "$lib/motion";
@@ -169,7 +173,7 @@ $effect(() => {
 				{/key}
 			</span>
 		</span>
-		<ChevronDown size={12} aria-hidden="true" />
+		<Icon icon={ChevronDownIconData} width={12} aria-hidden="true" />
 	</Popover.Trigger>
 	<Popover.Portal>
 		<Popover.Content
@@ -189,7 +193,7 @@ $effect(() => {
 			}}
 		>
 			<div class="model-effort-summary">
-				<span class="model-effort-icon" aria-hidden="true"><Zap size={15} fill="currentColor" /></span>
+				<span class="model-effort-icon" aria-hidden="true"><Icon icon={ZapIconData} width={15} /></span>
 				<button
 					type="button"
 					class="model-picker-trigger"
@@ -206,7 +210,7 @@ $effect(() => {
 					<span>
 						<span class="model-effort-label">
 							{@render effortText()}
-							<ChevronRight size={12} aria-hidden="true" />
+							<Icon icon={ChevronRightIconData} width={12} aria-hidden="true" />
 						</span>
 						<span class="motion-copy model-effort-name-copy">
 							{#key model}
@@ -229,7 +233,7 @@ $effect(() => {
 					disabled={disabled || !selectedModel?.defaultReasoningEffort}
 					onclick={() => (effort = selectedModel?.defaultReasoningEffort || "")}
 				>
-					<RotateCcw size={14} aria-hidden="true" />
+					<Icon icon={RotateCcwIconData} width={14} aria-hidden="true" />
 				</button>
 			</div>
 			<div

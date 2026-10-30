@@ -1,5 +1,7 @@
 <script lang="ts">
-import { Moon, Sun } from "@lucide/svelte";
+import Icon from "@iconify/svelte";
+import MoonIconData from "@iconify-icons/fluent/weather-moon-24-regular";
+import SunIconData from "@iconify-icons/fluent/weather-sunny-24-regular";
 import { type Theme, themes } from "$lib/themes";
 
 let { value = $bindable() }: { value: Theme } = $props();
@@ -42,9 +44,9 @@ let { value = $bindable() }: { value: Theme } = $props();
 						<strong>{theme.name}</strong>
 						<small>
 							{#if theme.mode === "dark"}
-								<Moon size={10} aria-hidden="true" />
+								<Icon icon={MoonIconData} width={10} aria-hidden="true" />
 							{:else}
-								<Sun size={10} aria-hidden="true" />
+								<Icon icon={SunIconData} width={10} aria-hidden="true" />
 							{/if}
 							{theme.mode === "dark" ? "Dark" : "Light"}
 						</small>

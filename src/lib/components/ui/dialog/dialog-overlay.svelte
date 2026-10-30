@@ -8,9 +8,6 @@ let { ref = $bindable(null), class: className, ...restProps }: DialogPrimitive.O
 <DialogPrimitive.Overlay
 	bind:ref
 	data-slot="dialog-overlay"
-	class={cn(
-		"bg-black/30 supports-backdrop-filter:backdrop-blur-sm fixed inset-0 isolate z-50",
-		className,
-	)}
+	class={cn("bg-black/30 supports-backdrop-filter:backdrop-blur-sm fixed inset-0 isolate z-50", className)}
 	{...restProps}
 />

@@ -1,5 +1,13 @@
 <script lang="ts">
-import { ChevronLeft, Circle, File, FileCode, Folder, RefreshCw, Save, X } from "@lucide/svelte";
+import Icon from "@iconify/svelte";
+import RefreshCwIconData from "@iconify-icons/fluent/arrow-sync-24-regular";
+import ChevronLeftIconData from "@iconify-icons/fluent/chevron-left-24-regular";
+import CircleIconData from "@iconify-icons/fluent/circle-24-filled";
+import FileCodeIconData from "@iconify-icons/fluent/code-24-regular";
+import XIconData from "@iconify-icons/fluent/dismiss-24-regular";
+import FileIconData from "@iconify-icons/fluent/document-24-regular";
+import FolderIconData from "@iconify-icons/fluent/folder-24-regular";
+import SaveIconData from "@iconify-icons/fluent/save-24-regular";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { Button } from "$lib/components/ui/button";
@@ -112,16 +120,16 @@ function keydown(event: KeyboardEvent) {
 <aside class="file-panel" aria-label="Project files" transition:reveal|global={{ axis: "x" }}>
 	<div class="panel-content">
 		<header class="panel-header">
-			<span><FileCode size={16} />Files</span>
+			<span><Icon icon={FileCodeIconData} width={16} />Files</span>
 			<div>
 				<Button
 					variant="ghost"
 					size="icon-sm"
 					aria-label="Refresh files"
 					onclick={() => loadDirectory(directory)}
-					><RefreshCw size={15} /></Button
+					><Icon icon={RefreshCwIconData} width={15} /></Button
 				><Button variant="ghost" size="icon-sm" aria-label="Close files" onclick={close}
-					><X size={16} /></Button
+					><Icon icon={XIconData} width={16} /></Button
 				>
 			</div>
 		</header>
@@ -132,9 +140,8 @@ function keydown(event: KeyboardEvent) {
 					size="icon-xs"
 					disabled={!directory || loading}
 					aria-label="Parent directory"
-					onclick={() =>
-					loadDirectory(directory.split("/").slice(0, -1).join("/"))}
-					><ChevronLeft /></Button
+					onclick={() => loadDirectory(directory.split("/").slice(0, -1).join("/"))}
+					><Icon icon={ChevronLeftIconData} width={24} /></Button
 				><span class="truncate" title={directory}>{directory || project.name}</span>
 			</div>
 			<div class="file-list">
@@ -143,15 +150,12 @@ function keydown(event: KeyboardEvent) {
 						type="button"
 						class:active={file === entry.path}
 						disabled={loading}
-						onclick={() =>
-						entry.isDirectory
-							? loadDirectory(entry.path)
-							: openFile(entry.path)}
+						onclick={() => (entry.isDirectory ? loadDirectory(entry.path) : openFile(entry.path))}
 					>
 						{#if entry.isDirectory}
-							<Folder size={15} />
+							<Icon icon={FolderIconData} width={15} />
 						{:else}
-							<File size={15} />
+							<Icon icon={FileIconData} width={15} />
 						{/if}
 						<span class="truncate">{entry.name}</span>
 					</button>
@@ -171,7 +175,7 @@ function keydown(event: KeyboardEvent) {
 				<span class="truncate" title={file}
 					>{file}
 					{#if dirty}
-						<Circle size={7} fill="currentColor" />
+						<Icon icon={CircleIconData} width={7} />
 					{/if}</span
 				><Button
 					variant="ghost"
@@ -179,9 +183,9 @@ function keydown(event: KeyboardEvent) {
 					disabled={saving || loading}
 					aria-label="Reload file from disk"
 					onclick={() => openFile(file)}
-					><RefreshCw /></Button
+					><Icon icon={RefreshCwIconData} width={24} /></Button
 				><Button size="sm" disabled={!dirty || saving || loading} onclick={save}
-					><Save />{saving ? "Saving" : "Save"}</Button
+					><Icon icon={SaveIconData} width={24} />{saving ? "Saving" : "Save"}</Button
 				>
 			</div>
 			<textarea
@@ -197,7 +201,7 @@ function keydown(event: KeyboardEvent) {
 			</footer>
 		{:else}
 			<div class="editor-empty">
-				<FileCode size={28} strokeWidth={1.4} />
+				<Icon icon={FileCodeIconData} width={28} />
 				<p>A little room for your code.</p>
 				<span>Open a file to view and edit it.</span>
 			</div>

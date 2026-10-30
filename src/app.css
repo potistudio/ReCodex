@@ -79,7 +79,6 @@
 	::before,
 	::after {
 		border-color: var(--border);
-		corner-shape: squircle;
 	}
 	body {
 		margin: 0;
@@ -113,7 +112,7 @@
 		scrollbar-color: var(--border) transparent;
 	}
 }
-/* Preserve squircle corners on WebViews that do not yet support corner-shape. */
+/* Keep native and fallback squircle targets in sync. */
 :where(
 	button,
 	input:not([type="range"]),
@@ -149,6 +148,7 @@
 	.theme-preview-composer > span,
 	.rate-limit-row
 ) {
+	corner-shape: squircle;
 	--corner-shape: squircle;
 }
 /* The fallback reads the original paint styles to draw its SVG layer. Animating
@@ -187,6 +187,7 @@ textarea,
 	min-height: 0;
 	overflow: hidden;
 }
+
 .sidebar {
 	width: 256px;
 	flex-shrink: 0;
@@ -353,61 +354,67 @@ textarea,
 .connection-dot.online {
 	background: var(--success);
 }
+
 .main-workspace {
 	position: relative;
-	flex: 1;
-	min-width: 0;
 	display: flex;
+	flex: 1;
 	flex-direction: column;
-	margin: 0 8px 8px;
+	min-width: 0;
+	margin: 0 4px 4px 4px;
 	overflow: hidden;
 	padding: 1px;
 	border-radius: 12px;
-	corner-shape: squircle;
 	background: var(--border);
 }
-
 
 .topbar {
 	position: relative;
 	background: var(--sidebar);
 	color: var(--sidebar-foreground);
-	height: 48px;
+	height: 44px;
 	flex-shrink: 0;
-	padding: 0 29px;
+	padding: 0 12px;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 15px;
 }
+
 .topbar-left,
 .topbar-right {
 	position: relative;
 	z-index: 1;
+	opacity: 0.8;
 	pointer-events: none;
 	display: flex;
 	gap: 12px;
 	align-items: center;
 }
+
 .topbar-left button,
 .topbar-right button {
 	pointer-events: auto;
 }
+
 .topbar.mac-window {
-	padding-left: 128px;
+	padding-left: 86px;
 }
+
 .topbar-left {
 	align-self: stretch;
 	flex: 1;
 	min-width: 0;
 }
+
 .topbar-drag-area {
 	position: absolute;
 	inset: 0;
 }
+
 .rate-limit-indicator {
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	gap: 5px;
 	padding: 5px 8px;
 	border: 1px solid var(--border);
@@ -416,6 +423,39 @@ textarea,
 	line-height: 1;
 	color: var(--muted-foreground);
 	white-space: nowrap;
+	background: transparent;
+	cursor: pointer;
+}
+.rate-limit-indicator:hover {
+	background: var(--muted);
+}
+.rate-limit-track {
+	width: 48px;
+	height: 4px;
+	align-self: center;
+	overflow: hidden;
+	border-radius: 999px;
+	background: var(--border);
+}
+.rate-limit-track > span {
+	display: block;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--foreground);
+}
+.rate-limit-track.low > span {
+	background: var(--destructive);
+}
+.rate-limit-popover {
+	z-index: 50;
+	width: min(320px, calc(100vw - 30px));
+	padding: 0 15px 15px;
+	border: 0;
+	outline: 0;
+	border-radius: 14px;
+	background: var(--popover);
+	color: var(--popover-foreground);
+	box-shadow: 0 10px 30px #0002;
 }
 .rate-limit-indicator strong {
 	font-size: 11px;
@@ -477,7 +517,6 @@ textarea,
 	padding: 10px 12px;
 	border: 1px solid rgb(255 255 255 / 50%);
 	border-radius: 18px;
-	corner-shape: squircle;
 	background: rgb(255 255 255 / 50%);
 	color: var(--popover-foreground);
 	box-shadow:
@@ -767,6 +806,73 @@ textarea,
 	position: relative;
 	flex: 1;
 	min-height: 0;
+	margin-bottom: -12px;
+	overflow: clip;
+}
+.chat-scroll-frame-empty {
+	display: none;
+}
+/* Inspired by Skiper UI's Progressive Blur: https://www.skiper-ui.com/v1/skiper41 */
+.chat-edge-blur {
+	position: absolute;
+	right: 0;
+	left: 0;
+	z-index: 1;
+	height: 96px;
+	pointer-events: none;
+	user-select: none;
+}
+.chat-edge-blur-top {
+	top: 0;
+	--blur-direction: to top;
+}
+.chat-edge-blur-bottom {
+	bottom: 0;
+	--blur-direction: to bottom;
+	transform: translateY(32px);
+}
+.chat-edge-blur-layer {
+	position: absolute;
+	inset: 0;
+	-webkit-backdrop-filter: blur(var(--blur-radius));
+	backdrop-filter: blur(var(--blur-radius));
+	mask-image: linear-gradient(var(--blur-direction), transparent var(--blur-start), black var(--blur-end));
+}
+.chat-edge-blur-layer-1 {
+	--blur-radius: 2px;
+	--blur-start: 0%;
+	--blur-end: 35%;
+}
+.chat-edge-blur-layer-2 {
+	--blur-radius: 4px;
+	--blur-start: 10%;
+	--blur-end: 50%;
+}
+.chat-edge-blur-layer-3 {
+	--blur-radius: 8px;
+	--blur-start: 20%;
+	--blur-end: 65%;
+}
+.chat-edge-blur-layer-4 {
+	--blur-radius: 16px;
+	--blur-start: 30%;
+	--blur-end: 80%;
+}
+.chat-edge-blur-layer-5 {
+	--blur-radius: 32px;
+	--blur-start: 45%;
+	--blur-end: 90%;
+}
+.chat-edge-blur-layer-6 {
+	--blur-radius: 64px;
+	--blur-start: 60%;
+	--blur-end: 100%;
+}
+.chat-edge-blur::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(var(--blur-direction), transparent, var(--background));
 }
 .chat-scroll {
 	height: 100%;
@@ -823,10 +929,24 @@ textarea,
 	background: var(--muted-foreground);
 }
 .composer-area {
+	position: relative;
+	z-index: 2;
 	padding: 12px 32px 22px;
 	width: 100%;
 	max-width: 810px;
 	margin: 0 auto;
+}
+.composer-area-empty {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	overflow-y: auto;
+}
+.composer-area-empty .welcome {
+	margin: 0 auto;
+	padding: 0 0 20px;
 }
 .composer {
 	background: var(--card);
@@ -1530,6 +1650,10 @@ textarea,
 .rate-limit-panel {
 	padding: 15px 0;
 	border-bottom: 1px solid var(--border);
+}
+.rate-limit-popover .rate-limit-panel {
+	border-bottom: 0;
+	padding-bottom: 0;
 }
 .rate-limit-panel > div:first-child > strong {
 	display: block;

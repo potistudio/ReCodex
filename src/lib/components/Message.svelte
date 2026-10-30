@@ -1,5 +1,11 @@
 <script lang="ts">
-import { Check, ChevronRight, Copy, FileDiff, Sparkles, Terminal } from "@lucide/svelte";
+import Icon from "@iconify/svelte";
+import CheckIconData from "@iconify-icons/fluent/checkmark-24-regular";
+import ChevronRightIconData from "@iconify-icons/fluent/chevron-right-24-regular";
+import CopyIconData from "@iconify-icons/fluent/copy-24-regular";
+import FileDiffIconData from "@iconify-icons/fluent/document-edit-24-regular";
+import SparklesIconData from "@iconify-icons/fluent/sparkle-24-regular";
+import TerminalIconData from "@iconify-icons/fluent/window-console-20-regular";
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import DOMPurify from "dompurify";
@@ -9,7 +15,15 @@ import { streamingMarkdown } from "$lib/streaming-markdown";
 import type { Item, TokenUsageBreakdown } from "$lib/types";
 import { formatTokenCount } from "$lib/usage";
 
-let { item, tokenUsage = null }: { item: Item; tokenUsage?: TokenUsageBreakdown | null } = $props();
+let {
+	item,
+	tokenUsage = null,
+	generation = null,
+}: {
+	item: Item;
+	tokenUsage?: TokenUsageBreakdown | null;
+	generation?: { tokens: number; rate: number | null; estimated: boolean } | null;
+} = $props();
 let copied = $state(false);
 let copyError = $state("");
 let commandExpanded = $state(false);
@@ -66,10 +80,24 @@ $effect(() => {
 	<div class="user-message"><p class:message-sent={item.renderKey}>{text}</p></div>
 {:else if item.type === "agentMessage" || item.type === "plan"}
 	<article class="assistant-message">
-		{#if (item.type === "agentMessage" && tokenUsage) || item.type === "plan"}
+		{#if (item.type === "agentMessage" && (tokenUsage || generation)) || item.type === "plan"}
 			<div class="message-author">
 				{#if item.type === "agentMessage" && tokenUsage}
 					<span class="message-token-usage">{formatTokenCount(tokenUsage.totalTokens)} tokens</span>
+				{/if}
+				{#if item.type === "agentMessage" && generation}
+					<span
+						class="message-token-usage"
+						title={generation.estimated ? "Estimated from visible text over the last five seconds; excludes reasoning and tool calls" : "Approximate output tokens per second between first and last visible text; output may include reasoning and tool calls, and pauses between messages are included"}
+					>
+						{generation.estimated ? "~" : ""}{formatTokenCount(generation.tokens)}
+						output tokens
+						{#if generation.rate !== null}
+							· ~{generation.rate.toFixed(1)}
+							tokens/s
+						{/if}
+						{generation.estimated ? "estimated" : "stream average"}
+					</span>
 				{/if}
 				{#if item.type === "plan"}
 					<span class="muted">Plan</span>
@@ -94,9 +122,9 @@ $effect(() => {
 				title={copyError || "Copy message"}
 				onclick={copy}
 				>{#if copied}
-					<Check />
+					<Icon icon={CheckIconData} width={24} />
 				{:else}
-					<Copy />
+					<Icon icon={CopyIconData} width={24} />
 				{/if}</Button
 			>
 		{/if}
@@ -104,17 +132,18 @@ $effect(() => {
 {:else if item.type === "commandExecution"}
 	<details class="tool-item" class:running={commandIsRunning(item.status)} bind:open={commandExpanded}>
 		<summary>
-			<Terminal size={15} /><span class="truncate">{item.command || "Command starting…"}</span
+			<Icon icon={TerminalIconData} width={15} />
+			<span class="truncate">{item.command || "Command starting…"}</span
 			><span class="tool-status">{commandStatus(item.status)}</span>
-			<ChevronRight size={13} />
+			<Icon icon={ChevronRightIconData} width={13} />
 		</summary>
 		<pre bind:this={commandOutput} aria-live="polite">{item.aggregatedOutput || "Waiting for output…"}</pre>
 	</details>
 {:else if item.type === "fileChange"}
 	<details class="tool-item">
 		<summary>
-			<FileDiff size={15} /><span>Changed {item.changes?.length ?? 0} files</span
-			><span class="tool-status">{item.status}</span><ChevronRight size={13} />
+			<Icon icon={FileDiffIconData} width={15} /><span>Changed {item.changes?.length ?? 0} files</span
+			><span class="tool-status">{item.status}</span><Icon icon={ChevronRightIconData} width={13} />
 		</summary>
 		{#each item.changes ?? [] as change}
 			<div class="diff-name">
@@ -125,6 +154,6 @@ $effect(() => {
 	</details>
 {:else if item.type !== "reasoning"}
 	<div class="activity">
-		<Sparkles size={14} /><span>{item.tool ?? item.type}</span><span>{item.status ?? ""}</span>
+		<Icon icon={SparklesIconData} width={14} /><span>{item.tool ?? item.type}</span><span>{item.status ?? ""}</span>
 	</div>
 {/if}

@@ -1,28 +1,29 @@
 <script lang="ts">
-import {
-	ArrowUp,
-	ArrowUpRight,
-	ChevronDown,
-	Code2,
-	FileCode,
-	Folder,
-	FolderPlus,
-	LoaderCircle,
-	MoreHorizontal,
-	PanelLeftClose,
-	PanelLeftOpen,
-	Pencil,
-	Plus,
-	Search,
-	Settings2,
-	Square,
-	SquarePen,
-	Trash2,
-	X,
-} from "@lucide/svelte";
+import Icon from "@iconify/svelte";
+import PlusIconData from "@iconify-icons/fluent/add-24-regular";
+import LoaderCircleIconData from "@iconify-icons/fluent/arrow-sync-24-regular";
+import ArrowUpIconData from "@iconify-icons/fluent/arrow-up-24-regular";
+import ArrowUpRightIconData from "@iconify-icons/fluent/arrow-up-right-24-regular";
+import ChevronDownIconData from "@iconify-icons/fluent/chevron-down-24-regular";
+import Code2IconData from "@iconify-icons/fluent/code-24-regular";
+import FileCodeIconData from "@iconify-icons/fluent/code-24-regular";
+import SquarePenIconData from "@iconify-icons/fluent/compose-24-regular";
+import Trash2IconData from "@iconify-icons/fluent/delete-24-regular";
+import XIconData from "@iconify-icons/fluent/dismiss-24-regular";
+import PencilIconData from "@iconify-icons/fluent/edit-24-regular";
+import FolderIconData from "@iconify-icons/fluent/folder-24-regular";
+import FolderPlusIconData from "@iconify-icons/fluent/folder-add-24-regular";
+import GaugeIconData from "@iconify-icons/fluent/gauge-24-regular";
+import MoreHorizontalIconData from "@iconify-icons/fluent/more-horizontal-24-regular";
+import PanelLeftCloseIconData from "@iconify-icons/fluent/panel-left-contract-24-regular";
+import PanelLeftOpenIconData from "@iconify-icons/fluent/panel-left-expand-24-regular";
+import SearchIconData from "@iconify-icons/fluent/search-24-regular";
+import Settings2IconData from "@iconify-icons/fluent/settings-24-regular";
+import SquareIconData from "@iconify-icons/fluent/square-24-filled";
 import { isTauri } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
+import { Popover } from "bits-ui";
 import { onMount, tick } from "svelte";
 import { App } from "$lib/app.svelte";
 import Approval from "$lib/components/Approval.svelte";
@@ -45,7 +46,7 @@ let draft = $state("");
 let search = $state("");
 let searchOpen = $state(false);
 let sidebar = $state(true);
-let macTitlebar = $state(false);
+let isMacClient = $state(false);
 let filesOpen = $state(false);
 let fileDirty = $state(false);
 let settingsOpen = $state(false);
@@ -71,6 +72,9 @@ const filteredThreads = $derived(
 	app.threads.filter((thread) => (thread.name || thread.preview).toLowerCase().includes(search.toLowerCase())),
 );
 const ready = $derived(app.connected && !!app.project && (!app.requiresAuth || !!app.account));
+const primaryRemaining = $derived(
+	app.rateLimits?.rateLimits.primary ? remainingPercent(app.rateLimits.rateLimits.primary.usedPercent) : null,
+);
 const rateLimitSnapshots = $derived.by(() => {
 	const rateLimits = app.rateLimits;
 	if (!rateLimits) return [];
@@ -101,14 +105,17 @@ function startWorkLabelTransition(nextLabel: string) {
 		if (nextPendingLabel) startWorkLabelTransition(nextPendingLabel);
 	}, labelTransitionDuration);
 }
+
 onMount(() => {
-	macTitlebar = isTauri() && platform() === "macos";
+	isMacClient = isTauri() && platform() === "macos";
 	void app.init();
+
 	return () => {
 		if (labelTransitionTimer) clearTimeout(labelTransitionTimer);
 		app.dispose();
 	};
 });
+
 $effect(() => {
 	applyTheme(theme);
 });
@@ -199,13 +206,13 @@ async function send() {
 	if (!text || composing || !ready || app.busy) return;
 	const wasFollowing = scrollMode === "follow";
 	draft = "";
-	if (!(await app.send(text))) {
-		draft = text;
-	} else if (wasFollowing) {
+	const sending = app.send(text);
+	if (wasFollowing) {
 		scrollMode = "free";
 		await tick();
 		centerLatestUserMessage();
 	}
+	if (!(await sending)) draft = text;
 	await tick();
 	composer?.focus();
 }
@@ -285,13 +292,11 @@ function shortcuts(event: KeyboardEvent) {
 }
 </script>
 
-<svelte:head
-	><title>ReCodex</title>
-	<meta
-		name="description"
-		content="A quiet workspace for your next idea. Chat, code, and create with Codex."
-	></svelte:head
->
+<svelte:head>
+	<title>ReCodex</title>
+	<meta name="description" content="A quiet workspace for your next idea. Chat, code, and create with Codex.">
+</svelte:head>
+
 <svelte:window
 	onkeydown={shortcuts}
 	onbeforeunload={(event) => {
@@ -302,7 +307,42 @@ function shortcuts(event: KeyboardEvent) {
 	}}
 />
 
-<header class="topbar" class:mac-window={macTitlebar}>
+{#snippet rateLimitDetails()}
+	<section class="rate-limit-panel" aria-label="Rate limits">
+		<div>
+			<strong>Rate limits</strong>
+			<small>Remaining allowance from your signed-in Codex account.</small>
+		</div>
+		{#if rateLimitSnapshots.length}
+			<div class="rate-limit-list">
+				{#each rateLimitSnapshots as snapshot (snapshot.limitId ?? "default")}
+					{#each rateLimitWindows(
+							snapshot,
+						) as window, index (`${snapshot.limitId ?? "default"}-${index}`)}
+						<div class="rate-limit-row">
+							<span
+								><strong>{rateLimitName(snapshot)}</strong
+								><small>{formatUsageWindow(window)}</small></span
+							>
+							<span class="rate-limit-value"
+								><strong>{remainingPercent(window.usedPercent)}% remaining</strong>
+								<small
+									>{formatResetTime(window.resetsAt)
+											? `Resets ${formatResetTime(window.resetsAt)}`
+											: "Reset unavailable"}</small
+								></span
+							>
+						</div>
+					{/each}
+				{/each}
+			</div>
+		{:else}
+			<p>Rate-limit details are unavailable for this account.</p>
+		{/if}
+	</section>
+{/snippet}
+
+<header class="topbar" class:mac-window={isMacClient}>
 	<div class="topbar-left">
 		<Button
 			variant="ghost"
@@ -311,46 +351,53 @@ function shortcuts(event: KeyboardEvent) {
 			onclick={() => (sidebar = !sidebar)}
 		>
 			{#if sidebar}
-				<PanelLeftClose />
+				<Icon icon={PanelLeftCloseIconData} width={24} />
 			{:else}
-				<PanelLeftOpen />
+				<Icon icon={PanelLeftOpenIconData} width={24} />
 			{/if}
 		</Button>
 	</div>
+
 	<div class="topbar-right">
-		<span
-			class="rate-limit-indicator"
-			role="status"
-			title="Remaining Codex rate-limit allowance"
-			aria-label="Codex rate-limit allowance"
-		>
-			<span>Rate limit</span>
-			<strong
-				>{app.rateLimits?.rateLimits.primary
-					? `${remainingPercent(app.rateLimits.rateLimits.primary.usedPercent)}% left`
-					: "—"}</strong
-			>
-		</span>
+		<Popover.Root>
+			<Popover.Trigger class="rate-limit-indicator" aria-label="Codex rate-limit allowance">
+				<Icon icon={GaugeIconData} width={14} aria-hidden="true" />
+				<span
+					class="rate-limit-track"
+					class:low={primaryRemaining !== null && primaryRemaining <= 20}
+					aria-hidden="true"
+				>
+					{#if primaryRemaining !== null}
+						<span style:width={`${primaryRemaining}%`}></span>
+					{/if}
+				</span>
+				<strong>{primaryRemaining === null ? "—" : `${primaryRemaining}% left`}</strong>
+			</Popover.Trigger>
+			<Popover.Portal>
+				<Popover.Content class="rate-limit-popover" align="end" sideOffset={8} aria-label="Rate limits">
+					{@render rateLimitDetails()}
+				</Popover.Content>
+			</Popover.Portal>
+		</Popover.Root>
+
 		{#if app.project}
-			<span class="project-breadcrumb"><Folder size={14} />{app.project.name}</span
-			><Button
-				variant="ghost"
-				size="sm"
-				class={filesOpen ? "files-active" : ""}
-				onclick={() => (filesOpen = true)}
-				><FileCode size={16} />Files</Button
-			><Dropdown.Root
-				><Dropdown.Trigger class="icon-button" aria-label="Project options" disabled={app.busy}
-					><MoreHorizontal size={18} /></Dropdown.Trigger
-				><Dropdown.Content align="end"
-					><Dropdown.Item
+			<span class="project-breadcrumb"><Icon icon={FolderIconData} width={14} />{app.project.name}</span>
+			<Button variant="ghost" size="sm" class={filesOpen ? "files-active" : ""} onclick={() => (filesOpen = true)}
+				><Icon icon={FileCodeIconData} width={16} />Files</Button
+			>
+			<Dropdown.Root>
+				<Dropdown.Trigger class="icon-button" aria-label="Project options" disabled={app.busy}>
+					<Icon icon={MoreHorizontalIconData} width={18} /></Dropdown.Trigger
+				>
+				<Dropdown.Content align="end">
+					<Dropdown.Item
 						onclick={() => {
 							const project = app.project;
 							if (!project) return;
 							projectName = project.name;
 							renameOpen = true;
 						}}
-						><Pencil size={14} />Rename project</Dropdown.Item
+						><Icon icon={PencilIconData} width={14} />Rename project</Dropdown.Item
 					><Dropdown.Item onclick={relocateProject}>Change working directory</Dropdown.Item
 					><Dropdown.Item onclick={removeProject}>Remove project</Dropdown.Item></Dropdown.Content
 				></Dropdown.Root
@@ -359,20 +406,22 @@ function shortcuts(event: KeyboardEvent) {
 			<span class="topbar-hint">Your ideas, in progress.</span>
 		{/if}
 	</div>
-	{#if macTitlebar}
+
+	{#if isMacClient}
 		<div class="topbar-drag-area" data-tauri-drag-region></div>
 	{/if}
 </header>
+
 <div class="app-shell" class:sidebar-hidden={!sidebar}>
 	{#if sidebar}
 		<aside class="sidebar" transition:reveal={{ axis: "x" }}>
 			<div class="panel-content">
 				<nav class="primary-nav" aria-label="Workspace">
 					<button type="button" onclick={newChat} disabled={!app.connected || app.loading}>
-						<SquarePen size={18} /><span>New chat</span><kbd>Ctrl ⇧ O</kbd>
+						<Icon icon={SquarePenIconData} width={18} /><span>New chat</span><kbd>Ctrl ⇧ O</kbd>
 					</button>
 					<button type="button" onclick={() => (searchOpen = !searchOpen)}>
-						<Search size={18} />
+						<Icon icon={SearchIconData} width={18} />
 						<span>Search chats</span><kbd>Ctrl K</kbd>
 					</button>
 				</nav>
@@ -389,7 +438,7 @@ function shortcuts(event: KeyboardEvent) {
 						aria-label="Add project"
 						disabled={app.busy || !isTauri()}
 						onclick={addProject}
-						><Plus /></Button
+						><Icon icon={PlusIconData} width={24} /></Button
 					>
 				</div>
 				<div class="project-list">
@@ -401,7 +450,7 @@ function shortcuts(event: KeyboardEvent) {
 							onclick={() => chooseProject(project)}
 							title={project.path}
 						>
-							<Folder size={17} />
+							<Icon icon={FolderIconData} width={17} />
 							<span class="truncate">{project.name}</span>
 						</button>
 					{/each}
@@ -409,7 +458,7 @@ function shortcuts(event: KeyboardEvent) {
 				<div class="section-heading recent-heading">
 					<span>Recent chats</span>
 					{#if app.loading}
-						<LoaderCircle class="spin" size={13} />
+						<Icon icon={LoaderCircleIconData} class="spin" width={13} />
 					{/if}
 				</div>
 				<div class="thread-list">
@@ -435,7 +484,12 @@ function shortcuts(event: KeyboardEvent) {
 									{/if}
 								</span>
 								{#if app.isThreadRunning(thread.id) && app.thread?.id !== thread.id}
-									<LoaderCircle class="spin thread-running" size={14} aria-hidden="true" />
+									<Icon
+										icon={LoaderCircleIconData}
+										class="spin thread-running"
+										width={14}
+										aria-hidden="true"
+									/>
 								{/if}
 							</button>
 							<Button
@@ -445,15 +499,13 @@ function shortcuts(event: KeyboardEvent) {
 								aria-label={`Delete chat: ${thread.name || thread.preview || "Untitled chat"}`}
 								disabled={!app.connected || app.loading || !!app.deletingThreadId || app.isThreadRunning(thread.id) || (app.thread?.id === thread.id && app.sending)}
 								onclick={() => deleteThread(thread)}
-								><Trash2 /></Button
+								><Icon icon={Trash2IconData} width={24} /></Button
 							>
 						</div>
 					{/each}
 					{#if !filteredThreads.length}
 						<div class="sidebar-empty">
-							{search
-							? "No matching chats."
-							: "Your conversations will appear here."}
+							{search ? "No matching chats." : "Your conversations will appear here."}
 						</div>
 					{/if}
 					{#if app.cursor}
@@ -471,31 +523,29 @@ function shortcuts(event: KeyboardEvent) {
 						type="button"
 						class="account-button"
 						onclick={() => {
-						settingsOpen = true;
-						void app.readRateLimits().catch(() => {});
-					}}
+							settingsOpen = true;
+							void app.readRateLimits().catch(() => {});
+						}}
 					>
 						<span class="avatar">{app.account?.email?.[0]?.toUpperCase() || "R"}</span
 						><span
-							><strong
-								>{app.account?.email?.split("@")[0] ||
-								"Your workspace"}</strong
+							><strong>{app.account?.email?.split("@")[0] || "Your workspace"}</strong
 							><small
 								><span class="connection-dot" class:online={app.connected}></span>
 								{app.connecting
-								? "Connecting…"
-								: app.connected
-									? "Codex connected"
-								: "Not connected"}</small
+									? "Connecting…"
+									: app.connected
+										? "Codex connected"
+										: "Not connected"}</small
 							></span
-						><Settings2 size={17} />
+						><Icon icon={Settings2IconData} width={17} />
 					</button>
 				</div>
 			</div>
 		</aside>
 	{/if}
-	<main class="main-workspace">
 
+	<main class="main-workspace">
 		<div class="workspace-rim">
 			<div class="workspace-body">
 				<section class="chat-pane" aria-label="Chat">
@@ -512,35 +562,24 @@ function shortcuts(event: KeyboardEvent) {
 								size="icon-xs"
 								aria-label="Dismiss error"
 								onclick={() => (app.error = "")}
-								><X /></Button
+								><Icon icon={XIconData} width={24} /></Button
 							>
 						</div>
 					{/if}
-					<div class="chat-scroll-frame">
-						<div class="chat-scroll" bind:this={chatScroll} use:trackManualScroll onscroll={updateScrollMode}>
-							{#if app.items.length === 0}
-								<div class="welcome" in:appear>
-									{#if !app.project}
-										<Button
-											variant="outline"
-											size="lg"
-											onclick={addProject}
-											disabled={!isTauri() || app.busy}
-											><FolderPlus size={16} />Open a project<ArrowUpRight size={14} /></Button
-										>
-									{:else}
-										<div class="workspace-pill">
-											<Folder size={14} /><span>{app.project.name}</span><span class="pill-dot"></span
-											><span>Ready to create</span>
-										</div>
-									{/if}
-								</div>
-							{:else}
+					<div class="chat-scroll-frame" class:chat-scroll-frame-empty={app.items.length === 0}>
+						<div
+							class="chat-scroll"
+							bind:this={chatScroll}
+							use:trackManualScroll
+							onscroll={updateScrollMode}
+						>
+							{#if app.items.length > 0}
 								<div class="messages">
-									{#each app.items as item (item.renderKey ?? item.id)}
+									{#each app.items as item, itemIndex (item.renderKey ?? item.id)}
 										<Message
 											{item}
 											tokenUsage={item.turnId ? app.tokenUsageForTurn(item.turnId) : null}
+											generation={item.turnId && item.type === "agentMessage" && !app.items.slice(itemIndex + 1).some((next) => next.turnId === item.turnId && next.type === "agentMessage") ? app.generationForTurn(item.turnId) : null}
 										/>
 									{/each}
 									{#if app.activeTurn || app.sending}
@@ -583,6 +622,13 @@ function shortcuts(event: KeyboardEvent) {
 								</div>
 							{/if}
 						</div>
+						{#each ["top", "bottom"] as edge}
+							<div class="chat-edge-blur chat-edge-blur-{edge}" aria-hidden="true">
+								{#each [1, 2, 3, 4, 5, 6] as layer}
+									<span class="chat-edge-blur-layer chat-edge-blur-layer-{layer}"></span>
+								{/each}
+							</div>
+						{/each}
 						{#if scrollMode === "free"}
 							<button
 								class="scroll-to-latest"
@@ -591,11 +637,32 @@ function shortcuts(event: KeyboardEvent) {
 								aria-label="Scroll to latest"
 								onclick={followLatest}
 							>
-								<ChevronDown size={18} />
+								<Icon icon={ChevronDownIconData} width={18} />
 							</button>
 						{/if}
 					</div>
-					<div class="composer-area">
+					<div class="composer-area" class:composer-area-empty={app.items.length === 0}>
+						{#if app.items.length === 0}
+							<div class="welcome" in:appear>
+								{#if !app.project}
+									<Button
+										variant="outline"
+										size="lg"
+										onclick={addProject}
+										disabled={!isTauri() || app.busy}
+										><Icon icon={FolderPlusIconData} width={16} />Open a project<Icon
+											icon={ArrowUpRightIconData}
+											width={14}
+										/></Button
+									>
+								{:else}
+									<div class="workspace-pill">
+										<Icon icon={FolderIconData} width={14} /><span>{app.project.name}</span
+										><span class="pill-dot"></span><span>Ready to create</span>
+									</div>
+								{/if}
+							</div>
+						{/if}
 						<form
 							class="composer"
 							onsubmit={(event) => {
@@ -617,11 +684,8 @@ function shortcuts(event: KeyboardEvent) {
 							></textarea>
 							<div class="composer-toolbar">
 								<div class="composer-context">
-									<Folder size={14} />
-									<span
-										>{app.project?.name ||
-											"Select a project"}</span
-									>
+									<Icon icon={FolderIconData} width={14} />
+									<span>{app.project?.name || "Select a project"}</span>
 									<span class="toolbar-divider"></span>
 									<ModelEffortPicker
 										models={app.models}
@@ -633,7 +697,7 @@ function shortcuts(event: KeyboardEvent) {
 								</div>
 								{#if app.activeTurn}
 									<Button size="icon" aria-label="Stop generation" onclick={() => app.stop()}
-										><Square size={13} fill="currentColor" /></Button
+										><Icon icon={SquareIconData} width={13} /></Button
 									>
 								{:else}
 									<Button
@@ -641,13 +705,11 @@ function shortcuts(event: KeyboardEvent) {
 										size="icon"
 										class="send-button"
 										aria-label="Send message"
-										disabled={!draft.trim() ||
-											!ready ||
-											app.busy}
+										disabled={!draft.trim() || !ready || app.busy}
 										>{#if app.sending}
-											<LoaderCircle class="spin" />
+											<Icon icon={LoaderCircleIconData} class="spin" width={24} />
 										{:else}
-											<ArrowUp size={18} />
+											<Icon icon={ArrowUpIconData} width={18} />
 										{/if}</Button
 									>
 								{/if}
@@ -655,10 +717,12 @@ function shortcuts(event: KeyboardEvent) {
 						</form>
 						{#if isTauri() && !app.connected}
 							<div class="connection-action">
-								<Button variant="outline" size="sm" disabled={app.connecting} onclick={() => app.connect()}
-									>{app.connecting
-										? "Connecting to Codex…"
-										: "Connect to Codex"}</Button
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={app.connecting}
+									onclick={() => app.connect()}
+									>{app.connecting ? "Connecting to Codex…" : "Connect to Codex"}</Button
 								>
 							</div>
 						{:else if app.connected && app.requiresAuth && !app.account}
@@ -693,11 +757,7 @@ function shortcuts(event: KeyboardEvent) {
 		<div class="settings-row">
 			<span
 				><strong>Codex connection</strong
-				><small
-					>{app.connected
-						? "Connected to local app-server"
-						: "Not connected"}</small
-				></span
+				><small>{app.connected ? "Connected to local app-server" : "Not connected"}</small></span
 			><Button variant="outline" disabled={!isTauri() || app.connecting || app.busy} onclick={() => app.connect()}
 				>{app.connecting ? "Connecting…" : "Reconnect"}</Button
 			>
@@ -705,11 +765,7 @@ function shortcuts(event: KeyboardEvent) {
 		<div class="settings-row">
 			<span
 				><strong>Account</strong
-				><small
-					>{app.account?.email ||
-						app.account?.type ||
-						"Not signed in"}</small
-				></span
+				><small>{app.account?.email || app.account?.type || "Not signed in"}</small></span
 			>
 			{#if !app.account}
 				<Button disabled={!app.connected} onclick={() => app.login()}>Sign in</Button>
@@ -717,34 +773,7 @@ function shortcuts(event: KeyboardEvent) {
 				<span class="account-plan">{app.account.planType || app.account.type}</span>
 			{/if}
 		</div>
-		<section class="rate-limit-panel" aria-label="Rate limits">
-			<div>
-				<strong>Rate limits</strong>
-				<small>Remaining allowance from your signed-in Codex account.</small>
-			</div>
-			{#if rateLimitSnapshots.length}
-				<div class="rate-limit-list">
-					{#each rateLimitSnapshots as snapshot (snapshot.limitId ?? "default")}
-						{#each rateLimitWindows(snapshot) as window, index (`${snapshot.limitId ?? "default"}-${index}`)}
-							<div class="rate-limit-row">
-								<span
-									><strong>{rateLimitName(snapshot)}</strong
-									><small>{formatUsageWindow(window)}</small></span
-								>
-								<span class="rate-limit-value"
-									><strong>{remainingPercent(window.usedPercent)}% remaining</strong>
-									<small
-										>{formatResetTime(window.resetsAt) ? `Resets ${formatResetTime(window.resetsAt)}` : "Reset unavailable"}</small
-									></span
-								>
-							</div>
-						{/each}
-					{/each}
-				</div>
-			{:else}
-				<p>Rate-limit details are unavailable for this account.</p>
-			{/if}
-		</section>
+		{@render rateLimitDetails()}
 		<p class="settings-note">
 			ReCodex uses your installed Codex CLI and its sign-in. If Codex is not found, set
 			<code>RECODEX_CODEX_PATH</code>
@@ -756,7 +785,9 @@ function shortcuts(event: KeyboardEvent) {
 				<pre>{app.logs.join("\n")}</pre>
 			</details>
 		{/if}
-		<div class="settings-version"><Code2 size={14} />ReCodex <span>0.0.1-alpha</span></div></Dialog.Content
+		<div class="settings-version">
+			<Icon icon={Code2IconData} width={14} />ReCodex <span>0.0.1-alpha</span>
+		</div></Dialog.Content
 	></Dialog.Root
 >
 <Dialog.Root bind:open={renameOpen}
