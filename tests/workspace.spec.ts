@@ -2,13 +2,13 @@ import { expect, test } from "@playwright/test";
 
 const hideCssStudio = "css-studio-panel { display: none !important; }";
 
-test("browser preview, suggestions, and theme", async ({ page }) => {
+test("browser preview, connection controls, and theme", async ({ page }) => {
 	await page.goto("/");
 	await page.addStyleTag({ content: hideCssStudio });
-	await expect(page.getByRole("heading", { name: "What will you build?" })).toBeVisible();
+	await expect(page.getByRole("textbox", { name: "Message Codex" })).toBeVisible();
+	await expect(page.getByRole("combobox", { name: "Active host" })).toHaveValue("local");
 	await expect(page.getByText("Browser preview ·", { exact: false })).toBeVisible();
-	await page.getByRole("button", { name: "Explore the code" }).click();
-	await expect(page.getByRole("textbox", { name: "Message Codex" })).toHaveValue(/Give me a concise overview/);
+	await page.getByRole("textbox", { name: "Message Codex" }).fill("Give me a concise overview");
 	await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
 	await page.getByRole("button", { name: /Your workspace/ }).click();
 	await page.getByRole("radio", { name: "ReCodex Dark", exact: true }).check();
@@ -53,8 +53,21 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 				return callbackId;
 			},
 			async invoke(command: string, args: Payload = {}) {
+				if (command === "hosts_list")
+					return { registered: [], discovered: [], discoveryError: null, hostingError: null };
+				if (command === "host_status") return null;
+				if (command === "server_request" && args.method === "host/replay")
+					return {
+						reset: false,
+						epoch: "test",
+						sequence: 0,
+						events: [],
+						snapshot: { activeTurns: {}, approvals: [] },
+					};
+				if (command === "server_request" && ["host/keepalive", "host/release"].includes(args.method as string))
+					return;
 				if (command === "plugin:event|listen") {
-					listener = args.handler as number;
+					if (args.event === "codex-event") listener = args.handler as number;
 					return 1;
 				}
 				if (command === "plugin:event|unlisten") return;

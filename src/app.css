@@ -393,8 +393,21 @@ textarea,
 }
 
 .topbar-left button,
+.topbar-left select,
 .topbar-right button {
 	pointer-events: auto;
+}
+
+.host-selector {
+	min-width: 70px;
+	max-width: 150px;
+	height: 30px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 0 6px;
+	color: var(--foreground);
+	background: var(--background);
+	font-size: 12px;
 }
 
 .topbar.mac-window {

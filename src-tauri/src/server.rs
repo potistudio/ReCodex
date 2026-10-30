@@ -2,7 +2,10 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     process::Stdio,
-    sync::{Arc, Mutex as StdMutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex as StdMutex,
+    },
     time::Duration,
 };
 use tokio::{
@@ -12,8 +15,18 @@ use tokio::{
 };
 
 type Pending = Arc<StdMutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>>;
+struct PendingRequest {
+    id: u64,
+    pending: Pending,
+}
+impl Drop for PendingRequest {
+    fn drop(&mut self) {
+        self.pending.lock().unwrap().remove(&self.id);
+    }
+}
 pub struct Server {
-    child: Child,
+    _child: Child,
+    running: Arc<AtomicBool>,
     stdin: Mutex<ChildStdin>,
     pending: Pending,
     next_id: std::sync::atomic::AtomicU64,
@@ -21,7 +34,12 @@ pub struct Server {
 impl Server {
     pub async fn start(emit: impl Fn(Value) + Send + Sync + 'static) -> Result<Self, String> {
         let executable = std::env::var("RECODEX_CODEX_PATH").unwrap_or_else(|_| "codex".into());
-        let mut command = Command::new(executable);
+        Self::start_command(Command::new(executable), emit).await
+    }
+    pub(crate) async fn start_command(
+        mut command: Command,
+        emit: impl Fn(Value) + Send + Sync + 'static,
+    ) -> Result<Self, String> {
         command
             .args(["app-server", "--listen", "stdio://"])
             .stdin(Stdio::piped())
@@ -37,6 +55,8 @@ impl Server {
         let stdout = child.stdout.take().ok_or("Codex stdout is unavailable")?;
         let stderr = child.stderr.take().ok_or("Codex stderr is unavailable")?;
         let pending: Pending = Arc::default();
+        let running = Arc::new(AtomicBool::new(true));
+        let reader_running = running.clone();
         let responses = pending.clone();
         let emit = Arc::new(emit);
         let events = emit.clone();
@@ -62,6 +82,7 @@ impl Server {
                     }
                 }
             }
+            reader_running.store(false, Ordering::Release);
             for (_, sender) in responses.lock().unwrap().drain() {
                 let _ = sender.send(Err("Codex connection closed".into()));
             }
@@ -74,7 +95,8 @@ impl Server {
             }
         });
         let server = Self {
-            child,
+            _child: child,
+            running,
             stdin: Mutex::new(stdin),
             pending,
             next_id: std::sync::atomic::AtomicU64::new(1),
@@ -88,8 +110,8 @@ impl Server {
         server.write(json!({"method":"initialized"})).await?;
         Ok(server)
     }
-    pub fn is_running(&mut self) -> bool {
-        matches!(self.child.try_wait(), Ok(None))
+    pub fn is_running(&self) -> bool {
+        self.running.load(Ordering::Acquire)
     }
     pub async fn write(&self, message: Value) -> Result<(), String> {
         let mut bytes = serde_json::to_vec(&message).map_err(|e| e.to_string())?;
@@ -104,6 +126,10 @@ impl Server {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (sender, receiver) = oneshot::channel();
         self.pending.lock().unwrap().insert(id, sender);
+        let _pending = PendingRequest {
+            id,
+            pending: self.pending.clone(),
+        };
         if let Err(error) = self
             .write(json!({"id":id,"method":method,"params":params}))
             .await
@@ -124,7 +150,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires an installed Codex CLI; performs no model turn"]
     async fn live_handshake_and_model_list() {
-        let mut server = Server::start(|_| {}).await.unwrap();
+        let server = Server::start(|_| {}).await.unwrap();
         assert!(server.is_running());
         let models = server.request("model/list", json!({})).await.unwrap();
         assert!(models["data"].is_array());

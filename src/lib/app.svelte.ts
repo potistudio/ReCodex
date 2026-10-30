@@ -23,10 +23,68 @@ import type {
 	Turn,
 } from "./types";
 
-export const rpc = <T>(method: string, params: Record<string, unknown> = {}) =>
-	invoke<T>("server_request", { method, params });
-
+interface HostEnvelope {
+	hostId?: string;
+	epoch?: string;
+	sequence?: number;
+	event: ServerEvent;
+}
+interface HostReplay {
+	reset: boolean;
+	epoch: string;
+	sequence: number;
+	events: HostEnvelope[];
+	snapshot: { approvals: ServerEvent[]; activeTurns: Record<string, Turn> };
+}
 export class App {
+	constructor(
+		public readonly hostId = "local",
+		public readonly hostName = "This PC",
+	) {}
+	get remote() {
+		return this.hostId !== "local";
+	}
+	private rpc = <T>(method: string, params: Record<string, unknown> = {}) =>
+		invoke<T>("server_request", { hostId: this.hostId, method, params });
+	private pulse?: ReturnType<typeof setInterval>;
+	private initialized = false;
+	private retryAt = 0;
+	private retryDelay = 1000;
+	private keepaliveAt = 0;
+	reconnectSoon() {
+		this.retryAt = 0;
+		if (this.initialized && this.remote && !this.connected && !this.connecting) void this.connect();
+	}
+	private epoch: string | null = null;
+	private sequence = 0;
+	private queuedEvents: HostEnvelope[] = [];
+	private hostEvent(envelope: HostEnvelope) {
+		if (this.connecting && envelope.sequence !== undefined) {
+			this.queuedEvents.push(envelope);
+			return;
+		}
+		if (envelope.epoch && envelope.sequence !== undefined) {
+			if (this.epoch === envelope.epoch && envelope.sequence <= this.sequence) return;
+			if (this.epoch && envelope.epoch !== this.epoch) {
+				this.connected = false;
+				this.error = "The host's Codex process restarted. Reconnect to reload its state.";
+				return;
+			}
+			this.epoch = envelope.epoch;
+			this.sequence = envelope.sequence;
+		}
+		this.onEvent(envelope.event);
+	}
+	private preference(key: string) {
+		return this.remote ? `${key}:${this.hostId}` : key;
+	}
+	async releaseControl() {
+		await this.guard(() => this.rpc("host/release"));
+	}
+	async takeControl() {
+		if (this.project) await this.guard(() => this.rpc("host/acquire", { project: this.project?.path }));
+	}
+
 	connected = $state(false);
 	connecting = $state(false);
 	loading = $state(false);
@@ -80,37 +138,56 @@ export class App {
 	async init() {
 		if (!isTauri()) return;
 		await this.guard(async () => {
-			const unlisten = await listen<ServerEvent>("codex-event", ({ payload }) => this.onEvent(payload));
+			const unlisten = await listen<ServerEvent | HostEnvelope>("codex-event", ({ payload }) => {
+				if ("event" in payload) {
+					if (payload.hostId === this.hostId) this.hostEvent(payload);
+				} else if (!this.remote) this.onEvent(payload);
+			});
 			if (this.disposed) {
 				unlisten();
 				return;
 			}
 			this.unlisten = unlisten;
-			this.projects = await invoke<Project[]>("projects_load");
-			const saved = localStorage.getItem("recodex-project");
-			this.project = this.projects.find((project) => project.path === saved) ?? this.projects[0] ?? null;
+			this.initialized = true;
+			this.pulse = setInterval(() => {
+				const now = Date.now();
+				if (this.remote && !this.connected && !this.connecting && now >= this.retryAt) void this.connect();
+				if (this.connected && now >= this.keepaliveAt) {
+					this.keepaliveAt = now + 10_000;
+					void this.rpc("host/keepalive").catch(() => {
+						if (this.remote) this.connected = false;
+					});
+				}
+			}, 1000);
+			if (!this.remote) {
+				this.projects = await invoke<Project[]>("projects_load", { hostId: this.hostId });
+				const saved = localStorage.getItem(this.preference("recodex-project"));
+				this.project = this.projects.find((project) => project.path === saved) ?? this.projects[0] ?? null;
+			}
 			await this.connect();
 		});
 	}
 	dispose() {
 		this.disposed = true;
 		this.unlisten?.();
+		if (this.pulse) clearInterval(this.pulse);
 	}
 	async connect() {
-		if (this.connecting) return;
+		if (this.disposed || this.connecting) return;
 		this.connecting = true;
+		let loaded = false;
 		await this.guard(async () => {
-			await invoke("server_connect");
+			await invoke("server_connect", { hostId: this.hostId });
 			this.connected = true;
 			const models: Model[] = [];
 			let cursor: string | null = null;
 			do {
-				const page: { data: Model[]; nextCursor: string | null } = await rpc("model/list", { cursor });
+				const page: { data: Model[]; nextCursor: string | null } = await this.rpc("model/list", { cursor });
 				models.push(...page.data.filter((model) => !model.hidden));
 				cursor = page.nextCursor;
 			} while (cursor);
 			this.models = models;
-			const saved = localStorage.getItem("recodex-model");
+			const saved = localStorage.getItem(this.preference("recodex-model"));
 			this.selectModel(
 				models.find((model) => model.model === saved)?.model ??
 					models.find((model) => model.isDefault)?.model ??
@@ -118,13 +195,45 @@ export class App {
 					"",
 			);
 			await Promise.all([this.readAccount(), this.readRateLimits()]);
+			this.projects = await invoke<Project[]>("projects_load", { hostId: this.hostId });
+			const selected = this.project?.path ?? localStorage.getItem(this.preference("recodex-project"));
+			this.project = this.projects.find((p) => p.path === selected) ?? this.projects[0] ?? null;
 			await this.loadThreads();
-			if (this.thread) await this.resume(this.thread);
+			const replay = await this.rpc<HostReplay>("host/replay", { epoch: this.epoch, sequence: this.sequence });
+			if (replay.reset) {
+				this.activeTurnsByThread = {};
+				this.approvalsByThread = {};
+				this.itemsByThread = {};
+				this.thinkingLabelsByThread = {};
+				this.generationByTurn = {};
+				this.completedTurns.clear();
+				if (this.thread) await this.resume(this.thread);
+			} else {
+				for (const envelope of replay.events) this.onEvent(envelope.event);
+			}
+			this.activeTurnsByThread = Object.fromEntries(
+				Object.entries(replay.snapshot.activeTurns).map(([id, turn]) => [id, turn.id]),
+			);
+			this.approvalsByThread = {};
+			for (const approval of replay.snapshot.approvals) this.onEvent(approval);
+			this.epoch = replay.epoch;
+			this.sequence = replay.sequence;
+			loaded = true;
 		});
 		this.connecting = false;
+		if (!loaded) {
+			this.connected = false;
+			this.retryAt = Date.now() + this.retryDelay;
+			this.retryDelay = Math.min(this.retryDelay * 2, 30_000);
+		} else {
+			this.retryDelay = 1000;
+			this.retryAt = 0;
+		}
+		for (const envelope of this.queuedEvents) this.hostEvent(envelope);
+		this.queuedEvents = [];
 	}
 	async readAccount() {
-		const result = await rpc<{
+		const result = await this.rpc<{
 			account: { type: string; email?: string; planType?: string } | null;
 			requiresOpenaiAuth: boolean;
 		}>("account/read");
@@ -132,18 +241,22 @@ export class App {
 		this.requiresAuth = result.requiresOpenaiAuth;
 	}
 	async readRateLimits() {
-		this.rateLimits = await rpc<RateLimits>("account/rateLimits/read");
+		this.rateLimits = await this.rpc<RateLimits>("account/rateLimits/read");
 	}
 	async login() {
+		if (this.remote) {
+			this.error = `Sign in to Codex on ${this.hostName}, then reconnect here.`;
+			return;
+		}
 		await this.guard(async () => {
-			const result = await rpc<{ authUrl: string }>("account/login/start", { type: "chatgpt" });
+			const result = await this.rpc<{ authUrl: string }>("account/login/start", { type: "chatgpt" });
 			await openUrl(result.authUrl);
 		});
 	}
 	selectModel(model: string) {
 		this.model = model;
 		this.effort = this.models.find((entry) => entry.model === model)?.defaultReasoningEffort ?? "";
-		localStorage.setItem("recodex-model", model);
+		localStorage.setItem(this.preference("recodex-model"), model);
 	}
 	async loadThreads(more = false) {
 		if (!this.project || !this.connected) {
@@ -155,7 +268,7 @@ export class App {
 		const paths = [...new Set([project.path, ...project.historyPaths])];
 		const results = await Promise.all(
 			paths.map((cwd, index) =>
-				rpc<{ data: Thread[]; nextCursor: string | null }>("thread/list", {
+				this.rpc<{ data: Thread[]; nextCursor: string | null }>("thread/list", {
 					cwd,
 					limit: 50,
 					sortKey: "updated_at",
@@ -184,7 +297,7 @@ export class App {
 		this.deletingThreadId = thread.id;
 		try {
 			await this.guard(async () => {
-				await rpc("thread/delete", { threadId: thread.id });
+				await this.rpc("thread/delete", { threadId: thread.id });
 				this.forgetThread(thread.id);
 			});
 		} finally {
@@ -212,13 +325,13 @@ export class App {
 		if (this.busy) return;
 		this.newChat();
 		this.project = project;
-		localStorage.setItem("recodex-project", project.path);
+		localStorage.setItem(this.preference("recodex-project"), project.path);
 		this.loading = true;
 		await this.guard(() => this.loadThreads());
 		this.loading = false;
 	}
 	async addProject() {
-		if (!isTauri() || this.busy) return;
+		if (!isTauri() || this.remote || this.busy) return;
 		await this.guard(async () => {
 			const path = await open({
 				directory: true,
@@ -233,7 +346,7 @@ export class App {
 		});
 	}
 	async renameProject(name: string) {
-		if (!this.project || !name.trim()) return;
+		if (this.remote || !this.project || !name.trim()) return;
 		const path = this.project.path;
 		await this.guard(async () => {
 			this.projects = await invoke<Project[]>("project_save", {
@@ -245,7 +358,7 @@ export class App {
 	}
 	async relocateProject() {
 		const project = this.project;
-		if (!isTauri() || !project || this.busy) return;
+		if (!isTauri() || this.remote || !project || this.busy) return;
 		await this.guard(async () => {
 			const path = await open({
 				directory: true,
@@ -257,13 +370,13 @@ export class App {
 				sourcePath: project.path,
 				destinationPath: path,
 			});
-			this.projects = await invoke<Project[]>("projects_load");
+			this.projects = await invoke<Project[]>("projects_load", { hostId: this.hostId });
 			await this.chooseProject(relocated);
 		});
 	}
 	async removeProject() {
 		const project = this.project;
-		if (!project || this.busy) return;
+		if (this.remote || !project || this.busy) return;
 		await this.guard(async () => {
 			this.projects = await invoke<Project[]>("project_remove", {
 				path: project.path,
@@ -272,7 +385,7 @@ export class App {
 			this.project = null;
 			this.threads = [];
 			if (this.projects[0]) await this.chooseProject(this.projects[0]);
-			else localStorage.removeItem("recodex-project");
+			else localStorage.removeItem(this.preference("recodex-project"));
 		});
 	}
 	newChat() {
@@ -288,7 +401,7 @@ export class App {
 		const navigationRevision = ++this.navigationRevision;
 		this.loading = true;
 		await this.guard(async () => {
-			const result = await rpc<{
+			const result = await this.rpc<{
 				thread: Thread;
 				model: string;
 				reasoningEffort: string | null;
@@ -335,7 +448,7 @@ export class App {
 		try {
 			const project = this.project;
 			if (!thread) {
-				const result = await rpc<{ thread: Thread }>("thread/start", {
+				const result = await this.rpc<{ thread: Thread }>("thread/start", {
 					cwd: project.path,
 					model: this.model || null,
 					approvalPolicy: "on-request",
@@ -346,7 +459,7 @@ export class App {
 				this.setThreadItems(thread.id, [...(this.itemsByThread[thread.id] ?? []), pendingItem]);
 			}
 			this.setThreadConfiguration(thread.id, { model: this.model, effort: this.effort });
-			const result = await rpc<{ turn: Turn }>("turn/start", {
+			const result = await this.rpc<{ turn: Turn }>("turn/start", {
 				threadId: thread.id,
 				input: [{ type: "text", text }],
 				model: this.model || null,
@@ -378,15 +491,16 @@ export class App {
 		const turnId = this.activeTurn;
 		if (thread && turnId)
 			await this.guard(() =>
-				rpc("turn/interrupt", {
+				this.rpc("turn/interrupt", {
 					threadId: thread.id,
 					turnId,
 				}),
 			);
 	}
 	async respond(event: ServerEvent, result: unknown) {
+		if (!this.connected) return;
 		await this.guard(async () => {
-			await invoke("server_respond", { id: event.id, result });
+			await invoke("server_respond", { hostId: this.hostId, id: event.id, result });
 			const threadId = event.params.threadId;
 			if (threadId)
 				this.setApprovals(
@@ -405,9 +519,7 @@ export class App {
 		if (method === "recodex/disconnected") {
 			this.connected = false;
 			for (const turnId of Object.values(this.activeTurnsByThread)) delete this.generationByTurn[turnId];
-			this.activeTurnsByThread = {};
-			this.approvalsByThread = {};
-			this.error = "Codex disconnected. Reconnect to continue.";
+			this.error = "Codex disconnected. Reconnect to continue. Check the chat before retrying a change.";
 			return;
 		}
 		if (method === "recodex/log") {
@@ -433,10 +545,14 @@ export class App {
 				].includes(method)
 			) {
 				if (params.threadId)
-					this.setApprovals(params.threadId, [...(this.approvalsByThread[params.threadId] ?? []), event]);
+					this.setApprovals(params.threadId, [
+						...(this.approvalsByThread[params.threadId] ?? []).filter((e) => e.id !== event.id),
+						event,
+					]);
 			} else {
 				void this.guard(() =>
 					invoke("server_respond", {
+						hostId: this.hostId,
 						id: event.id,
 						error: {
 							code: -32601,
@@ -453,6 +569,10 @@ export class App {
 					threadId,
 					approvals.filter((entry) => entry.id !== params.requestId),
 				);
+		if (method === "thread/started" && params.thread && this.project) {
+			const project = this.remote ? params.projectId : params.thread.cwd;
+			if (project === this.project.path) void this.loadThreads().catch(() => {});
+		}
 		if (!params.threadId) return;
 		const threadId = params.threadId;
 		if (method === "thread/deleted") {
@@ -640,7 +760,7 @@ export class App {
 				model: this.model,
 				effort: this.effort,
 			};
-			const result = await rpc<{ turn: Turn }>("turn/start", {
+			const result = await this.rpc<{ turn: Turn }>("turn/start", {
 				threadId,
 				input: [{ type: "text", text }],
 				model: configuration.model || null,
