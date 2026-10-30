@@ -3,6 +3,14 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { updateItems } from "./conversation";
+import {
+	estimateTokens,
+	type GenerationMeasurement,
+	generationRate,
+	recentGenerationRate,
+	recordText,
+	recordUsage,
+} from "./generation-speed";
 import type {
 	Item,
 	Model,
@@ -41,6 +49,7 @@ export class App {
 	private configurationsByThread = $state<Record<string, { model: string; effort: string }>>({});
 	private tokenUsageByThread = $state<Record<string, ThreadTokenUsage>>({});
 	private tokenUsageByTurn = $state<Record<string, TokenUsageBreakdown>>({});
+	private generationByTurn = $state<Record<string, GenerationMeasurement>>({});
 	activeTurn = $derived(this.thread ? (this.activeTurnsByThread[this.thread.id] ?? null) : null);
 	approvals = $derived(this.thread ? (this.approvalsByThread[this.thread.id] ?? []) : []);
 	thinkingLabel = $derived(this.thread ? (this.thinkingLabelsByThread[this.thread.id]?.text ?? "") : "");
@@ -186,7 +195,10 @@ export class App {
 		this.threadListRevision += 1;
 		this.threads = this.threads.filter((thread) => thread.id !== threadId);
 		for (const item of this.itemsByThread[threadId] ?? []) {
-			if (item.turnId) delete this.tokenUsageByTurn[item.turnId];
+			if (item.turnId) {
+				delete this.tokenUsageByTurn[item.turnId];
+				delete this.generationByTurn[item.turnId];
+			}
 		}
 		delete this.itemsByThread[threadId];
 		delete this.activeTurnsByThread[threadId];
@@ -311,9 +323,17 @@ export class App {
 		this.error = "";
 		const pendingId = `pending-${crypto.randomUUID()}`;
 		let thread = this.thread;
+		const navigationRevision = this.navigationRevision;
+		const pendingItem: Item = {
+			id: pendingId,
+			renderKey: pendingId,
+			type: "userMessage",
+			content: [{ type: "text", text }],
+		};
+		if (thread) this.setThreadItems(thread.id, [...(this.itemsByThread[thread.id] ?? []), pendingItem]);
+		else this.items = [...this.items, pendingItem];
 		try {
 			const project = this.project;
-			const navigationRevision = this.navigationRevision;
 			if (!thread) {
 				const result = await rpc<{ thread: Thread }>("thread/start", {
 					cwd: project.path,
@@ -323,16 +343,8 @@ export class App {
 				});
 				thread = result.thread;
 				if (navigationRevision === this.navigationRevision && !this.thread) this.thread = thread;
+				this.setThreadItems(thread.id, [...(this.itemsByThread[thread.id] ?? []), pendingItem]);
 			}
-			this.setThreadItems(thread.id, [
-				...(this.itemsByThread[thread.id] ?? []),
-				{
-					id: pendingId,
-					renderKey: pendingId,
-					type: "userMessage",
-					content: [{ type: "text", text }],
-				},
-			]);
 			this.setThreadConfiguration(thread.id, { model: this.model, effort: this.effort });
 			const result = await rpc<{ turn: Turn }>("turn/start", {
 				threadId: thread.id,
@@ -353,6 +365,8 @@ export class App {
 					thread.id,
 					(this.itemsByThread[thread.id] ?? []).filter((item) => item.id !== pendingId),
 				);
+			else if (navigationRevision === this.navigationRevision)
+				this.items = this.items.filter((item) => item.id !== pendingId);
 			return false;
 		} finally {
 			this.sending = false;
@@ -390,6 +404,7 @@ export class App {
 		const { method, params } = event;
 		if (method === "recodex/disconnected") {
 			this.connected = false;
+			for (const turnId of Object.values(this.activeTurnsByThread)) delete this.generationByTurn[turnId];
 			this.activeTurnsByThread = {};
 			this.approvalsByThread = {};
 			this.error = "Codex disconnected. Reconnect to continue.";
@@ -444,7 +459,30 @@ export class App {
 			this.forgetThread(threadId);
 			return;
 		}
+		if (method === "turn/started" && params.turn) {
+			this.generationByTurn[params.turn.id] = {
+				firstTextAt: null,
+				lastTextAt: null,
+				endedAt: null,
+				baseline: this.tokenUsageByThread[threadId]?.total.outputTokens ?? null,
+				outputTokens: null,
+				text: "",
+				samples: [],
+			};
+		}
+		if (method === "item/agentMessage/delta" && params.turnId && this.generationByTurn[params.turnId]) {
+			this.generationByTurn[params.turnId] = recordText(
+				this.generationByTurn[params.turnId],
+				params.delta ?? "",
+				performance.now(),
+			);
+		}
 		if (method === "thread/tokenUsage/updated" && params.tokenUsage) {
+			if (params.turnId && this.generationByTurn[params.turnId])
+				this.generationByTurn[params.turnId] = recordUsage(
+					this.generationByTurn[params.turnId],
+					params.tokenUsage,
+				);
 			this.setThreadTokenUsage(threadId, params.turnId, params.tokenUsage);
 			return;
 		}
@@ -466,6 +504,11 @@ export class App {
 		if (method === "turn/started" && params.turn) this.setActiveTurn(threadId, params.turn.id);
 		if (method === "turn/completed" && params.turn) {
 			const turn = params.turn;
+			const measurement = this.generationByTurn[turn.id];
+			if (measurement) {
+				if (turn.status === "completed") measurement.endedAt = performance.now();
+				else delete this.generationByTurn[turn.id];
+			}
 			this.clearThinkingLabel(threadId);
 			this.completedTurns.add(turn.id);
 			this.clearActiveTurn(threadId, turn.id);
@@ -487,6 +530,22 @@ export class App {
 		}
 		if (method === "error") this.error = params.error?.message ?? "The turn encountered an error.";
 		if (method === "item/completed" && params.item?.type === "fileChange") this.fileRevision += 1;
+	}
+	generationForTurn(turnId: string) {
+		const measurement = this.generationByTurn[turnId];
+		if (!measurement) return null;
+		if (measurement.endedAt !== null) {
+			if (measurement.outputTokens === null) return null;
+			const rate =
+				measurement.firstTextAt !== null && measurement.lastTextAt !== null
+					? generationRate(measurement.outputTokens, measurement.firstTextAt, measurement.lastTextAt)
+					: null;
+			return { tokens: measurement.outputTokens, rate, estimated: false };
+		}
+		if (!measurement.text) return null;
+		const tokens = estimateTokens(measurement.text);
+		const rate = recentGenerationRate(measurement.samples);
+		return { tokens, rate, estimated: true };
 	}
 	isThreadRunning(threadId: string) {
 		return this.activeTurnsByThread[threadId] !== undefined;
