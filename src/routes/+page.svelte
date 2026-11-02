@@ -468,7 +468,7 @@ function shortcuts(event: KeyboardEvent) {
 			variant="ghost"
 			size="icon"
 			aria-label="Connections"
-			title="LAN connections"
+			title="LAN and Tailscale connections"
 			onclick={() => (settingsOpen = true)}
 			><Icon icon={Settings2IconData} width={18} /></Button
 		>

@@ -80,8 +80,8 @@ async function pair() {
 }
 </script>
 
-<section class="host-settings" aria-label="LAN connections">
-	<strong>LAN connections</strong>
+<section class="host-settings" aria-label="LAN and Tailscale connections">
+	<strong>LAN and Tailscale connections</strong>
 	<p>Share selected projects on this PC, or connect to another PC running ReCodex.</p>
 	{#if error}
 		<p role="alert">{error}</p>
@@ -132,6 +132,10 @@ async function pair() {
 		<Input id="host-name" bind:value={name} maxlength={80} />
 		<label for="host-listen">Listen address</label>
 		<Input id="host-listen" bind:value={address} placeholder="0.0.0.0:43177" />
+		<p>
+			For Tailscale, use 0.0.0.0:43177 or this PC's Tailscale IPv4 address and port. The default listens on all
+			IPv4 interfaces, including LAN. Bind to the Tailscale IP to restrict the listener to that interface.
+		</p>
 		<fieldset disabled={busy}>
 			<legend>Projects to share</legend>
 			{#each projects as project (project.path)}
@@ -182,13 +186,16 @@ async function pair() {
 		<strong>Connect to another PC</strong>
 		<p>
 			Paste an invitation once. ReCodex finds the matching PC automatically and remembers it for future
-			connections.
+			connections. For Tailscale, enter the host's Tailscale IP or MagicDNS name below; nearby discovery only
+			works on the LAN.
 		</p>
-		<details>
-			<summary>Manual address (optional)</summary>
-			<label for="remote-address">Other PC's LAN address and port</label>
-			<Input id="remote-address" bind:value={remoteAddress} placeholder="192.168.1.20:43177" />
-		</details>
+		<label for="remote-address">Other PC's LAN / Tailscale IP or MagicDNS name (optional on LAN)</label>
+		<Input id="remote-address" bind:value={remoteAddress} placeholder="desktop.example.ts.net:43177" />
+		<p>
+			Examples: 192.168.1.20, 100.101.102.103, desktop, or desktop.example.ts.net. Port defaults to 43177; use
+			[fd7a:115c:a1e0::1]:43177 for IPv6 with a port. Both PCs must be connected to Tailscale, and tailnet access
+			rules and the host firewall must allow the listening TCP port. No Tailscale login is managed by ReCodex.
+		</p>
 		<label for="remote-invitation">Invitation from the other PC</label>
 		<textarea id="remote-invitation" bind:value={remoteInvitation} rows="3" spellcheck="false"></textarea>
 		<Button type="submit" disabled={busy || !isTauri() || !remoteInvitation.trim()}
