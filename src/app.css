@@ -354,18 +354,24 @@ textarea,
 	background: var(--success);
 }
 
+.workspace-shadow {
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	margin: 0 4px 4px 4px;
+	filter: drop-shadow(0 2px 6px rgb(0 0 0 / 15%));
+}
+
 .main-workspace {
 	position: relative;
 	display: flex;
 	flex: 1;
 	flex-direction: column;
 	min-width: 0;
-	margin: 0 4px 4px 4px;
 	overflow: hidden;
 	padding: 1px;
 	border-radius: 12px;
 	background: var(--border);
-	filter: drop-shadow(0 2px 6px rgb(0 0 0 / 15%));
 }
 
 .topbar {

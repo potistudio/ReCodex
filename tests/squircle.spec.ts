@@ -63,6 +63,8 @@ test("workspace fallback keeps its border and clips content while resizing", asy
 	const outer = page.locator(".main-workspace");
 	const rim = page.locator(".workspace-rim");
 	const inner = page.locator(".workspace-body");
+	await expect(page.locator(".workspace-shadow")).toHaveCSS("filter", /drop-shadow/);
+	await expect(outer).toHaveCSS("filter", "none");
 	for (const element of [outer, rim, inner]) {
 		await expect.poll(() => element.evaluate((node) => getComputedStyle(node).clipPath)).toMatch(/^path\(/);
 	}
