@@ -1,4 +1,4 @@
-# LAN hosts
+# LAN and Tailscale hosts
 
 Each ReCodex desktop app is a client and can optionally host explicitly selected local projects. PCs connect directly; no coordinator, file share, or relay is required. Each PC can host and connect at the same time.
 
@@ -18,7 +18,7 @@ Hosting starts after the user chooses registered projects and enables it in Conn
 
 Every desktop app browses `_recodex._tcp.local.` using mDNS/DNS-SD. An enabled host advertises its stable ID, display name, protocol version, addresses, and listening port. Publishing follows the listener's address family and interface; address checks refresh network interfaces every five seconds. A stopped host withdraws its advertisement. Nearby PCs excludes this PC and unsupported protocol versions, updates resolved addresses, and removes expired/withdrawn services. No credential, certificate, project path, or conversation is advertised.
 
-Pasting an invitation automatically selects discovered addresses for the matching host ID. A manual address remains available when multicast is blocked. Registered connections prefer current discovered addresses and retain saved addresses as fallbacks. Discovery changes reachability only: they never replace a saved certificate pin, authorize an unknown PC, or overwrite an existing credential. The TLS check occurs before sending authentication data to a newly discovered address.
+Pasting an invitation automatically selects discovered addresses for the matching host ID. A manual address remains available when multicast is blocked. Explicit manual addresses take priority over discovery. Registered connections retain their first saved address (including a MagicDNS name) ahead of current discovered addresses, with other saved addresses as fallbacks. Discovery changes reachability only: they never replace a saved certificate pin, authorize an unknown PC, or overwrite an existing credential. The TLS check occurs before sending authentication data to a newly discovered address.
 
 A local certificate/private key and stable host ID are generated on first use and saved as `lan-identity.json` in the application's data directory. On Unix, this file is created with mode `0600`. The private key is never included in invitations.
 
@@ -29,6 +29,17 @@ The client trusts only the certificate supplied in that invitation and performs 
 Pairing exchanges the invitation for a separate random device credential. Credentials are exchanged inside TLS, compared using constant-time digest comparisons, and persisted in the native app's `lan-settings.json` rather than URLs, logs, or browser storage. It is written by atomic replacement with owner-only permissions (`0600`) on Unix; Windows uses the per-user application-data directory's access controls. Client credentials are stored as bearer secrets in that file, not encrypted with an OS keychain; host-side device records contain only SHA-256 verifiers. Each invitation grants operation and approval privileges across the projects shared by that host, including after a restart. Connections lists devices and can revoke them individually; revocation closes their connections and cancels requests still waiting for the host's operation gate.
 
 Device records, remote connection profiles, and host preferences survive app restarts. Stopping hosting keeps paired devices registered for the next time hosting is enabled. Revocation removes the persisted verifier before disconnecting that device, so a revoked credential cannot become valid after a restart. Forgetting a client connection removes its saved credential and stops retries; a late reconnect cannot write the deleted profile back. A fresh invitation can replace a saved registration when the user needs to authorize that PC again. The certificate/host identity remains stable.
+
+## Connecting over Tailscale
+
+ReCodex uses the OS's Tailscale connection; it does not install Tailscale, manage its login, or require its CLI. Connect both PCs to a tailnet that permits access between them. Multicast/mDNS discovery does not span Tailscale, so use an explicit destination for the first pairing:
+
+1. On the host, select projects in **Connections** and start hosting. The default `0.0.0.0:43177` accepts IPv4 connections on both LAN and Tailscale interfaces. To listen only on Tailscale, use the host's Tailscale IPv4 address, such as `100.101.102.103:43177`. For IPv6-only hosting, use an IPv6 bind address such as `[fd7a:115c:a1e0::1]:43177`.
+2. Allow the listener's TCP port in the host firewall and [tailnet access rules](https://tailscale.com/kb/1018/acls). Do not expose it using router port forwarding or Tailscale Funnel.
+3. Transfer a fresh invitation through a trusted channel. On the client, enter the host's Tailscale IP, or its [MagicDNS](https://tailscale.com/kb/1081/magicdns) short name / fully qualified name (for example `desktop.example.ts.net`), and paste the invitation. MagicDNS must be enabled and available to the client's OS resolver when using names.
+4. Connect once. ReCodex saves the address and device credential and retries automatically after restarts or interruptions. A saved hostname is resolved again on each attempt. If an IP changes, pair again with a new invitation and address; a stable MagicDNS name avoids that requirement.
+
+The port defaults to `43177` when omitted. Custom ports use `hostname:port` or `[IPv6]:port`; a bare IPv6 address uses the default port. Enter an address, not an `https://` or `wss://` URL. Each destination has a ten-second TCP/TLS/WebSocket connection timeout to accommodate relay setup. No application-level Tailscale peer discovery is performed, and Tailscale connectivity alone never authorizes a peer: the same pinned TLS certificate, invitation, project boundaries, and device revocation apply.
 
 ## Access boundaries
 
@@ -68,4 +79,6 @@ The macOS bundle declares its Bonjour service and local-network usage descriptio
 
 Rust tests start a deterministic Node.js app-server fixture with no sign-in, external network access, or model calls. They cover project/method boundaries, sandbox policy enforcement, cross-device local/remote editing, concurrent-save conflicts, same-chat start races, independent chats, cross-device stopping, single-answer approval races and notifications, replay privacy, certificate validation, invitation expiry/reuse, revocation, real TLS WebSocket chat/file/reconnect flows, pairing across host/client restarts, durable revocation/forgetting, and discovery record changes/removal. The opt-in `live_mdns_discovery_and_removal` test runs real publisher/browser daemons on a separate UDP multicast port.
 
-The Playwright host test mocks Tauri IPC to verify explicit project selection, host switching during an active local turn, isolation of equal thread/item IDs across hosts, routing of remote editor saves, restoring registered PCs without an invitation, automatic reconnection after discovery updates, avoiding turn resubmission, and stopping retries after forgetting. It complements the Rust transport tests; it does not emulate OS firewall behavior or prove a connection across two physical PCs.
+The manual-address unit test covers Tailscale IPv4/IPv6, MagicDNS names, default/custom ports, and malformed destinations. The TLS transport test also connects through native hostname resolution. Physical tailnet connectivity and firewall/access-rule behavior require a two-PC smoke test.
+
+The Playwright host test runs LAN-discovery and explicit MagicDNS-address variants and mocks Tauri IPC to verify explicit project selection, host switching during an active local turn, isolation of equal thread/item IDs across hosts, routing of remote editor saves, restoring registered PCs without an invitation, automatic reconnection after discovery updates, avoiding turn resubmission, and stopping retries after forgetting. It complements the Rust transport tests; it does not emulate OS firewall behavior or prove a connection across two physical PCs.

@@ -3,6 +3,7 @@ mod host;
 mod lan;
 mod lan_store;
 mod server;
+mod web;
 mod workspace;
 use host::{Host, LOCAL};
 use lan_store::Hosting;
@@ -11,9 +12,25 @@ use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, State};
 use tokio::sync::{broadcast, Mutex, RwLock};
 
+// Keep the explicit/first saved destination ahead of mDNS. Reserve the remaining
+// slots for current discovery and then saved fallbacks, without duplicates.
+fn connection_endpoints(discovered: Vec<String>, saved: Vec<String>) -> Vec<String> {
+    let mut endpoints: Vec<_> = saved.first().cloned().into_iter().collect();
+    for address in discovered.into_iter().chain(saved) {
+        if !endpoints.contains(&address) {
+            endpoints.push(address);
+        }
+    }
+    endpoints.truncate(8);
+    endpoints
+}
+
+/// Fixed port for the Web UI listener; the LAN listener address stays user-configurable.
+const WEB_ADDRESS: &str = "0.0.0.0:43178";
 struct Connections {
     local: Arc<Host>,
     listener: Mutex<Option<Arc<lan::Listener>>>,
+    web: Mutex<Option<Arc<web::WebServer>>>,
     remotes: RwLock<HashMap<String, Arc<lan::Remote>>>,
     discovery: Arc<discovery::Discovery>,
     hosting_error: std::sync::Mutex<Option<String>>,
@@ -32,13 +49,29 @@ impl Connections {
             config.projects.clone(),
         )
         .await?;
+        let web_server = if config.web {
+            match web::serve(self.local.clone(), WEB_ADDRESS, None).await {
+                Ok(web_server) => Some(web_server),
+                Err(e) => {
+                    started.shutdown().await;
+                    self.local.shared.lock().unwrap().clear();
+                    return Err(e);
+                }
+            }
+        } else {
+            None
+        };
         if persist {
             if let Err(e) = self.local.lan.update(|s| s.hosting = Some(config)) {
+                if let Some(web_server) = web_server {
+                    web_server.shutdown().await;
+                }
                 started.shutdown().await;
                 self.local.shared.lock().unwrap().clear();
                 return Err(e);
             }
         }
+        *self.web.lock().await = web_server;
         *self.hosting_error.lock().unwrap() = self
             .discovery
             .advertise(&started.id, &started.name, &started.address)
@@ -47,15 +80,26 @@ impl Connections {
         *listener = Some(started);
         Ok(status)
     }
-    fn endpoints(&self, id: &str, fallback: Vec<String>) -> Vec<String> {
-        let mut endpoints = self.discovery.addresses(id);
-        for address in fallback {
-            if !endpoints.contains(&address) {
-                endpoints.push(address);
-            }
+    async fn stop_all(&self) -> Result<(), String> {
+        let mut listener = self.listener.lock().await;
+        let mut web_server = self.web.lock().await;
+        if listener.is_none() && web_server.is_none() {
+            return Ok(());
         }
-        endpoints.truncate(8);
-        endpoints
+        self.local.lan.update(|s| s.hosting = None)?;
+        self.discovery.unadvertise();
+        *self.hosting_error.lock().unwrap() = None;
+        if let Some(web_server) = web_server.take() {
+            web_server.shutdown().await;
+        }
+        if let Some(listener) = listener.take() {
+            listener.shutdown().await;
+        }
+        self.local.shared.lock().unwrap().clear();
+        Ok(())
+    }
+    fn endpoints(&self, id: &str, fallback: Vec<String>) -> Vec<String> {
+        connection_endpoints(self.discovery.addresses(id), fallback)
     }
 
     async fn remember_current(&self, remote: &Arc<lan::Remote>) -> Result<(), String> {
@@ -270,9 +314,14 @@ fn project_relocate(
 #[tauri::command]
 async fn host_status(state: State<'_, Arc<Connections>>) -> Result<Value, String> {
     let listener = state.listener.lock().await;
+    let web_server = state.web.lock().await;
     let mut status = listener.as_ref().map(|l| l.status()).unwrap_or(Value::Null);
     if status.is_object() {
         status["sharedProjects"] = json!(*state.local.shared.lock().unwrap());
+        status["web"] = web_server
+            .as_ref()
+            .map(|server| server.status())
+            .unwrap_or(Value::Null);
     }
     Ok(status)
 }
@@ -282,6 +331,7 @@ async fn host_start(
     address: String,
     name: String,
     projects: Vec<String>,
+    web: bool,
 ) -> Result<Value, String> {
     state
         .start_host(
@@ -289,6 +339,7 @@ async fn host_start(
                 address,
                 name,
                 projects,
+                web,
             },
             true,
         )
@@ -296,15 +347,7 @@ async fn host_start(
 }
 #[tauri::command]
 async fn host_stop(state: State<'_, Arc<Connections>>) -> Result<(), String> {
-    let mut listener = state.listener.lock().await;
-    state.local.lan.update(|s| s.hosting = None)?;
-    state.discovery.unadvertise();
-    *state.hosting_error.lock().unwrap() = None;
-    if let Some(listener) = listener.take() {
-        listener.shutdown().await;
-    }
-    state.local.shared.lock().unwrap().clear();
-    Ok(())
+    state.stop_all().await
 }
 #[tauri::command]
 async fn host_invite(state: State<'_, Arc<Connections>>) -> Result<String, String> {
@@ -330,25 +373,15 @@ async fn host_pair(
     address: Option<String>,
     invitation: String,
 ) -> Result<Value, String> {
-    let address = address.unwrap_or_default().trim().to_owned();
-    if address.contains('/') || address.len() > 260 {
-        return Err("Invalid manual address".into());
-    }
+    let address = lan::manual_endpoint(&address.unwrap_or_default())?;
     let invitation: lan::Invitation =
         serde_json::from_str(&invitation).map_err(|_| "Invalid connection invitation")?;
     if invitation.host_id() == lan::local_id(&state.local.directory)? {
         return Err("This is your own PC. Choose This PC in Active host.".into());
     }
-    let endpoints = state.endpoints(
-        invitation.host_id(),
-        if address.is_empty() {
-            Vec::new()
-        } else {
-            vec![address]
-        },
-    );
+    let endpoints = state.endpoints(invitation.host_id(), address.into_iter().collect());
     if endpoints.is_empty() {
-        return Err("This PC has not appeared on the LAN yet. Enable hosting there, or use a manual address.".into());
+        return Err("This PC has not appeared on the LAN yet. Enable hosting there, or enter its LAN / Tailscale IP or MagicDNS name.".into());
     }
     let remote = lan::Remote::new(String::new(), invitation);
     remote.update_endpoints(endpoints);
@@ -403,7 +436,7 @@ pub fn run() {
             });
             let saved = local.lan.snapshot();
             let remotes = saved.remotes.into_iter().map(|profile|(profile.id.clone(),lan::Remote::restore(profile))).collect();
-            let connections = Arc::new(Connections { local,listener:Mutex::new(None),remotes:RwLock::new(remotes),discovery,hosting_error:std::sync::Mutex::new(None) });
+            let connections = Arc::new(Connections { local, listener:Mutex::new(None), web:Mutex::new(None), remotes:RwLock::new(remotes), discovery, hosting_error:std::sync::Mutex::new(None) });
             app.manage(connections.clone());
             if let Some(config) = saved.hosting {
                 let handle = app.handle().clone();
@@ -424,6 +457,9 @@ pub fn run() {
             tauri::async_runtime::block_on(async {
                 let state = app.state::<Arc<Connections>>();
                 state.discovery.shutdown();
+                if let Some(web_server) = state.web.lock().await.take() {
+                    web_server.shutdown().await;
+                }
                 if let Some(listener) = state.listener.lock().await.take() {
                     listener.shutdown().await;
                 }
@@ -446,12 +482,30 @@ pub fn run() {
 #[cfg(test)]
 mod connection_tests {
     use super::*;
+    #[test]
+    fn discovery_cannot_evict_a_manual_tailnet_destination() {
+        let manual = "desktop.tail123.ts.net:43177".to_string();
+        let discovered: Vec<_> = (1..=8).map(|n| format!("192.168.1.{n}:43177")).collect();
+        let endpoints = connection_endpoints(discovered.clone(), vec![manual.clone()]);
+        assert_eq!(endpoints.len(), 8);
+        assert_eq!(endpoints[0], manual);
+        assert_eq!(&endpoints[1..], &discovered[..7]);
+        assert_eq!(connection_endpoints(discovered.clone(), vec![]), discovered);
+        assert_eq!(
+            connection_endpoints(
+                vec![manual.clone()],
+                vec![manual.clone(), "100.100.1.2:43177".into()]
+            ),
+            vec![manual, "100.100.1.2:43177".into()]
+        );
+    }
     #[tokio::test]
     async fn late_reconnect_cannot_undo_forget_or_replace_new_pairing() {
         let fixture = host::Fixture::new().await;
         let connections = Connections {
             local: fixture.host.clone(),
             listener: Mutex::new(None),
+            web: Mutex::new(None),
             remotes: RwLock::new(HashMap::new()),
             discovery: discovery::Discovery::with_daemon(
                 "test".into(),

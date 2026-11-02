@@ -44,6 +44,48 @@ const TIMEOUT: Duration = Duration::from_secs(65);
 fn error(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
+/// Accept LAN and Tailscale IPs or MagicDNS names, without accepting URLs.
+pub fn manual_endpoint(address: &str) -> Result<Option<String>, String> {
+    let address = address.trim();
+    if address.is_empty() {
+        return Ok(None);
+    }
+    let invalid =
+        || "Invalid address. Use an IP or hostname, optionally followed by :43177.".to_string();
+    if address.len() > 260 || address.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(invalid());
+    }
+    if let Ok(ip) = address.parse::<std::net::IpAddr>() {
+        return Ok(Some(std::net::SocketAddr::new(ip, 43177).to_string()));
+    }
+    if let Ok(socket) = address.parse::<std::net::SocketAddr>() {
+        return if socket.port() == 0 {
+            Err(invalid())
+        } else {
+            Ok(Some(socket.to_string()))
+        };
+    }
+    let (hostname, port) = match address.rsplit_once(':') {
+        Some((host, port)) => (host, port.parse::<u16>().map_err(|_| invalid())?),
+        None => (address, 43177),
+    };
+    let labels = hostname.strip_suffix('.').unwrap_or(hostname);
+    if port == 0
+        || labels.len() > 253
+        || labels.split('.').any(|label| {
+            label.is_empty()
+                || label.len() > 63
+                || label.starts_with('-')
+                || label.ends_with('-')
+                || !label
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || c == b'-')
+        })
+    {
+        return Err(invalid());
+    }
+    Ok(Some(format!("{hostname}:{port}")))
+}
 fn secret() -> String {
     format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
@@ -107,6 +149,12 @@ impl Identity {
 
 pub fn local_id(directory: &Path) -> Result<String, String> {
     Ok(Identity::load(directory)?.id)
+}
+
+/// TLS acceptor for the shared `recodex.local` identity. Only the Web UI host uses it
+/// outside the LAN listener, so external browsers can accept the same certificate.
+pub(crate) fn identity_tls(directory: &Path) -> Result<TlsAcceptor, String> {
+    Identity::load(directory)?.tls()
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -549,9 +597,11 @@ impl Remote {
         .with_no_client_auth();
         let endpoints = self.endpoints.lock().unwrap().clone();
         let mut connected = None;
-        let mut failure = "Host not found on the LAN yet".to_string();
+        let mut failure =
+            "Host not found. Check the LAN or Tailscale connection and host address.".to_string();
         for endpoint in endpoints.iter().take(8) {
-            let result = tokio::time::timeout(Duration::from_secs(3), async {
+            // Allow time for a Tailscale relay path to be established as well as TLS.
+            let result = tokio::time::timeout(Duration::from_secs(10), async {
                 let stream = TcpStream::connect(endpoint).await.map_err(error)?;
                 let tls = TlsConnector::from(Arc::new(config.clone()))
                     .connect(ServerName::try_from("recodex.local").unwrap(), stream)
@@ -697,6 +747,41 @@ mod tests {
     use super::*;
     use crate::host::{project_id, Fixture};
 
+    #[test]
+    fn manual_addresses_support_lan_tailscale_and_magicdns() {
+        assert_eq!(manual_endpoint("  ").unwrap(), None);
+        for (input, expected) in [
+            ("100.101.102.103", "100.101.102.103:43177"),
+            (" 100.101.102.103:4444 ", "100.101.102.103:4444"),
+            ("192.168.1.20", "192.168.1.20:43177"),
+            ("desktop", "desktop:43177"),
+            ("desktop.tail123.ts.net", "desktop.tail123.ts.net:43177"),
+            (
+                "desktop.tail123.ts.net.:4444",
+                "desktop.tail123.ts.net.:4444",
+            ),
+            ("fd7a:115c:a1e0::1", "[fd7a:115c:a1e0::1]:43177"),
+            ("[fd7a:115c:a1e0::1]:4444", "[fd7a:115c:a1e0::1]:4444"),
+        ] {
+            assert_eq!(manual_endpoint(input).unwrap().as_deref(), Some(expected));
+        }
+        for invalid in [
+            "https://desktop",
+            "desktop/path",
+            "user@desktop",
+            "desktop:0",
+            "desktop:65536",
+            "desktop:",
+            "desk top",
+            "desktop?token=secret",
+            "-desktop",
+            "desktop..ts.net",
+            "[not-ipv6]:43177",
+        ] {
+            assert!(manual_endpoint(invalid).is_err(), "{invalid}");
+        }
+    }
+
     #[tokio::test]
     async fn tls_pairing_files_chat_approval_and_reconnection() {
         let fixture = Fixture::new().await;
@@ -709,8 +794,18 @@ mod tests {
         .await
         .unwrap();
         let invitation = listener.invite();
-        let remote = Remote::new(listener.address.clone(), invitation.clone());
+        // MagicDNS uses the same native hostname resolution path as localhost.
+        let port = listener
+            .address
+            .parse::<std::net::SocketAddr>()
+            .unwrap()
+            .port();
+        let endpoint = manual_endpoint(&format!("localhost:{port}"))
+            .unwrap()
+            .unwrap();
+        let remote = Remote::new(endpoint.clone(), invitation.clone());
         let (events, mut received) = mpsc::unbounded_channel();
+        assert_eq!(remote.profile().endpoints, vec![endpoint]);
         remote
             .connect(move |e| {
                 let _ = events.send(e);

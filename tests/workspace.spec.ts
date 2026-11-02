@@ -459,7 +459,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await page.evaluate(() => ((window as unknown as { delayThreadStart: boolean }).delayThreadStart = true));
 	await composer.press("Enter");
 	await expect(page.locator(".user-message > .message-sent")).toBeVisible();
-	await expect(page.getByRole("button", { name: "Scroll to latest" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Scroll to latest" })).toBeHidden();
 	await expect
 		.poll(() =>
 			page.evaluate(() => typeof (window as unknown as { releaseThreadStart?: unknown }).releaseThreadStart),
@@ -477,6 +477,17 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 			.evaluate((element) => getComputedStyle(element).animationName.includes("working-label-push-in")),
 	).toBe(true);
 	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
+	await expect
+		.poll(() =>
+			page.locator(".chat-scroll-frame").evaluate((frame) => {
+				const approval = frame.querySelector(".approval-card");
+				const blur = frame.querySelector(".chat-edge-blur-bottom");
+				if (!approval || !blur) return false;
+				const gap = blur.getBoundingClientRect().top - approval.getBoundingClientRect().bottom;
+				return gap >= 0 && gap <= 32;
+			}),
+		)
+		.toBe(true);
 	await expect(page.locator(".streaming-markdown p")).toHaveText("This is a SvelteKit");
 	await expect(page.locator(".assistant-message").getByText(/estimated/)).toBeVisible();
 	await expect(page.locator(".streaming-markdown strong")).toHaveText("SvelteKit");
@@ -488,6 +499,14 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	).toBe("message-append");
 	await page.getByRole("button", { name: "Background conversation", exact: true }).click();
 	await expect(page.locator(".markdown")).toContainText("Background conversation");
+	const historyHeight = await page.locator(".chat-scroll").evaluate((element) => {
+		const height = element.scrollHeight;
+		element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -100 }));
+		element.scrollTop -= 200;
+		return height;
+	});
+	await expect(page.getByRole("button", { name: "Scroll to latest" })).toBeVisible();
+	expect(await page.locator(".chat-scroll").evaluate((element) => element.scrollHeight)).toBe(historyHeight);
 	await expect(page.getByRole("button", { name: "New chat" })).toBeEnabled();
 	await page.getByRole("button", { name: "Explain this project", exact: true }).click();
 	await expect(page.getByRole("heading", { name: "Permission requested" })).toBeVisible();
@@ -497,11 +516,12 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(page.locator(".tool-item.running")).toContainText("Running");
 	await expect(page.locator(".tool-item.running pre")).toContainText("Checking types…");
 	await expect(page.getByRole("button", { name: "Decline", exact: true })).toBeVisible();
-	await page.locator(".chat-scroll").evaluate((element) => {
+	const readingScrollTop = await page.locator(".chat-scroll").evaluate((element) => {
 		const message = element.querySelector<HTMLElement>(".user-message");
 		if (!message) throw new Error("User message not found");
 		element.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -100 }));
-		element.scrollTop += message.getBoundingClientRect().top - element.getBoundingClientRect().top - 80;
+		element.scrollTop += message.getBoundingClientRect().top - element.getBoundingClientRect().top - 200;
+		return element.scrollTop;
 	});
 	await expect
 		.poll(() =>
@@ -510,22 +530,30 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 				return message ? message.getBoundingClientRect().top - element.getBoundingClientRect().top : null;
 			}),
 		)
-		.toBeCloseTo(80, 0);
+		.toBeCloseTo(200, 0);
 	await page.getByRole("button", { name: "Ask for another approach" }).click();
 	await expect(page.locator(".tool-item")).toContainText("Completed");
 	await expect(page.getByText("This is a SvelteKit project.", { exact: true })).toBeVisible();
 	await expect
 		.poll(() =>
-			page.locator(".chat-scroll").evaluate((element) => {
-				const message = element.querySelector<HTMLElement>(".user-message");
-				return message ? message.getBoundingClientRect().top - element.getBoundingClientRect().top : null;
-			}),
+			page.locator(".chat-scroll").evaluate((element, top) => {
+				const expected = Math.min(top, element.scrollHeight - element.clientHeight);
+				return Math.abs(element.scrollTop - expected);
+			}, readingScrollTop),
 		)
-		.toBeCloseTo(80, 0);
-	await expect(page.locator(".message-scroll-spacer")).toBeVisible();
+		.toBeLessThanOrEqual(1);
+	await expect(page.getByRole("button", { name: "Scroll to latest" })).toBeVisible();
 	await page.getByRole("button", { name: "Scroll to latest" }).click();
 	await expect(page.getByRole("button", { name: "Scroll to latest" })).toBeHidden();
-	await expect(page.locator(".message-scroll-spacer")).toBeHidden();
+	const remainingScroll = () =>
+		page
+			.locator(".chat-scroll")
+			.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight);
+	await expect.poll(remainingScroll).toBeLessThan(1);
+	await page.setViewportSize({ width: 1280, height: 700 });
+	await expect.poll(remainingScroll).toBeLessThan(1);
+	await page.setViewportSize({ width: 1280, height: 860 });
+	await expect.poll(remainingScroll).toBeLessThan(1);
 	await expect(page.locator(".thread-list").getByText("1,000 tokens", { exact: true })).toBeVisible();
 	await expect(page.locator(".assistant-message").getByText(/1,000 tokens/)).toBeVisible();
 	await expect(page.locator(".assistant-message").getByText(/stream average/)).toBeVisible();
