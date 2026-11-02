@@ -109,6 +109,12 @@ pub fn local_id(directory: &Path) -> Result<String, String> {
     Ok(Identity::load(directory)?.id)
 }
 
+/// TLS acceptor for the shared `recodex.local` identity. Only the Web UI host uses it
+/// outside the LAN listener, so external browsers can accept the same certificate.
+pub(crate) fn identity_tls(directory: &Path) -> Result<TlsAcceptor, String> {
+    Identity::load(directory)?.tls()
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Invitation {

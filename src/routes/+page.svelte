@@ -20,9 +20,9 @@ import PanelLeftOpenIconData from "@iconify-icons/fluent/panel-left-expand-24-re
 import SearchIconData from "@iconify-icons/fluent/search-24-regular";
 import Settings2IconData from "@iconify-icons/fluent/settings-24-regular";
 import SquareIconData from "@iconify-icons/fluent/square-24-filled";
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { invoke, listen, confirm, webOnline, ipcMode } from "$lib/ipc.svelte";
+import { isTauri } from "@tauri-apps/api/core";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
 import { Popover } from "bits-ui";
 import { onMount, tick } from "svelte";
@@ -757,11 +757,6 @@ function shortcuts(event: KeyboardEvent) {
 											width={14}
 										/></Button
 									>
-								{:else}
-									<div class="workspace-pill">
-										<Icon icon={FolderIconData} width={14} /><span>{app.project.name}</span
-										><span class="pill-dot"></span><span>Ready to create</span>
-									</div>
 								{/if}
 							</div>
 						{/if}

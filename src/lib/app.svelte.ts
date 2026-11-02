@@ -1,5 +1,6 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke, listen, resolveIpcMode, ipcMode } from "./ipc.svelte";
+import { isTauri } from "@tauri-apps/api/core";
+import { type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { updateItems } from "./conversation";
@@ -43,6 +44,14 @@ export class App {
 	) {}
 	get remote() {
 		return this.hostId !== "local";
+	}
+	/**
+	 * Web sessions address shared projects by opaque ID while local desktop sessions use the
+	 * real filesystem path; events and startup threads must compare the matching form.
+	 */
+	private projectKey(params: { projectId?: string; cwd?: string }) {
+		const hosted = this.remote || (!isTauri() && ipcMode() === "web");
+		return hosted ? params.projectId : params.cwd;
 	}
 	private rpc = <T>(method: string, params: Record<string, unknown> = {}) =>
 		invoke<T>("server_request", { hostId: this.hostId, method, params });
@@ -129,7 +138,8 @@ export class App {
 		}
 	}
 	async init() {
-		if (!isTauri()) return;
+		const mode = await resolveIpcMode();
+		if (mode === "preview") return;
 		await this.guard(async () => {
 			const unlisten = await listen<ServerEvent | HostEnvelope>("codex-event", ({ payload }) => {
 				if ("event" in payload) {
@@ -142,7 +152,7 @@ export class App {
 			}
 			this.unlisten = unlisten;
 			this.initialized = true;
-			if (this.remote)
+			if (this.remote || mode === "web")
 				this.pulse = setInterval(() => {
 					if (!this.connected && !this.connecting && Date.now() >= this.retryAt) void this.connect();
 				}, 1000);
@@ -231,6 +241,10 @@ export class App {
 		this.rateLimits = await this.rpc<RateLimits>("account/rateLimits/read");
 	}
 	async login() {
+		if (!isTauri()) {
+			this.error = "Sign in to Codex on the host PC, then reopen the Web UI.";
+			return;
+		}
 		if (this.remote) {
 			this.error = `Sign in to Codex on ${this.hostName}, then reconnect here.`;
 			return;
@@ -333,7 +347,7 @@ export class App {
 		});
 	}
 	async renameProject(name: string) {
-		if (this.remote || !this.project || !name.trim()) return;
+		if (!isTauri() || this.remote || !this.project || !name.trim()) return;
 		const path = this.project.path;
 		await this.guard(async () => {
 			this.projects = await invoke<Project[]>("project_save", {
@@ -363,7 +377,7 @@ export class App {
 	}
 	async removeProject() {
 		const project = this.project;
-		if (this.remote || !project || this.busy) return;
+		if (!isTauri() || this.remote || !project || this.busy) return;
 		await this.guard(async () => {
 			this.projects = await invoke<Project[]>("project_remove", {
 				path: project.path,
@@ -510,7 +524,7 @@ export class App {
 			return;
 		}
 		if (method === "recodex/fileChanged") {
-			if (this.project?.path === (this.remote ? params.projectId : params.cwd)) this.fileRevision += 1;
+			if (this.project?.path === this.projectKey(params)) this.fileRevision += 1;
 			return;
 		}
 		if (method === "recodex/log") {
@@ -561,7 +575,7 @@ export class App {
 					approvals.filter((entry) => entry.id !== params.requestId),
 				);
 		if (method === "thread/started" && params.thread && this.project) {
-			const project = this.remote ? params.projectId : params.thread.cwd;
+			const project = this.projectKey(params.thread);
 			if (project === this.project.path) void this.loadThreads().catch(() => {});
 		}
 		if (!params.threadId) return;
