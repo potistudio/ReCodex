@@ -361,7 +361,7 @@ textarea,
 	flex: 1;
 	flex-direction: column;
 	min-width: 0;
-	margin: 0 4px 4px 4px;
+	margin: 12px;
 	overflow: hidden;
 	padding: 1px;
 	border-radius: 12px;
