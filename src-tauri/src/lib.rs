@@ -3,6 +3,7 @@ mod host;
 mod lan;
 mod lan_store;
 mod server;
+mod web;
 mod workspace;
 use host::{Host, LOCAL};
 use lan_store::Hosting;
@@ -24,9 +25,12 @@ fn connection_endpoints(discovered: Vec<String>, saved: Vec<String>) -> Vec<Stri
     endpoints
 }
 
+/// Fixed port for the Web UI listener; the LAN listener address stays user-configurable.
+const WEB_ADDRESS: &str = "0.0.0.0:43178";
 struct Connections {
     local: Arc<Host>,
     listener: Mutex<Option<Arc<lan::Listener>>>,
+    web: Mutex<Option<Arc<web::WebServer>>>,
     remotes: RwLock<HashMap<String, Arc<lan::Remote>>>,
     discovery: Arc<discovery::Discovery>,
     hosting_error: std::sync::Mutex<Option<String>>,
@@ -45,13 +49,29 @@ impl Connections {
             config.projects.clone(),
         )
         .await?;
+        let web_server = if config.web {
+            match web::serve(self.local.clone(), WEB_ADDRESS, None).await {
+                Ok(web_server) => Some(web_server),
+                Err(e) => {
+                    started.shutdown().await;
+                    self.local.shared.lock().unwrap().clear();
+                    return Err(e);
+                }
+            }
+        } else {
+            None
+        };
         if persist {
             if let Err(e) = self.local.lan.update(|s| s.hosting = Some(config)) {
+                if let Some(web_server) = web_server {
+                    web_server.shutdown().await;
+                }
                 started.shutdown().await;
                 self.local.shared.lock().unwrap().clear();
                 return Err(e);
             }
         }
+        *self.web.lock().await = web_server;
         *self.hosting_error.lock().unwrap() = self
             .discovery
             .advertise(&started.id, &started.name, &started.address)
@@ -59,6 +79,24 @@ impl Connections {
         let status = started.status();
         *listener = Some(started);
         Ok(status)
+    }
+    async fn stop_all(&self) -> Result<(), String> {
+        let mut listener = self.listener.lock().await;
+        let mut web_server = self.web.lock().await;
+        if listener.is_none() && web_server.is_none() {
+            return Ok(());
+        }
+        self.local.lan.update(|s| s.hosting = None)?;
+        self.discovery.unadvertise();
+        *self.hosting_error.lock().unwrap() = None;
+        if let Some(web_server) = web_server.take() {
+            web_server.shutdown().await;
+        }
+        if let Some(listener) = listener.take() {
+            listener.shutdown().await;
+        }
+        self.local.shared.lock().unwrap().clear();
+        Ok(())
     }
     fn endpoints(&self, id: &str, fallback: Vec<String>) -> Vec<String> {
         connection_endpoints(self.discovery.addresses(id), fallback)
@@ -276,9 +314,14 @@ fn project_relocate(
 #[tauri::command]
 async fn host_status(state: State<'_, Arc<Connections>>) -> Result<Value, String> {
     let listener = state.listener.lock().await;
+    let web_server = state.web.lock().await;
     let mut status = listener.as_ref().map(|l| l.status()).unwrap_or(Value::Null);
     if status.is_object() {
         status["sharedProjects"] = json!(*state.local.shared.lock().unwrap());
+        status["web"] = web_server
+            .as_ref()
+            .map(|server| server.status())
+            .unwrap_or(Value::Null);
     }
     Ok(status)
 }
@@ -288,6 +331,7 @@ async fn host_start(
     address: String,
     name: String,
     projects: Vec<String>,
+    web: bool,
 ) -> Result<Value, String> {
     state
         .start_host(
@@ -295,6 +339,7 @@ async fn host_start(
                 address,
                 name,
                 projects,
+                web,
             },
             true,
         )
@@ -302,15 +347,7 @@ async fn host_start(
 }
 #[tauri::command]
 async fn host_stop(state: State<'_, Arc<Connections>>) -> Result<(), String> {
-    let mut listener = state.listener.lock().await;
-    state.local.lan.update(|s| s.hosting = None)?;
-    state.discovery.unadvertise();
-    *state.hosting_error.lock().unwrap() = None;
-    if let Some(listener) = listener.take() {
-        listener.shutdown().await;
-    }
-    state.local.shared.lock().unwrap().clear();
-    Ok(())
+    state.stop_all().await
 }
 #[tauri::command]
 async fn host_invite(state: State<'_, Arc<Connections>>) -> Result<String, String> {
@@ -399,7 +436,7 @@ pub fn run() {
             });
             let saved = local.lan.snapshot();
             let remotes = saved.remotes.into_iter().map(|profile|(profile.id.clone(),lan::Remote::restore(profile))).collect();
-            let connections = Arc::new(Connections { local,listener:Mutex::new(None),remotes:RwLock::new(remotes),discovery,hosting_error:std::sync::Mutex::new(None) });
+            let connections = Arc::new(Connections { local, listener:Mutex::new(None), web:Mutex::new(None), remotes:RwLock::new(remotes), discovery, hosting_error:std::sync::Mutex::new(None) });
             app.manage(connections.clone());
             if let Some(config) = saved.hosting {
                 let handle = app.handle().clone();
@@ -420,6 +457,9 @@ pub fn run() {
             tauri::async_runtime::block_on(async {
                 let state = app.state::<Arc<Connections>>();
                 state.discovery.shutdown();
+                if let Some(web_server) = state.web.lock().await.take() {
+                    web_server.shutdown().await;
+                }
                 if let Some(listener) = state.listener.lock().await.take() {
                     listener.shutdown().await;
                 }
@@ -465,6 +505,7 @@ mod connection_tests {
         let connections = Connections {
             local: fixture.host.clone(),
             listener: Mutex::new(None),
+            web: Mutex::new(None),
             remotes: RwLock::new(HashMap::new()),
             discovery: discovery::Discovery::with_daemon(
                 "test".into(),

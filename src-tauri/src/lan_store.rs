@@ -12,6 +12,9 @@ pub struct Hosting {
     pub address: String,
     pub name: String,
     pub projects: Vec<String>,
+    /// Serve the Web UI over HTTPS on port 43178 alongside the LAN listener.
+    #[serde(default)]
+    pub web: bool,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,6 +105,7 @@ mod tests {
                     address: "0.0.0.0:43177".into(),
                     name: "PC".into(),
                     projects: vec!["/project".into()],
+                    web: false,
                 })
             })
             .unwrap();

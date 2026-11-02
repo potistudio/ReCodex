@@ -20,9 +20,9 @@ import PanelLeftOpenIconData from "@iconify-icons/fluent/panel-left-expand-24-re
 import SearchIconData from "@iconify-icons/fluent/search-24-regular";
 import Settings2IconData from "@iconify-icons/fluent/settings-24-regular";
 import SquareIconData from "@iconify-icons/fluent/square-24-filled";
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { invoke, listen, confirm, webOnline, ipcMode } from "$lib/ipc.svelte";
+import { isTauri } from "@tauri-apps/api/core";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
 import { Popover } from "bits-ui";
 import { onMount, tick } from "svelte";
@@ -274,38 +274,26 @@ function trackManualScroll(node: HTMLElement) {
 }
 function followLatest() {
 	scrollMode = "follow";
-	void tick().then(() => chatScroll?.scrollTo({ behavior: "smooth", top: chatScroll.scrollHeight }));
 }
-function centerLatestUserMessage() {
-	if (!chatScroll) return;
-	const messages = chatScroll.querySelectorAll<HTMLElement>(".user-message");
-	const message = messages[messages.length - 1];
-	if (!message) return;
-	const scrollBounds = chatScroll.getBoundingClientRect();
-	const messageBounds = message.getBoundingClientRect();
-	chatScroll.scrollTo({
-		behavior: "auto",
-		top: Math.max(
-			0,
-			chatScroll.scrollTop +
-				messageBounds.top -
-				scrollBounds.top -
-				(chatScroll.clientHeight - messageBounds.height) / 2,
-		),
+function followChatResize(node: HTMLElement) {
+	const observer = new ResizeObserver(() => {
+		if (scrollMode === "follow" && chatScroll) chatScroll.scrollTop = chatScroll.scrollHeight;
 	});
+	observer.observe(node);
+	if (node.parentElement) observer.observe(node.parentElement);
+	return {
+		destroy() {
+			observer.disconnect();
+		},
+	};
 }
 async function send() {
 	const text = draft.trim();
 	if (!text || composing || !ready || app.busy) return;
-	const wasFollowing = scrollMode === "follow";
+	scrollMode = "follow";
 	draft = "";
 	const target = app;
 	const sending = target.send(text);
-	if (wasFollowing) {
-		scrollMode = "free";
-		await tick();
-		centerLatestUserMessage();
-	}
 	if (!(await sending)) {
 		if (app === target) draft = text;
 		else drafts[target.hostId] = text;
@@ -690,7 +678,7 @@ function shortcuts(event: KeyboardEvent) {
 							onscroll={updateScrollMode}
 						>
 							{#if app.items.length > 0}
-								<div class="messages">
+								<div class="messages" use:followChatResize>
 									{#each app.items as item, itemIndex (item.renderKey ?? item.id)}
 										<Message
 											{item}
@@ -733,15 +721,12 @@ function shortcuts(event: KeyboardEvent) {
 											requestAlternative={(event) => app.requestAlternative(event)}
 										/>
 									{/each}
-									{#if app.activeTurn || app.sending || scrollMode === "free"}
-										<div class="message-scroll-spacer" aria-hidden="true"></div>
-									{/if}
 								</div>
 							{/if}
 						</div>
 						{#each ["top", "bottom"] as edge}
 							<div class="chat-edge-blur chat-edge-blur-{edge}" aria-hidden="true">
-								{#each [1, 2, 3, 4, 5, 6] as layer}
+								{#each [1, 2, 3, 4] as layer}
 									<span class="chat-edge-blur-layer chat-edge-blur-layer-{layer}"></span>
 								{/each}
 							</div>
@@ -772,11 +757,6 @@ function shortcuts(event: KeyboardEvent) {
 											width={14}
 										/></Button
 									>
-								{:else}
-									<div class="workspace-pill">
-										<Icon icon={FolderIconData} width={14} /><span>{app.project.name}</span
-										><span class="pill-dot"></span><span>Ready to create</span>
-									</div>
 								{/if}
 							</div>
 						{/if}
