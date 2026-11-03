@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "@fontsource-variable/inter";
 @import "./lib/motion.css";
+/* Generated component dark variants stay inert; the app uses a fixed light palette. */
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -139,13 +140,6 @@
 	.working-dot,
 	.approval-card,
 	.error-banner,
-	.theme-count,
-	.theme-option,
-	.theme-preview,
-	.theme-preview-sidebar > span,
-	.theme-preview-title,
-	.theme-preview-composer,
-	.theme-preview-composer > span,
 	.rate-limit-row
 ) {
 	corner-shape: squircle;
@@ -545,13 +539,6 @@ textarea,
 	.model-effort-popover {
 		border-color: color-mix(in srgb, var(--foreground) 40%, transparent);
 	}
-}
-.dark .model-effort-popover {
-	--effort-accent: #9691ff;
-	box-shadow:
-		inset 0 0 0 1px rgb(0 0 0 / 50%),
-		0 4px 12px #0003,
-		0 12px 28px #0002;
 }
 .model-effort-summary {
 	display: grid;
@@ -1472,186 +1459,6 @@ textarea,
 	max-width: min(700px, calc(100% - 2rem));
 	max-height: calc(100dvh - 2rem);
 	overflow-y: auto;
-}
-.theme-picker {
-	min-width: 0;
-}
-.appearance-heading {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 16px;
-	margin-bottom: 14px;
-}
-.appearance-heading h3 {
-	font-size: 13px;
-	font-weight: 600;
-}
-.appearance-heading p,
-.theme-selection {
-	margin-top: 4px;
-	font-size: 11px;
-	color: var(--muted-foreground);
-}
-.theme-count {
-	flex-shrink: 0;
-	padding: 4px 8px;
-	border-radius: 6px;
-	background: var(--muted);
-	color: var(--muted-foreground);
-	font-size: 10px;
-}
-.theme-grid {
-	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: 10px;
-	max-height: 320px;
-	min-width: 0;
-	overflow-y: auto;
-	overscroll-behavior: contain;
-	scrollbar-gutter: stable;
-	padding: 3px;
-	margin: -3px;
-	border: 0;
-}
-.theme-option {
-	background: var(--popover);
-	display: flex;
-	flex-direction: column;
-	gap: 9px;
-	min-width: 0;
-	padding: 7px;
-	border: 1px solid var(--border);
-	border-radius: 10px;
-	cursor: pointer;
-}
-.theme-option:hover {
-	background: var(--muted);
-}
-.theme-option.selected {
-	border-color: var(--primary);
-	box-shadow: 0 0 0 1px var(--primary);
-}
-.theme-option:focus-within {
-	outline: 2px solid var(--ring);
-	outline-offset: 2px;
-}
-@supports not (corner-shape: squircle) {
-	.theme-option.selected,
-	.theme-option:focus-within {
-		padding: 6px;
-		border: 2px solid var(--ring);
-		outline: none;
-		box-shadow: none;
-	}
-}
-.theme-preview {
-	display: flex;
-	height: 65px;
-	flex-shrink: 0;
-	overflow: hidden;
-	border: 1px solid var(--preview-border);
-	border-radius: 5px;
-	background: var(--preview-background);
-}
-.theme-preview-sidebar {
-	display: flex;
-	flex-direction: column;
-	gap: 5px;
-	width: 27%;
-	padding: 10px 6px;
-	border-right: 1px solid var(--preview-border);
-	background: var(--preview-sidebar);
-}
-.theme-preview-sidebar > span {
-	height: 3px;
-	border-radius: 2px;
-	background: var(--preview-foreground);
-	opacity: 0.3;
-}
-.theme-preview-sidebar > span:first-child {
-	width: 65%;
-	margin-bottom: 3px;
-	background: var(--preview-primary);
-	opacity: 1;
-}
-.theme-preview-chat {
-	display: flex;
-	flex: 1;
-	flex-direction: column;
-	align-items: center;
-	gap: 4px;
-	padding: 10px 10px 7px;
-}
-.theme-preview-title {
-	width: 48%;
-	height: 4px;
-	margin-bottom: 2px;
-	border-radius: 2px;
-	background: var(--preview-foreground);
-}
-.theme-preview-line {
-	width: 74%;
-	height: 2px;
-	background: var(--preview-foreground);
-	opacity: 0.3;
-}
-.theme-preview-line.short {
-	width: 52%;
-}
-.theme-preview-composer {
-	display: flex;
-	justify-content: flex-end;
-	width: 100%;
-	margin-top: auto;
-	padding: 3px;
-	border: 1px solid var(--preview-border);
-	border-radius: 4px;
-	background: var(--preview-card);
-}
-.theme-preview-composer > span {
-	width: 5px;
-	height: 5px;
-	border-radius: 2px;
-	background: var(--preview-primary);
-}
-.theme-option-caption {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 6px;
-}
-.theme-option-name strong {
-	display: block;
-	font-size: 11px;
-	font-weight: 550;
-	line-height: 1.4;
-}
-.theme-option-name small {
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	margin-top: 3px;
-	color: var(--muted-foreground);
-	font-size: 10px;
-}
-.theme-option input {
-	width: 13px;
-	height: 13px;
-	flex-shrink: 0;
-	accent-color: var(--primary);
-}
-.theme-selection {
-	margin-top: 12px;
-}
-.theme-selection strong {
-	color: var(--foreground);
-	font-weight: 500;
-}
-@media (max-width: 600px) {
-	.theme-grid {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
 }
 .rate-limit-panel {
 	padding: 15px 0;

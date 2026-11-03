@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const hideCssStudio = "css-studio-panel { display: none !important; }";
 
-test("browser preview, connection controls, and theme", async ({ page }) => {
+test("browser preview and connection controls", async ({ page }) => {
 	await page.goto("/");
 	await page.addStyleTag({ content: hideCssStudio });
 	await expect(page.getByRole("textbox", { name: "Message Codex" })).toBeVisible();
@@ -11,8 +11,7 @@ test("browser preview, connection controls, and theme", async ({ page }) => {
 	await page.getByRole("textbox", { name: "Message Codex" }).fill("Give me a concise overview");
 	await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
 	await page.getByRole("button", { name: /Your workspace/ }).click();
-	await page.getByRole("radio", { name: "ReCodex Dark", exact: true }).check();
-	await expect(page.locator("html")).toHaveClass("dark");
+	await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
 });
 
 test("desktop IPC flow: project, model, streaming approval, file save, history", async ({ page }) => {

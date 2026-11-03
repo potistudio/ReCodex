@@ -15,8 +15,7 @@
 	summary,
 	[role="menuitem"],
 	[role="menuitemradio"],
-	[role="menuitemcheckbox"],
-	.theme-option
+	[role="menuitemcheckbox"]
 ) {
 	transition:
 		background-color var(--motion-fast) ease,

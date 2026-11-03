@@ -20,7 +20,6 @@ import PanelLeftOpenIconData from "@iconify-icons/fluent/panel-left-expand-24-re
 import SearchIconData from "@iconify-icons/fluent/search-24-regular";
 import Settings2IconData from "@iconify-icons/fluent/settings-24-regular";
 import SquareIconData from "@iconify-icons/fluent/square-24-filled";
-import { invoke, listen, confirm, webOnline, ipcMode } from "$lib/ipc.svelte";
 import { isTauri } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
@@ -32,14 +31,13 @@ import FilePanel from "$lib/components/FilePanel.svelte";
 import HostSettings from "$lib/components/HostSettings.svelte";
 import Message from "$lib/components/Message.svelte";
 import ModelEffortPicker from "$lib/components/ModelEffortPicker.svelte";
-import ThemePicker from "$lib/components/ThemePicker.svelte";
 import { Button } from "$lib/components/ui/button";
 import * as Dialog from "$lib/components/ui/dialog";
 import * as Dropdown from "$lib/components/ui/dropdown-menu";
 import { Input } from "$lib/components/ui/input";
 import type { HostCatalog, HostSummary } from "$lib/hosts";
+import { confirm, invoke, listen } from "$lib/ipc.svelte";
 import { appear, reveal } from "$lib/motion";
-import { applyTheme, readTheme } from "$lib/themes";
 import type { Project, RateLimitSnapshot, RateLimitWindow, Thread } from "$lib/types";
 import { formatResetTime, formatTokenCount, formatUsageWindow, remainingPercent } from "$lib/usage";
 import { workingState } from "$lib/working";
@@ -124,7 +122,6 @@ let fileDirty = $state(false);
 let settingsOpen = $state(false);
 let renameOpen = $state(false);
 let projectName = $state("");
-let theme = $state(readTheme());
 let chatScroll = $state<HTMLDivElement>();
 let composer = $state<HTMLTextAreaElement>();
 let composing = false;
@@ -209,9 +206,6 @@ onMount(() => {
 	};
 });
 
-$effect(() => {
-	applyTheme(theme);
-});
 $effect(() => {
 	const nextLabel = activeWork.label;
 	if (!app.thinkingLabel) {
@@ -855,7 +849,6 @@ function shortcuts(event: KeyboardEvent) {
 			><Dialog.Title>Settings</Dialog.Title
 			><Dialog.Description>A workspace that feels like yours.</Dialog.Description></Dialog.Header
 		>
-		<ThemePicker bind:value={theme} />
 		<div class="settings-row">
 			<span
 				><strong>Codex connection</strong
