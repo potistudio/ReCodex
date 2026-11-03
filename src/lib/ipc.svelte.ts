@@ -1,9 +1,9 @@
 //! Cross-host IPC bridge. The desktop app calls Tauri IPC; a browser that loads the Web UI
 //! served by a host connects to that host's WebSocket bridge instead. Plain browser preview
 //! (vite dev without a host) stays read-only.
-import { invoke as tauriInvoke, isTauri } from "@tauri-apps/api/core";
+import { isTauri, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen, type UnlistenFn } from "@tauri-apps/api/event";
-import { confirm as tauriConfirm } from "@tauri-apps/plugin-dialog";
+import { type ConfirmDialogOptions, confirm as tauriConfirm } from "@tauri-apps/plugin-dialog";
 
 export type IpcMode = "desktop" | "web" | "preview";
 
@@ -141,10 +141,10 @@ function openSocket(): Promise<WebSocket> {
 export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 	const mode = await resolveMode();
 	if (mode === "desktop") return tauriInvoke<T>(cmd, args);
-	if (mode === "preview") throw "Browser preview has no IPC. Open the desktop app or the host's Web UI.";
+	if (mode === "preview") throw new Error("Browser preview has no IPC. Open the desktop app or the host's Web UI.");
 	const channel = await openSocket().catch(() => {
 		scheduleReconnect();
-		throw "Web UI host is offline. Enable the Web UI in Connections on the host PC.";
+		throw new Error("Web UI host is offline. Enable the Web UI in Connections on the host PC.");
 	});
 	const id = nextId++;
 	channel.send(JSON.stringify({ id, command: cmd, params: args ?? {} }));
@@ -152,7 +152,7 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
 		const timer = setTimeout(() => {
 			if (pending.delete(id)) reject("Request timed out. Reconnect and check the chat before retrying a change.");
 		}, REQUEST_TIMEOUT);
-		pending.set(id, { resolve, reject, timer });
+		pending.set(id, { resolve: (value) => resolve(value as T), reject, timer });
 	});
 }
 
@@ -167,7 +167,7 @@ export async function listen<T>(name: string, handler: (event: { payload: T }) =
 }
 
 /** Confirmation dialog: native in Tauri, `window.confirm` under the Web UI. */
-export async function confirm(message: string, options?: { title?: string }): Promise<boolean> {
+export async function confirm(message: string, options?: ConfirmDialogOptions): Promise<boolean> {
 	if (isTauri()) return tauriConfirm(message, options);
 	return window.confirm(message);
 }

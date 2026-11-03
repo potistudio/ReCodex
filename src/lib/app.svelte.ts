@@ -1,6 +1,5 @@
-import { invoke, listen, resolveIpcMode, ipcMode } from "./ipc.svelte";
 import { isTauri } from "@tauri-apps/api/core";
-import { type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { updateItems } from "./conversation";
@@ -12,6 +11,7 @@ import {
 	recordText,
 	recordUsage,
 } from "./generation-speed";
+import { invoke, ipcMode, listen, resolveIpcMode } from "./ipc.svelte";
 import type {
 	Item,
 	Model,
