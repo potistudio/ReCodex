@@ -473,7 +473,7 @@ session移行は、message・artifact・provider replay情報・実行receipt・
 
 ## 参考資料
 
-リンクは分析対象コミットに固定している。ローカルでは同じ相対pathを`refs/pi/`または`refs/deepseek-harness/`配下で参照できる。
+リンクは分析対象コミットに固定している。ローカルでは同じ相対pathを`refs/pi/`または`refs/deepseek-harness/`配下で参照できる。Pi側の調査詳細は[Pi ハーネス基盤 調査報告](pi-harness-analysis.md)に分離している。
 
 - [P1] — Pi agent core、turn、queue、tool hooks、並列実行。
 - [P2] — Pi loopとモデル向けcontext変換。
