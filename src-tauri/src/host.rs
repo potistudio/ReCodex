@@ -1,14 +1,16 @@
 //! Transport-independent owner of a PC's Codex process and workspace.
 use crate::{
+    pi::{PiCommand, PiProvider},
     server::Server,
     workspace::{self, Workspace},
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     path::PathBuf,
     sync::{Arc, Mutex as StdMutex},
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{broadcast, Mutex};
 use uuid::Uuid;
@@ -33,6 +35,8 @@ pub struct Host {
     pub workspace: Workspace,
     pub events: broadcast::Sender<Value>,
     server: Mutex<Option<Arc<Server>>>,
+    pi: Arc<PiProvider>,
+    codex_error: StdMutex<Option<String>>,
     // Serialize operation acceptance, including same-chat starts, saves, and approval answers.
     gate: Mutex<()>,
     runtime: StdMutex<Runtime>,
@@ -45,22 +49,47 @@ pub fn project_id(path: &str) -> String {
 
 impl Host {
     pub fn new(directory: PathBuf) -> Result<Arc<Self>, String> {
+        Self::build(directory, PiCommand::resolve())
+    }
+
+    #[cfg(test)]
+    pub fn new_with_pi(
+        directory: PathBuf,
+        command: Result<PiCommand, String>,
+    ) -> Result<Arc<Self>, String> {
+        Self::build(directory, command)
+    }
+
+    fn build(
+        directory: PathBuf,
+        pi_command: Result<PiCommand, String>,
+    ) -> Result<Arc<Self>, String> {
         let workspace = Workspace::default();
         workspace::projects_load(&directory, &workspace)?;
         let (events, _) = broadcast::channel(2048);
-        Ok(Arc::new(Self {
+        let pi = Arc::new(PiProvider::new(directory.join("pi-sessions"), pi_command));
+        let host = Arc::new(Self {
             lan: crate::lan_store::LanStore::load(&directory)?,
             directory,
             workspace,
             events,
             server: Mutex::new(None),
+            pi: pi.clone(),
+            codex_error: StdMutex::new(None),
             gate: Mutex::new(()),
             runtime: StdMutex::new(Runtime {
                 epoch: Uuid::new_v4().to_string(),
                 ..Runtime::default()
             }),
             shared: StdMutex::new(Vec::new()),
-        }))
+        });
+        let weak = Arc::downgrade(&host);
+        pi.set_emit(Arc::new(move |event| {
+            if let Some(host) = weak.upgrade() {
+                host.publish(event);
+            }
+        }));
+        Ok(host)
     }
 
     pub async fn connect(self: &Arc<Self>) -> Result<(), String> {
@@ -85,15 +114,51 @@ impl Host {
             state.history.clear();
             state.history_bytes = 0;
         }
-        *server = Some(Arc::new(
-            Server::start(move |event| {
-                if let Some(host) = weak.upgrade() {
-                    host.accept_event(&generation, event);
+        match Server::start(move |event| {
+            if let Some(host) = weak.upgrade() {
+                host.accept_event(&generation, event);
+            }
+        })
+        .await
+        {
+            Ok(started) => {
+                *self.codex_error.lock().unwrap() = None;
+                *server = Some(Arc::new(started));
+                Ok(())
+            }
+            Err(error) => {
+                *self.codex_error.lock().unwrap() = Some(error.clone());
+                if self.pi.available() {
+                    Ok(())
+                } else {
+                    let pi_error = self
+                        .pi
+                        .error()
+                        .unwrap_or_else(|| "Pi is unavailable".into());
+                    Err(format!("Codex: {error}. Pi: {pi_error}"))
                 }
-            })
-            .await?,
-        ));
-        Ok(())
+            }
+        }
+    }
+
+    async fn codex_available(&self) -> bool {
+        self.server
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|server| server.is_running())
+    }
+
+    fn is_pi_thread(id: &str) -> bool {
+        id.starts_with("pi-")
+    }
+
+    fn remember_thread(&self, id: &str, root: &str) {
+        self.runtime
+            .lock()
+            .unwrap()
+            .thread_roots
+            .insert(id.to_owned(), root.to_owned());
     }
 
     fn accept_event(self: &Arc<Self>, generation: &str, mut event: Value) {
@@ -126,6 +191,49 @@ impl Host {
             let public_id = format!("{generation}:{id}");
             event["id"] = json!(public_id);
             state.approvals.insert(public_id, (id, event.clone()));
+        }
+        if event["method"] == "recodex/disconnected" && self.pi.available() {
+            let dead: Vec<_> = state
+                .active
+                .iter()
+                .filter(|(id, _)| !Self::is_pi_thread(id))
+                .map(|(id, turn)| (id.clone(), turn.clone()))
+                .collect();
+            for (id, turn) in dead {
+                state.active.remove(&id);
+                self.publish_locked(
+                    &mut state,
+                    json!({
+                        "method":"turn/completed",
+                        "params":{
+                            "threadId":id,
+                            "turn":{
+                                "id":turn["id"],
+                                "status":"failed",
+                                "items":[],
+                                "error":{"message":"Codex disconnected"}
+                            }
+                        }
+                    }),
+                );
+            }
+            state.approvals.retain(|_, (_, approval)| {
+                approval["params"]["threadId"]
+                    .as_str()
+                    .is_some_and(Self::is_pi_thread)
+            });
+            self.publish_locked(
+                &mut state,
+                json!({
+                    "method":"recodex/providerStatus",
+                    "params":{
+                        "provider":"codex",
+                        "connected":false,
+                        "message":"Codex disconnected. Pi models remain available."
+                    }
+                }),
+            );
+            return;
         }
         self.publish_locked(&mut state, event);
     }
@@ -221,6 +329,7 @@ impl Host {
             || matches!(
                 method,
                 "recodex/disconnected"
+                    | "recodex/providerStatus"
                     | "account/updated"
                     | "account/rateLimits/updated"
                     | "serverRequest/resolved"
@@ -271,6 +380,325 @@ impl Host {
         } else {
             key.into()
         })
+    }
+
+    fn current_root(&self, key: &str, remote: bool) -> Result<String, String> {
+        let projects = self.workspace.0.lock().unwrap();
+        let project = projects
+            .iter()
+            .find(|p| {
+                if remote {
+                    project_id(&p.path) == key
+                } else {
+                    p.path == key || p.history_paths.iter().any(|p| p == key)
+                }
+            })
+            .ok_or("Unknown project")?;
+        if remote && !self.shared.lock().unwrap().contains(&project.path) {
+            return Err("This project is not shared".into());
+        }
+        Ok(project.path.clone())
+    }
+
+    fn pi_project_key(&self, root: &str, remote: bool) -> String {
+        if remote {
+            project_id(root)
+        } else {
+            root.to_owned()
+        }
+    }
+
+    async fn provider_status(&self) -> Vec<Value> {
+        let codex_error = self.codex_error.lock().unwrap().clone();
+        let codex = self.codex_available().await;
+        vec![
+            json!({"id":"codex","label":"Codex","available":codex,"error":codex_error}),
+            json!({
+                "id":"pi",
+                "label":"Pi",
+                "available":self.pi.available(),
+                "error":self.pi.error(),
+                "modelCount":self.pi.cached_model_count().await
+            }),
+        ]
+    }
+
+    async fn model_list(&self, params: &Value) -> Result<Value, String> {
+        let cursor = params["cursor"].as_str().map(str::to_owned);
+        let mut data = Vec::new();
+        let mut errors = Vec::new();
+        let mut succeeded = false;
+        let mut next = Value::Null;
+        if self.codex_available().await {
+            let mut input = json!({});
+            if let Some(cursor) = &cursor {
+                input["cursor"] = json!(cursor);
+            }
+            match self.codex("model/list", input).await {
+                Ok(result) => {
+                    succeeded = true;
+                    if let Some(models) = result["data"].as_array() {
+                        for model in models {
+                            let mut model = model.clone();
+                            model["provider"] = json!("codex");
+                            model["providerLabel"] = json!("Codex");
+                            if model["providerModel"].is_null() {
+                                model["providerModel"] = model["model"].clone();
+                            }
+                            data.push(model);
+                        }
+                    }
+                    next = result["nextCursor"].clone();
+                }
+                Err(error) => errors.push(format!("Codex: {error}")),
+            }
+        }
+        if cursor.is_none() && self.pi.available() {
+            match self.pi.models().await {
+                Ok(models) => {
+                    succeeded = true;
+                    data.extend(models);
+                }
+                Err(error) => errors.push(format!("Pi: {error}")),
+            }
+        }
+        if data.is_empty() && !succeeded {
+            return Err(if errors.is_empty() {
+                "No model provider is available".into()
+            } else {
+                errors.join("; ")
+            });
+        }
+        if !data
+            .iter()
+            .any(|model| model["isDefault"].as_bool() == Some(true))
+        {
+            if let Some(first) = data.first_mut() {
+                first["isDefault"] = json!(true);
+            }
+        }
+        Ok(json!({"data":data,"nextCursor":next}))
+    }
+
+    async fn account_read(&self) -> Result<Value, String> {
+        let providers = json!(self.provider_status().await);
+        if self.codex_available().await {
+            match self.codex("account/read", json!({})).await {
+                Ok(mut value) => {
+                    value["providers"] = providers;
+                    return Ok(value);
+                }
+                Err(error) => {
+                    return Ok(json!({
+                        "account":null,
+                        "requiresOpenaiAuth":false,
+                        "providers":providers,
+                        "codexError":error
+                    }));
+                }
+            }
+        }
+        Ok(json!({
+            "account":null,
+            "requiresOpenaiAuth":false,
+            "providers":providers,
+            "codexError":self.codex_error.lock().unwrap().clone()
+        }))
+    }
+
+    async fn rate_limits(&self) -> Result<Value, String> {
+        if self.codex_available().await {
+            if let Ok(value) = self.codex("account/rateLimits/read", json!({})).await {
+                return Ok(value);
+            }
+        }
+        Ok(json!({
+            "rateLimits":{"limitId":null,"limitName":null,"primary":null,"secondary":null},
+            "rateLimitsByLimitId":null
+        }))
+    }
+
+    async fn thread_list(&self, params: &Value, remote: bool, root: &str) -> Result<Value, String> {
+        let mut data = Vec::new();
+        let mut errors = Vec::new();
+        let mut succeeded = false;
+        let mut next = Value::Null;
+        if self.codex_available().await {
+            let mut input = pick(params, &["cursor", "limit", "sortKey"]);
+            input["cwd"] = json!(root);
+            if let Some(limit) = input["limit"].as_u64() {
+                input["limit"] = json!(limit.min(100));
+            }
+            match self.codex("thread/list", input).await {
+                Ok(mut result) => {
+                    succeeded = true;
+                    if remote {
+                        if let Some(threads) = result["data"].as_array_mut() {
+                            threads.retain(|thread| thread["cwd"] == root);
+                        }
+                    }
+                    if let Some(threads) = result["data"].as_array() {
+                        for thread in threads {
+                            let mut thread = thread.clone();
+                            thread["provider"] = json!("codex");
+                            thread["providerLabel"] = json!("Codex");
+                            data.push(thread);
+                        }
+                    }
+                    next = result["nextCursor"].clone();
+                }
+                Err(error) => errors.push(format!("Codex: {error}")),
+            }
+        }
+        if params["cursor"].is_null() && self.pi.available() {
+            match self.pi.list_threads(root).await {
+                Ok(threads) => {
+                    succeeded = true;
+                    data.extend(threads);
+                }
+                Err(error) => errors.push(format!("Pi: {error}")),
+            }
+        }
+        if data.is_empty() && !succeeded {
+            return Err(if errors.is_empty() {
+                "No thread provider is available".into()
+            } else {
+                errors.join("; ")
+            });
+        }
+        let mut seen = HashSet::new();
+        data.retain(|thread| {
+            thread["id"]
+                .as_str()
+                .is_some_and(|id| seen.insert(id.to_owned()))
+        });
+        Ok(json!({"data":data,"nextCursor":next}))
+    }
+
+    async fn start_thread(&self, params: &Value, root: &str) -> Result<Value, String> {
+        let model = params["model"].as_str().unwrap_or_default();
+        let provider = params["provider"].as_str().unwrap_or_default();
+        if provider == "pi" || model.starts_with("pi/") {
+            let id = format!("pi-{}", Uuid::new_v4());
+            let session = self
+                .pi
+                .start_session(
+                    &id,
+                    root,
+                    (!model.is_empty()).then_some(model),
+                    params["effort"].as_str(),
+                )
+                .await?;
+            let model_key = session.model_key().unwrap_or_else(|| model.to_owned());
+            let thread = json!({
+                "id":id,
+                "name":Value::Null,
+                "preview":"",
+                "cwd":root,
+                "updatedAt":now_secs(),
+                "turns":[],
+                "provider":"pi",
+                "providerLabel":"Pi",
+                "model":model_key
+            });
+            self.remember_thread(&id, root);
+            self.publish(json!({"method":"thread/started","params":{"thread":thread.clone()}}));
+            return Ok(json!({
+                "thread":thread,
+                "model":model_key,
+                "reasoningEffort":session.effort()
+            }));
+        }
+        let mut input = pick(params, &["model"]);
+        input["cwd"] = json!(root);
+        input["sandbox"] = json!("workspace-write");
+        input["approvalPolicy"] = json!("on-request");
+        let mut result = self.codex("thread/start", input).await?;
+        if let Some(thread) = result.get_mut("thread") {
+            thread["provider"] = json!("codex");
+            thread["providerLabel"] = json!("Codex");
+        }
+        Ok(result)
+    }
+
+    fn pi_thread_key(&self, id: &str) -> Option<String> {
+        self.runtime.lock().unwrap().thread_roots.get(id).cloned()
+    }
+
+    async fn pi_turn_start(&self, id: &str, params: &Value, remote: bool) -> Result<Value, String> {
+        let key = match self.pi.thread_root(id).await? {
+            Some(key) => key,
+            None => self.pi_thread_key(id).ok_or("Pi session not found")?,
+        };
+        let root = self.current_root(&self.pi_project_key(&key, remote), remote)?;
+        let model = params["model"].as_str().filter(|model| !model.is_empty());
+        if let Some(model) = model {
+            if !model.starts_with("pi/") {
+                return Err(
+                    "This chat uses the Pi provider. Start a new chat to use a Codex model.".into(),
+                );
+            }
+        }
+        let text = text_input(&params["input"])?;
+        if text.len() > 1024 * 1024 {
+            return Err("Only text messages up to 1 MB are supported".into());
+        }
+        let session = self.pi.start_session(id, &root, None, None).await?;
+        let result = session
+            .turn(&text, model, params["effort"].as_str())
+            .await?;
+        let mut state = self.runtime.lock().unwrap();
+        let turn = &result["turn"];
+        if turn["status"] == "inProgress"
+            && !state
+                .completed
+                .iter()
+                .any(|completed| Some(completed.as_str()) == turn["id"].as_str())
+        {
+            state.active.insert(id.to_owned(), turn.clone());
+        }
+        Ok(result)
+    }
+
+    async fn pi_thread_action(
+        &self,
+        id: &str,
+        method: &str,
+        params: &Value,
+        remote: bool,
+    ) -> Result<Value, String> {
+        let key = match self.pi.thread_root(id).await? {
+            Some(key) => key,
+            None => self.pi_thread_key(id).ok_or("Pi session not found")?,
+        };
+        let root = self.current_root(&self.pi_project_key(&key, remote), remote)?;
+        match method {
+            "thread/read" => {
+                let snapshot = self.pi.resume_thread(id, &root).await?;
+                self.remember_thread(id, &root);
+                Ok(json!({"thread":snapshot["thread"]}))
+            }
+            "thread/resume" => {
+                let snapshot = self.pi.resume_thread(id, &root).await?;
+                self.remember_thread(id, &root);
+                Ok(snapshot)
+            }
+            "turn/interrupt" => {
+                let turn_id = params["turnId"].as_str().ok_or("Missing turnId")?;
+                let session = self.pi.start_session(id, &root, None, None).await?;
+                session.interrupt(turn_id).await?;
+                Ok(Value::Null)
+            }
+            "thread/delete" => {
+                self.pi.delete_thread(id).await?;
+                self.publish(json!({"method":"thread/deleted","params":{"threadId":id}}));
+                self.runtime.lock().unwrap().thread_roots.remove(id);
+                Ok(Value::Null)
+            }
+            _ => Err(format!(
+                "Operation {method} is not available for a Pi thread"
+            )),
+        }
     }
     async fn codex(&self, method: &str, params: Value) -> Result<Value, String> {
         let server = self
@@ -378,48 +806,23 @@ impl Host {
                     }
                 }
             }
-            "model/list" => self.codex(method, pick(&params, &["cursor"])).await,
-            "account/read" | "account/rateLimits/read" => self.codex(method, json!({})).await,
+            "model/list" => self.model_list(&params).await,
+            "provider/list" => Ok(json!(self.provider_status().await)),
+            "account/read" => self.account_read().await,
+            "account/rateLimits/read" => self.rate_limits().await,
             "account/login/start" if !remote => self.codex(method, json!({"type":"chatgpt"})).await,
             "thread/list" => {
                 let root = self.root(&string("cwd")?, remote)?;
-                let mut input = pick(&params, &["cursor", "limit", "sortKey"]);
-                input["cwd"] = json!(root);
-                if let Some(limit) = input["limit"].as_u64() {
-                    input["limit"] = json!(limit.min(100));
-                }
-                let mut result = self.codex(method, input).await?;
-                if remote {
-                    if let Some(threads) = result["data"].as_array_mut() {
-                        threads.retain(|t| t["cwd"] == root);
-                    }
-                }
-                Ok(result)
+                self.thread_list(&params, remote, &root).await
             }
             "thread/start" => {
                 let root = self.root(&string("cwd")?, remote)?;
-                let mut input = pick(&params, &["model"]);
-                input["cwd"] = json!(root);
-                input["sandbox"] = json!("workspace-write");
-                input["approvalPolicy"] = json!("on-request");
-                self.codex(method, input).await
+                self.start_thread(&params, &root).await
             }
             "thread/read" | "thread/resume" | "thread/delete" | "turn/start" | "turn/interrupt" => {
                 let id = string("threadId")?;
-                self.thread_root(&id, remote).await?;
                 if method == "turn/start" {
-                    let inputs = params["input"]
-                        .as_array()
-                        .ok_or("A text message is required")?;
-                    if inputs.is_empty()
-                        || inputs.len() > 32
-                        || inputs.iter().any(|input| {
-                            input["type"] != "text"
-                                || input["text"].as_str().is_none_or(|s| s.len() > 1024 * 1024)
-                        })
-                    {
-                        return Err("Only text messages up to 1 MB are supported".into());
-                    }
+                    text_input(&params["input"])?;
                 }
                 if method == "turn/start" && self.runtime.lock().unwrap().active.contains_key(&id) {
                     return Err("This chat already has a running turn".into());
@@ -429,6 +832,14 @@ impl Host {
                 {
                     return Err("Stop the running turn before deleting this chat".into());
                 }
+                if Self::is_pi_thread(&id) {
+                    return if method == "turn/start" {
+                        self.pi_turn_start(&id, &params, remote).await
+                    } else {
+                        self.pi_thread_action(&id, method, &params, remote).await
+                    };
+                }
+                self.thread_root(&id, remote).await?;
                 let mut input = match method {
                     "turn/start" => pick(
                         &params,
@@ -519,6 +930,7 @@ impl Host {
 
     pub async fn shutdown(&self) {
         *self.server.lock().await = None;
+        self.pi.shutdown().await;
     }
 }
 
@@ -530,6 +942,33 @@ fn pick(value: &Value, keys: &[&str]) -> Value {
         }
     }
     result
+}
+
+fn text_input(value: &Value) -> Result<String, String> {
+    let inputs = value.as_array().ok_or("A text message is required")?;
+    if inputs.is_empty()
+        || inputs.len() > 32
+        || inputs.iter().any(|input| {
+            input["type"] != "text"
+                || input["text"]
+                    .as_str()
+                    .is_none_or(|text| text.len() > 1024 * 1024)
+        })
+    {
+        return Err("Only text messages up to 1 MB are supported".into());
+    }
+    Ok(inputs
+        .iter()
+        .filter_map(|input| input["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n\n"))
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -718,7 +1157,7 @@ mod tests {
         .unwrap();
         let remote = crate::lan::Remote::new(listener.address.clone(), listener.invite());
         remote.connect(|_| {}).await.unwrap();
-        let gate = host.gate.lock().await;
+        let gate = host.gate.try_lock().expect("test owns the host gate");
         let client = remote.clone();
         let root = project_id(&fixture.root);
         let request = tokio::spawn(async move {
@@ -870,6 +1309,119 @@ mod tests {
         )
         .await
         .unwrap();
+        host.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn pi_models_and_threads_are_routed_without_codex() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("project");
+        std::fs::create_dir_all(&root).unwrap();
+        let root = std::fs::canonicalize(root)
+            .unwrap()
+            .to_string_lossy()
+            .trim_start_matches("\\\\?\\")
+            .to_owned();
+        let host = Host::new_with_pi(
+            directory.path().join("data"),
+            Ok(crate::pi::PiCommand::node(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/pi.mjs"
+            ))),
+        )
+        .unwrap();
+        let root = workspace::project_save(
+            &host.directory,
+            &host.workspace,
+            root.clone(),
+            Some("Pi".into()),
+        )
+        .unwrap()[0]
+            .path
+            .clone();
+
+        let models = host.request(false, "model/list", json!({})).await.unwrap();
+        let models = models["data"].as_array().unwrap();
+        assert!(models
+            .iter()
+            .any(|model| model["model"] == "pi/anthropic/claude-sonnet-4"));
+        assert!(models
+            .iter()
+            .any(|model| model["providerLabel"] == "Pi · openai"));
+
+        let started = host
+            .request(
+                false,
+                "thread/start",
+                json!({"cwd":root,"model":"pi/anthropic/claude-sonnet-4"}),
+            )
+            .await
+            .unwrap();
+        let thread_id = started["thread"]["id"].as_str().unwrap().to_owned();
+        assert!(thread_id.starts_with("pi-"));
+        assert_eq!(started["thread"]["provider"], "pi");
+
+        let mut events = host.events.subscribe();
+        host.request(
+            false,
+            "turn/start",
+            json!({
+                "threadId":thread_id,
+                "input":[{"type":"text","text":"hello"}],
+                "model":"pi/anthropic/claude-sonnet-4",
+                "effort":"medium"
+            }),
+        )
+        .await
+        .unwrap();
+
+        let mut saw_delta = false;
+        let mut saw_tool = false;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while let Ok(envelope) = events.recv().await {
+                let event = &envelope["event"];
+                match event["method"].as_str().unwrap_or_default() {
+                    "item/agentMessage/delta" => saw_delta = true,
+                    "item/completed" if event["params"]["item"]["type"] == "commandExecution" => {
+                        saw_tool = true;
+                    }
+                    "turn/completed" => {
+                        assert_eq!(event["params"]["turn"]["status"], "completed");
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert!(saw_delta);
+        assert!(saw_tool);
+
+        let resumed = host
+            .request(false, "thread/resume", json!({"threadId":thread_id}))
+            .await
+            .unwrap();
+        assert_eq!(resumed["thread"]["provider"], "pi");
+        assert!(!resumed["thread"]["turns"].as_array().unwrap().is_empty());
+        assert_eq!(
+            host.request(false, "provider/list", json!({}))
+                .await
+                .unwrap()[1]["id"],
+            "pi"
+        );
+        host.shutdown().await;
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires an installed and authenticated Pi CLI; performs no model turn"]
+    async fn live_pi_catalog() {
+        let directory = tempfile::tempdir().unwrap();
+        let host = Host::new(directory.path().join("data")).unwrap();
+        let models = host.request(false, "model/list", json!({})).await.unwrap();
+        let models = models["data"].as_array().unwrap();
+        assert!(models.iter().any(|model| model["provider"] == "pi"));
+        assert!(!models.is_empty());
         host.shutdown().await;
     }
 }

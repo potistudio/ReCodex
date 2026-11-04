@@ -2,6 +2,7 @@ mod discovery;
 mod host;
 mod lan;
 mod lan_store;
+mod pi;
 mod server;
 mod web;
 mod workspace;
