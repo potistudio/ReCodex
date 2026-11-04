@@ -5,17 +5,24 @@
 //! - `command_code`: Command Code browser sign-in and credential storage.
 //! - `ledger`: SQLite (WAL) session ledger; the only source of truth for harness chats.
 //! - `context`: model-visible messages and UI transcripts projected from ledger events.
-//! - `model`: Model Gateway and the OpenAI-compatible Chat Completions adapter.
+//! - `model`: Model Gateway, shared streaming helpers, and the Chat Completions adapter.
+//! - `messages_api`, `responses_api`, `generate_api`: Anthropic Messages, OpenAI Responses,
+//!   and Command Code CLI generation adapters.
+//! - `command_code_client`: per-model routing and plan fallback for Command Code.
 //! - `tools`: tool registry, effect-based scheduler, and local execution environment.
 //! - `policy`: allow / ask / deny decisions and session grants.
 //! - `driver`: the run driver that sequences steps, attempts, approvals, and tool calls.
 mod account;
 pub mod command_code;
+mod command_code_client;
 mod context;
 mod driver;
+mod generate_api;
 mod ledger;
+mod messages_api;
 mod model;
 mod policy;
+mod responses_api;
 #[cfg(test)]
 pub(crate) mod testing;
 #[cfg(test)]

@@ -1,7 +1,7 @@
 //! End-to-end harness tests through `Host`, with a scripted model and a mock HTTP endpoint.
 use super::{
     ledger::{kind, Ledger},
-    model::{Delta, ModelClient, ModelRequest, OpenAiCompatible},
+    model::{Delta, ModelClient, ModelRequest, ModelResponse, OpenAiCompatible},
     testing::{reply, tool_call, Scripted, Step},
     Harness,
 };
@@ -399,6 +399,8 @@ async fn openai_compatible_adapter_streams_over_http() {
                 messages: vec![json!({"role":"user","content":"hello"})],
                 tools: super::tools::schemas(&super::tools::registry()),
                 effort: Some("low".into()),
+                cwd: "/p".into(),
+                session: "rx-1".into(),
             },
             &|delta| {
                 if let Delta::Text(text) = delta {
@@ -436,6 +438,8 @@ async fn openai_compatible_adapter_streams_over_http() {
                 messages: vec![],
                 tools: vec![],
                 effort: None,
+                cwd: "/p".into(),
+                session: "rx-1".into(),
             },
             &|_| {},
         )
@@ -598,7 +602,13 @@ async fn command_code_sign_in_switches_the_model_connection() {
     assert!(!account.to_string().contains("cc_key"));
     let models = harness.models().await.unwrap();
     let ids: Vec<_> = models.iter().map(|m| m["id"].as_str().unwrap()).collect();
-    assert_eq!(ids, ["recodex/deepseek/deepseek-v4-flash"]);
+    assert_eq!(
+        ids,
+        [
+            "recodex/claude-sonnet-4-6",
+            "recodex/deepseek/deepseek-v4-flash"
+        ]
+    );
     assert_eq!(models[0]["providerLabel"], "Command Code");
     assert!(seen
         .lock()
@@ -608,4 +618,139 @@ async fn command_code_sign_in_switches_the_model_connection() {
     harness.logout().unwrap();
     assert!(!harness.available());
     assert_eq!(harness.account()["signedIn"], false);
+}
+
+fn command_code_request(model: &str) -> ModelRequest {
+    ModelRequest {
+        model: model.into(),
+        messages: vec![
+            json!({"role":"system","content":"rules"}),
+            json!({"role":"user","content":"hello"}),
+        ],
+        tools: super::tools::schemas(&super::tools::registry()),
+        effort: None,
+        cwd: "/work/project".into(),
+        session: format!("rx-{}", uuid::Uuid::nil()),
+    }
+}
+
+#[tokio::test]
+async fn command_code_routes_models_and_falls_back_to_generate() {
+    let catalog = json!({"data":[
+        {"id":"claude-sonnet-4-6","name":"Claude","context_length":200000,"supported_endpoints":["/messages"]},
+        {"id":"gpt-5.6","name":"GPT","context_length":400000,"supported_endpoints":["/chat/completions","/responses"]},
+        {"id":"deepseek/deepseek-v4-flash","name":"DeepSeek","context_length":1000000,"supported_endpoints":["/chat/completions"]}
+    ]})
+    .to_string();
+    let (api, seen) = super::testing::mock_http(move |_, path| match path {
+        "/provider/v1/models" => ("200 OK", "application/json", catalog.clone()),
+        "/provider/v1/messages" => (
+            "200 OK",
+            "text/event-stream",
+            concat!(
+                "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":3}}}\n\n",
+                "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"from claude\"}}\n\n",
+                "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+            )
+            .into(),
+        ),
+        "/provider/v1/responses" => (
+            "200 OK",
+            "text/event-stream",
+            concat!(
+                "data: {\"type\":\"response.output_text.delta\",\"delta\":\"from responses\"}\n\n",
+                "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"
+            )
+            .into(),
+        ),
+        "/provider/v1/chat/completions" => (
+            "403 Forbidden",
+            "application/json",
+            r#"{"error":{"code":"upgrade_required","message":"Upgrade to use the Provider API"}}"#.into(),
+        ),
+        "/alpha/generate" => (
+            "200 OK",
+            "text/event-stream",
+            concat!(
+                "data: {\"type\":\"text-delta\",\"text\":\"from generate\"}\n\n",
+                "data: {\"type\":\"finish\",\"finishReason\":\"stop\",\"totalUsage\":{\"inputTokens\":5,\"outputTokens\":2}}\n\n"
+            )
+            .into(),
+        ),
+        _ => ("404 Not Found", "application/json", "{}".into()),
+    })
+    .await;
+    let client =
+        super::command_code_client::CommandCodeClient::new(&api, "cc_key".into(), None).unwrap();
+    let models = client.models().await.unwrap();
+    assert_eq!(models.len(), 3);
+    let text = |response: ModelResponse| response.text;
+
+    let claude = client
+        .stream(&command_code_request("claude-sonnet-4-6"), &|_| {})
+        .await
+        .unwrap();
+    assert_eq!(text(claude), "from claude");
+    let responses = client
+        .stream(&command_code_request("gpt-5.6"), &|_| {})
+        .await
+        .unwrap();
+    assert_eq!(text(responses), "from responses");
+    assert!(!client.uses_generate());
+
+    let streamed = Mutex::new(String::new());
+    let fallback = client
+        .stream(
+            &command_code_request("deepseek/deepseek-v4-flash"),
+            &|delta| {
+                if let Delta::Text(text) = delta {
+                    streamed.lock().unwrap().push_str(&text);
+                }
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(fallback.usage.unwrap().total, 7);
+    assert_eq!(text(fallback), "from generate");
+    assert_eq!(*streamed.lock().unwrap(), "from generate");
+    assert!(client.uses_generate());
+    // Later requests go straight to generate, whatever the model's route.
+    let again = client
+        .stream(&command_code_request("claude-sonnet-4-6"), &|_| {})
+        .await
+        .unwrap();
+    assert_eq!(text(again), "from generate");
+
+    let seen = seen.lock().unwrap().clone();
+    let paths: Vec<_> = seen.iter().map(|r| r.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        [
+            "/provider/v1/models",
+            "/provider/v1/messages",
+            "/provider/v1/responses",
+            "/provider/v1/chat/completions",
+            "/alpha/generate",
+            "/alpha/generate"
+        ]
+    );
+    assert!(seen
+        .iter()
+        .all(|r| r.headers.contains("authorization: bearer cc_key")));
+    assert_eq!(seen[0].method, "GET");
+    assert!(seen[1..].iter().all(|r| r.method == "POST"));
+    assert!(seen[1].headers.contains("anthropic-version: 2023-06-01"));
+    let messages: Value = serde_json::from_str(&seen[1].body).unwrap();
+    assert_eq!(messages["system"], "rules");
+    assert_eq!(messages["tools"].as_array().unwrap().len(), 5);
+    let responses: Value = serde_json::from_str(&seen[2].body).unwrap();
+    assert_eq!(responses["instructions"], "rules");
+    assert_eq!(responses["store"], false);
+    let generate: Value = serde_json::from_str(&seen[4].body).unwrap();
+    assert_eq!(generate["params"]["system"], "rules");
+    assert_eq!(generate["params"]["messages"][0]["content"], "hello");
+    assert_eq!(generate["config"]["workingDir"], "/work/project");
+    assert_eq!(generate["threadId"], uuid::Uuid::nil().to_string());
+    assert!(seen[4].headers.contains("x-project-slug: work-project"));
+    assert!(seen[4].headers.contains("x-command-code-version:"));
 }

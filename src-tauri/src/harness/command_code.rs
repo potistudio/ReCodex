@@ -587,7 +587,7 @@ async fn serve(
     }
 }
 
-fn timestamp_now() -> String {
+pub(super) fn timestamp_now() -> String {
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs())

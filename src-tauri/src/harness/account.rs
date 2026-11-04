@@ -1,7 +1,8 @@
 //! Model connection selection and the Command Code account.
 use super::{
     command_code::{self, PendingLogin, Source, Store},
-    model::{ModelClient, OpenAiCompatible},
+    command_code_client::CommandCodeClient,
+    model::ModelClient,
     Harness, HarnessConfig,
 };
 use serde_json::{json, Value};
@@ -68,9 +69,9 @@ impl Harness {
             (config.openai(config.api_key.clone()), OPENAI_COMPATIBLE)
         } else if let Some((credentials, _)) = credentials {
             (
-                OpenAiCompatible::new(
-                    format!("{}{}", account.api_url, command_code::PROVIDER_PATH),
-                    Some(credentials.api_key),
+                CommandCodeClient::new(
+                    &account.api_url,
+                    credentials.api_key,
                     config.models.clone(),
                 )
                 .map(|client| Arc::new(client) as Arc<dyn ModelClient>),

@@ -108,6 +108,8 @@ async fn drive(harness: &Arc<Harness>, spec: &RunSpec) -> Result<Finish, String>
             messages: context::messages(&events, &spec.cwd, through),
             tools: schemas.clone(),
             effort: spec.effort.clone(),
+            cwd: spec.cwd.clone(),
+            session: spec.session.clone(),
         };
         let item_id = format!("{}-{index}-message", spec.run_id);
         let Some((attempt_id, response)) =
