@@ -21,6 +21,10 @@ describe("requiresCodexAuth", () => {
 		expect(requiresCodexAuth(model("pi"), true)).toBe(false);
 	});
 
+	it("does not block ReCodex harness models when Codex needs sign-in", () => {
+		expect(requiresCodexAuth(model("recodex"), true)).toBe(false);
+	});
+
 	it("blocks Codex models when Codex needs sign-in", () => {
 		expect(requiresCodexAuth(model("codex"), true)).toBe(true);
 	});

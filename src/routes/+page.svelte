@@ -38,7 +38,7 @@ import { Input } from "$lib/components/ui/input";
 import type { HostCatalog, HostSummary } from "$lib/hosts";
 import { confirm, invoke, listen } from "$lib/ipc.svelte";
 import { appear, reveal } from "$lib/motion";
-import { requiresCodexAuth } from "$lib/providers";
+import { isCodexProvider, requiresCodexAuth } from "$lib/providers";
 import type { Project, RateLimitSnapshot, RateLimitWindow, Thread } from "$lib/types";
 import { formatResetTime, formatTokenCount, formatUsageWindow, remainingPercent } from "$lib/usage";
 import { workingState } from "$lib/working";
@@ -142,7 +142,9 @@ const filteredThreads = $derived(
 	app.threads.filter((thread) => (thread.name || thread.preview).toLowerCase().includes(search.toLowerCase())),
 );
 const activeModel = $derived(app.models.find((model) => model.model === app.model));
-const needsCodexAuth = $derived(app.thread?.provider !== "pi" && requiresCodexAuth(activeModel, app.requiresAuth));
+const needsCodexAuth = $derived(
+	isCodexProvider(app.thread?.provider) && requiresCodexAuth(activeModel, app.requiresAuth),
+);
 const ready = $derived(app.connected && !!app.project && (!needsCodexAuth || !!app.account));
 const primaryRemaining = $derived(
 	app.rateLimits?.rateLimits.primary ? remainingPercent(app.rateLimits.rateLimits.primary.usedPercent) : null,
