@@ -38,6 +38,7 @@ import { Input } from "$lib/components/ui/input";
 import type { HostCatalog, HostSummary } from "$lib/hosts";
 import { confirm, invoke, listen } from "$lib/ipc.svelte";
 import { appear, reveal } from "$lib/motion";
+import { requiresCodexAuth } from "$lib/providers";
 import type { Project, RateLimitSnapshot, RateLimitWindow, Thread } from "$lib/types";
 import { formatResetTime, formatTokenCount, formatUsageWindow, remainingPercent } from "$lib/usage";
 import { workingState } from "$lib/working";
@@ -140,7 +141,9 @@ const workTokenCount = $derived(Math.max(displayedWorkTokens.length, outgoingWor
 const filteredThreads = $derived(
 	app.threads.filter((thread) => (thread.name || thread.preview).toLowerCase().includes(search.toLowerCase())),
 );
-const ready = $derived(app.connected && !!app.project && (!app.requiresAuth || !!app.account));
+const activeModel = $derived(app.models.find((model) => model.model === app.model));
+const needsCodexAuth = $derived(app.thread?.provider !== "pi" && requiresCodexAuth(activeModel, app.requiresAuth));
+const ready = $derived(app.connected && !!app.project && (!needsCodexAuth || !!app.account));
 const primaryRemaining = $derived(
 	app.rateLimits?.rateLimits.primary ? remainingPercent(app.rateLimits.rateLimits.primary.usedPercent) : null,
 );
@@ -816,7 +819,7 @@ function shortcuts(event: KeyboardEvent) {
 									>{app.connecting ? "Connecting to Codex…" : "Connect to Codex"}</Button
 								>
 							</div>
-						{:else if app.connected && app.requiresAuth && !app.account}
+						{:else if app.connected && needsCodexAuth && !app.account}
 							<div class="connection-action">
 								{#if app.remote}
 									<span>Sign in to Codex on {app.hostName}, then reconnect.</span>
