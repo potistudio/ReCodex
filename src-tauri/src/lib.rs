@@ -1,4 +1,5 @@
 mod discovery;
+mod harness;
 mod host;
 mod lan;
 mod lan_store;

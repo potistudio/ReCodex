@@ -1,5 +1,6 @@
 //! Transport-independent owner of a PC's Codex process and workspace.
 use crate::{
+    harness::{Harness, HarnessConfig},
     pi::{PiCommand, PiProvider},
     server::Server,
     workspace::{self, Workspace},
@@ -36,6 +37,7 @@ pub struct Host {
     pub events: broadcast::Sender<Value>,
     server: Mutex<Option<Arc<Server>>>,
     pi: Arc<PiProvider>,
+    harness: Arc<Harness>,
     codex_error: StdMutex<Option<String>>,
     // Serialize operation acceptance, including same-chat starts, saves, and approval answers.
     gate: Mutex<()>,
@@ -49,7 +51,9 @@ pub fn project_id(path: &str) -> String {
 
 impl Host {
     pub fn new(directory: PathBuf) -> Result<Arc<Self>, String> {
-        Self::build(directory, PiCommand::resolve())
+        Self::build(directory, PiCommand::resolve(), |path| {
+            Harness::new(path, HarnessConfig::from_env())
+        })
     }
 
     #[cfg(test)]
@@ -57,17 +61,33 @@ impl Host {
         directory: PathBuf,
         command: Result<PiCommand, String>,
     ) -> Result<Arc<Self>, String> {
-        Self::build(directory, command)
+        Self::build(directory, command, |path| {
+            Harness::new(path, HarnessConfig::default())
+        })
+    }
+
+    #[cfg(test)]
+    pub fn new_with_harness(
+        directory: PathBuf,
+        harness: impl FnOnce(&std::path::Path) -> Arc<Harness>,
+    ) -> Result<Arc<Self>, String> {
+        Self::build(
+            directory,
+            Err("Pi is not used in this test".into()),
+            harness,
+        )
     }
 
     fn build(
         directory: PathBuf,
         pi_command: Result<PiCommand, String>,
+        harness: impl FnOnce(&std::path::Path) -> Arc<Harness>,
     ) -> Result<Arc<Self>, String> {
         let workspace = Workspace::default();
         workspace::projects_load(&directory, &workspace)?;
         let (events, _) = broadcast::channel(2048);
         let pi = Arc::new(PiProvider::new(directory.join("pi-sessions"), pi_command));
+        let harness = harness(&directory.join("harness.sqlite3"));
         let host = Arc::new(Self {
             lan: crate::lan_store::LanStore::load(&directory)?,
             directory,
@@ -75,6 +95,7 @@ impl Host {
             events,
             server: Mutex::new(None),
             pi: pi.clone(),
+            harness: harness.clone(),
             codex_error: StdMutex::new(None),
             gate: Mutex::new(()),
             runtime: StdMutex::new(Runtime {
@@ -89,6 +110,12 @@ impl Host {
                 host.publish(event);
             }
         }));
+        let weak = Arc::downgrade(&host);
+        harness.set_emit(Arc::new(move |event| {
+            if let Some(host) = weak.upgrade() {
+                host.publish(event);
+            }
+        }));
         Ok(host)
     }
 
@@ -99,11 +126,15 @@ impl Host {
         }
         *server = None;
         {
+            // Only Codex state belongs to the process being replaced.
             let mut state = self.runtime.lock().unwrap();
-            state.approvals.clear();
-            state.active.clear();
-            state.completed.clear();
-            state.thread_roots.clear();
+            state
+                .approvals
+                .retain(|_, (_, event)| !Self::is_codex_event(event));
+            state.active.retain(|id, _| !Self::is_codex_thread(id));
+            state
+                .thread_roots
+                .retain(|id, _| !Self::is_codex_thread(id));
         }
         let weak = Arc::downgrade(self);
         let generation = Uuid::new_v4().to_string();
@@ -128,14 +159,20 @@ impl Host {
             }
             Err(error) => {
                 *self.codex_error.lock().unwrap() = Some(error.clone());
-                if self.pi.available() {
+                if self.alternatives_available() {
                     Ok(())
                 } else {
                     let pi_error = self
                         .pi
                         .error()
                         .unwrap_or_else(|| "Pi is unavailable".into());
-                    Err(format!("Codex: {error}. Pi: {pi_error}"))
+                    let harness_error = self
+                        .harness
+                        .error()
+                        .unwrap_or_else(|| "ReCodex harness is unavailable".into());
+                    Err(format!(
+                        "Codex: {error}. Pi: {pi_error}. ReCodex: {harness_error}"
+                    ))
                 }
             }
         }
@@ -151,6 +188,21 @@ impl Host {
 
     fn is_pi_thread(id: &str) -> bool {
         id.starts_with("pi-")
+    }
+
+    fn is_codex_thread(id: &str) -> bool {
+        !Self::is_pi_thread(id) && !Harness::is_thread(id)
+    }
+
+    fn is_codex_event(event: &Value) -> bool {
+        event["params"]["threadId"]
+            .as_str()
+            .is_none_or(Self::is_codex_thread)
+    }
+
+    /// Providers that keep working when the Codex process is unavailable.
+    fn alternatives_available(&self) -> bool {
+        self.pi.available() || self.harness.available()
     }
 
     fn remember_thread(&self, id: &str, root: &str) {
@@ -192,11 +244,11 @@ impl Host {
             event["id"] = json!(public_id);
             state.approvals.insert(public_id, (id, event.clone()));
         }
-        if event["method"] == "recodex/disconnected" && self.pi.available() {
+        if event["method"] == "recodex/disconnected" && self.alternatives_available() {
             let dead: Vec<_> = state
                 .active
                 .iter()
-                .filter(|(id, _)| !Self::is_pi_thread(id))
+                .filter(|(id, _)| Self::is_codex_thread(id))
                 .map(|(id, turn)| (id.clone(), turn.clone()))
                 .collect();
             for (id, turn) in dead {
@@ -217,11 +269,9 @@ impl Host {
                     }),
                 );
             }
-            state.approvals.retain(|_, (_, approval)| {
-                approval["params"]["threadId"]
-                    .as_str()
-                    .is_some_and(Self::is_pi_thread)
-            });
+            state
+                .approvals
+                .retain(|_, (_, approval)| !Self::is_codex_event(approval));
             self.publish_locked(
                 &mut state,
                 json!({
@@ -229,7 +279,7 @@ impl Host {
                     "params":{
                         "provider":"codex",
                         "connected":false,
-                        "message":"Codex disconnected. Pi models remain available."
+                        "message":"Codex disconnected. Other model providers remain available."
                     }
                 }),
             );
@@ -258,6 +308,15 @@ impl Host {
             event["params"]["projectId"] = json!(project_id(root));
         }
         let thread = event["params"]["threadId"].as_str().unwrap_or_default();
+        // Harness approval requests are answered through the harness, so their public and
+        // raw IDs are the same.
+        if Harness::is_thread(thread) {
+            if let Some(id) = event.get("id").and_then(Value::as_str) {
+                state
+                    .approvals
+                    .insert(id.to_owned(), (json!(id), event.clone()));
+            }
+        }
         match event["method"].as_str().unwrap_or_default() {
             "turn/started" => {
                 state
@@ -420,6 +479,13 @@ impl Host {
                 "error":self.pi.error(),
                 "modelCount":self.pi.cached_model_count().await
             }),
+            json!({
+                "id":crate::harness::PROVIDER,
+                "label":crate::harness::PROVIDER_LABEL,
+                "available":self.harness.available(),
+                "error":self.harness.error(),
+                "modelCount":self.harness.cached_model_count().await
+            }),
         ]
     }
 
@@ -460,6 +526,15 @@ impl Host {
                     data.extend(models);
                 }
                 Err(error) => errors.push(format!("Pi: {error}")),
+            }
+        }
+        if cursor.is_none() && self.harness.available() {
+            match self.harness.models().await {
+                Ok(models) => {
+                    succeeded = true;
+                    data.extend(models);
+                }
+                Err(error) => errors.push(format!("ReCodex: {error}")),
             }
         }
         if data.is_empty() && !succeeded {
@@ -559,6 +634,15 @@ impl Host {
                 Err(error) => errors.push(format!("Pi: {error}")),
             }
         }
+        if params["cursor"].is_null() && self.harness.available() {
+            match self.harness.list_threads(root).await {
+                Ok(threads) => {
+                    succeeded = true;
+                    data.extend(threads);
+                }
+                Err(error) => errors.push(format!("ReCodex: {error}")),
+            }
+        }
         if data.is_empty() && !succeeded {
             return Err(if errors.is_empty() {
                 "No thread provider is available".into()
@@ -578,6 +662,22 @@ impl Host {
     async fn start_thread(&self, params: &Value, root: &str) -> Result<Value, String> {
         let model = params["model"].as_str().unwrap_or_default();
         let provider = params["provider"].as_str().unwrap_or_default();
+        if provider == crate::harness::PROVIDER || model.starts_with(crate::harness::MODEL_PREFIX) {
+            let id = format!("{}{}", crate::harness::THREAD_PREFIX, Uuid::new_v4());
+            let thread = self.harness.start_session(
+                &id,
+                root,
+                (!model.is_empty()).then_some(model),
+                params["effort"].as_str(),
+            )?;
+            self.remember_thread(&id, root);
+            self.publish(json!({"method":"thread/started","params":{"thread":thread.clone()}}));
+            return Ok(json!({
+                "thread":thread,
+                "model":thread["model"],
+                "reasoningEffort":params["effort"].as_str().unwrap_or("off")
+            }));
+        }
         if provider == "pi" || model.starts_with("pi/") {
             let id = format!("pi-{}", Uuid::new_v4());
             let session = self
@@ -700,6 +800,63 @@ impl Host {
             )),
         }
     }
+    /// The registered project root of a harness chat, checked against the caller's access.
+    fn harness_root(&self, id: &str, remote: bool) -> Result<String, String> {
+        let cwd = self
+            .harness
+            .thread_root(id)?
+            .ok_or("This chat no longer exists")?;
+        self.current_root(&self.pi_project_key(&cwd, remote), remote)
+    }
+
+    fn harness_thread_action(
+        &self,
+        id: &str,
+        method: &str,
+        params: &Value,
+        remote: bool,
+    ) -> Result<Value, String> {
+        let root = self.harness_root(id, remote)?;
+        self.remember_thread(id, &root);
+        match method {
+            "thread/read" => Ok(json!({"thread":self.harness.read_thread(id)?["thread"]})),
+            "thread/resume" => self.harness.read_thread(id),
+            "turn/start" => {
+                let text = text_input(&params["input"])?;
+                let result = self.harness.turn(
+                    id,
+                    &text,
+                    params["model"].as_str(),
+                    params["effort"].as_str(),
+                )?;
+                let mut state = self.runtime.lock().unwrap();
+                let turn = &result["turn"];
+                if !state
+                    .completed
+                    .iter()
+                    .any(|completed| Some(completed.as_str()) == turn["id"].as_str())
+                {
+                    state.active.insert(id.to_owned(), turn.clone());
+                }
+                Ok(result)
+            }
+            "turn/interrupt" => {
+                let turn_id = params["turnId"].as_str().ok_or("Missing turnId")?;
+                self.harness.interrupt(id, turn_id)?;
+                Ok(Value::Null)
+            }
+            "thread/delete" => {
+                self.harness.delete(id)?;
+                self.publish(json!({"method":"thread/deleted","params":{"threadId":id}}));
+                self.runtime.lock().unwrap().thread_roots.remove(id);
+                Ok(Value::Null)
+            }
+            _ => Err(format!(
+                "Operation {method} is not available for a ReCodex chat"
+            )),
+        }
+    }
+
     async fn codex(&self, method: &str, params: Value) -> Result<Value, String> {
         let server = self
             .server
@@ -832,6 +989,9 @@ impl Host {
                 {
                     return Err("Stop the running turn before deleting this chat".into());
                 }
+                if Harness::is_thread(&id) {
+                    return self.harness_thread_action(&id, method, &params, remote);
+                }
                 if Self::is_pi_thread(&id) {
                     return if method == "turn/start" {
                         self.pi_turn_start(&id, &params, remote).await
@@ -893,6 +1053,13 @@ impl Host {
                         "This request has already been resolved or belongs to an old Codex session",
                     )?;
                 if let Some(thread) = event["params"]["threadId"].as_str() {
+                    if Harness::is_thread(thread) {
+                        self.harness_root(thread, remote)?;
+                        self.harness.respond(&public_id, &params["result"])?;
+                        self.runtime.lock().unwrap().approvals.remove(&public_id);
+                        self.publish(json!({"method":"serverRequest/resolved","params":{"requestId":public_id}}));
+                        return Ok(Value::Null);
+                    }
                     self.thread_root(thread, remote).await?;
                 } else if remote {
                     return Err("This request must be answered on the host PC".into());
@@ -930,6 +1097,7 @@ impl Host {
 
     pub async fn shutdown(&self) {
         *self.server.lock().await = None;
+        self.harness.shutdown();
         self.pi.shutdown().await;
     }
 }
