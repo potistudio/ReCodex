@@ -56,9 +56,39 @@ issued key stays valid until it is revoked in Command Code Studio, and a key fro
 environment or the CLI's file cannot be signed out from ReCodex. ReCodex reads the CLI's file
 but never writes it.
 
-The Provider API requires a Command Code plan with API access. Models that Command Code serves
-only through Anthropic `/messages` (Claude models) are omitted from the picker, because the
-harness speaks Chat Completions.
+### Command Code routing
+
+`CommandCodeClient` sends each model to the wire that serves it, using the
+`supported_endpoints` field of `GET /provider/v1/models`:
+
+| Model | Wire | Endpoint |
+| --- | --- | --- |
+| `claude-*`, or only `/messages` advertised | Anthropic Messages | `/provider/v1/messages` |
+| `/responses` advertised | OpenAI Responses (`store: false`) | `/provider/v1/responses` |
+| Everything else | Chat Completions | `/provider/v1/chat/completions` |
+
+All three use `Authorization: Bearer <key>`; Messages also sends `anthropic-version:
+2023-06-01`. Messages requests do not enable extended thinking, because continuing a tool loop
+with thinking requires replaying signed thinking blocks that the ledger does not keep, so the
+effort setting has no effect on Claude models. Responses requests do not replay reasoning items
+between steps.
+
+Plans without Provider API access (such as Go) get `403` with error code `upgrade_required`.
+The client then switches that key to `POST https://api.commandcode.ai/alpha/generate`, the
+endpoint the `cmd` CLI itself uses, for the rest of the process:
+
+- The body carries AI SDK model messages, tools with `input_schema`, the system prompt, and a
+  `config` block with the project root; the chat ID is sent as `threadId`.
+- The stream is AI SDK parts (`text-delta`, `reasoning-delta`, `tool-input-*`, `tool-call`,
+  `finish`, `error`) as SSE `data:` lines or bare JSON lines.
+- Requests send CLI-style headers (`User-Agent: cli`, `x-command-code-version`,
+  `x-cli-environment`, `x-project-slug`) and `x-taste-learning: false`.
+- Tool-call IDs longer than 64 characters are shortened deterministically.
+
+The fallback happens only for a rejection before any output, so it never duplicates text. The
+generation endpoint is undocumented; its format follows the MIT-licensed
+[pi-commandcode-provider](https://github.com/patlux/pi-commandcode-provider) and may change
+without notice.
 
 ## Components
 
@@ -66,12 +96,14 @@ harness speaks Chat Completions.
 | --- | --- |
 | `ledger.rs` | Session Ledger. SQLite in WAL mode with `synchronous=FULL`, stored as `harness.sqlite3` in the app-data directory. |
 | `context.rs` | Context Engine and Projection Engine. Builds model messages and the UI transcript from ledger events. |
-| `model.rs` | Model Gateway. `ModelClient` trait and the OpenAI-compatible streaming adapter. |
+| `model.rs` | Model Gateway. `ModelClient` trait, shared HTTP/SSE helpers, and the Chat Completions adapter. |
 | `tools.rs` | Tool Registry, Tool Scheduler, and the local Execution Environment. |
 | `policy.rs` | Authorization Service with session grants. |
 | `driver.rs` | Run Driver and crash recovery. |
 | `account.rs` | Model connection selection and the Command Code account. |
 | `command_code.rs` | Command Code browser sign-in, key validation, and credential storage. |
+| `command_code_client.rs` | Per-model routing and the generation fallback for Command Code. |
+| `messages_api.rs`, `responses_api.rs`, `generate_api.rs` | Anthropic Messages, OpenAI Responses, and Command Code generation wire adapters. |
 | `mod.rs` | Harness Coordinator: session and run lifecycle, approvals, catalog. |
 
 `host.rs` exposes the harness to local, LAN, and Web UI clients, orders operations, and relays

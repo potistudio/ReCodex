@@ -18,7 +18,7 @@ A local desktop workspace for ReCodex's own coding-agent harness, built with Tau
 
 Install Node.js, pnpm, Rust stable, and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). On Windows, WebView2 and the Visual Studio C++ build tools are required.
 
-Launch the app, open **Settings**, and choose **Sign in** under **Command Code account**. ReCodex opens the Command Code sign-in page in your browser, receives an API key on a local callback port, and stores it in the app-data directory. A [Command Code](https://commandcode.ai) plan with API access is required.
+Launch the app, open **Settings**, and choose **Sign in** under **Command Code account**. ReCodex opens the Command Code sign-in page in your browser, receives an API key on a local callback port, and stores it in the app-data directory. Plans with Provider API access use it directly; other plans, such as Go, fall back to the endpoint the Command Code CLI uses. Claude models are served through the Anthropic Messages wire.
 
 ```sh
 pnpm install
