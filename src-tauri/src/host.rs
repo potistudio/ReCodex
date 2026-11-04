@@ -186,7 +186,10 @@ impl Host {
                     .any(|root| event["params"]["projectId"] == project_id(root)))
             || matches!(
                 method,
-                "recodex/disconnected" | "recodex/providerStatus" | "serverRequest/resolved"
+                "recodex/disconnected"
+                    | "recodex/providerStatus"
+                    | "serverRequest/resolved"
+                    | "account/updated"
             )
     }
     pub fn remote_event(&self, envelope: &Value) -> Option<Value> {
@@ -252,7 +255,7 @@ impl Host {
     async fn provider_status(&self) -> Vec<Value> {
         vec![json!({
             "id":crate::harness::PROVIDER,
-            "label":crate::harness::PROVIDER_LABEL,
+            "label":self.harness.connection_label(),
             "available":self.harness.available(),
             "error":self.harness.error(),
             "modelCount":self.harness.cached_model_count().await
@@ -419,6 +422,16 @@ impl Host {
             }
             "model/list" => self.model_list().await,
             "provider/list" => Ok(json!(self.provider_status().await)),
+            "account/read" => Ok(self.harness.account()),
+            // Sign-in stores credentials on the host, so only the host's own UI may change it.
+            "account/login/start" if !remote => {
+                Ok(json!({"authUrl":self.harness.login_start().await?}))
+            }
+            "account/login/cancel" if !remote => {
+                self.harness.login_cancel();
+                Ok(Value::Null)
+            }
+            "account/logout" if !remote => self.harness.logout(),
             "thread/list" => {
                 let root = self.root(&string("cwd")?, remote)?;
                 let mut data = self.harness.list_threads(&root).await?;

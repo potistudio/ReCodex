@@ -166,7 +166,7 @@ async fn request_model(
     item_id: &str,
     request: &ModelRequest,
 ) -> Result<Option<(String, ModelResponse)>, String> {
-    let client = harness.model.as_ref().map_err(Clone::clone)?;
+    let client = harness.client()?;
     for attempt in 1..=MAX_ATTEMPTS {
         let attempt_id = Uuid::new_v4().to_string();
         let partial = StdMutex::new(String::new());

@@ -155,6 +155,17 @@ impl OpenAiCompatible {
             .map(Vec::as_slice)
             .unwrap_or_default()
             .iter()
+            // Command Code lists models served only by other routes (such as Anthropic
+            // `/messages`); keep those that declare Chat Completions, or declare nothing.
+            .filter(|model| {
+                model["supported_endpoints"]
+                    .as_array()
+                    .is_none_or(|endpoints| {
+                        endpoints
+                            .iter()
+                            .any(|endpoint| endpoint.as_str().is_some_and(|e| e.contains("chat")))
+                    })
+            })
             .filter_map(|model| {
                 Some(ModelInfo {
                     id: model["id"].as_str()?.to_owned(),

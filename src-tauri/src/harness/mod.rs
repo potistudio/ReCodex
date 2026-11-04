@@ -1,12 +1,16 @@
-//! ReCodex's own agent harness. Unlike the Codex and Pi adapters, this provider owns the run
-//! loop, the session ledger, tool execution, and authorization inside the host process.
+//! ReCodex's agent harness: the run loop, the session ledger, tool execution, and
+//! authorization run inside the host process.
 //!
+//! - `account`: model connection selection and Command Code sign-in.
+//! - `command_code`: Command Code browser sign-in and credential storage.
 //! - `ledger`: SQLite (WAL) session ledger; the only source of truth for harness chats.
 //! - `context`: model-visible messages and UI transcripts projected from ledger events.
 //! - `model`: Model Gateway and the OpenAI-compatible Chat Completions adapter.
 //! - `tools`: tool registry, effect-based scheduler, and local execution environment.
 //! - `policy`: allow / ask / deny decisions and session grants.
 //! - `driver`: the run driver that sequences steps, attempts, approvals, and tool calls.
+mod account;
+pub mod command_code;
 mod context;
 mod driver;
 mod ledger;
@@ -24,7 +28,10 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     path::Path,
-    sync::{Arc, Mutex as StdMutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex as StdMutex,
+    },
     time::{Duration, Instant},
 };
 use tokio::sync::{oneshot, watch, Mutex};
@@ -46,11 +53,14 @@ const EFFORTS: [(&str, &str); 4] = [
 
 type Emit = Arc<dyn Fn(Value) + Send + Sync>;
 
-/// Connection settings for the OpenAI-compatible Chat Completions endpoint.
+/// Connection settings read from the environment. An explicit OpenAI-compatible endpoint
+/// (`RECODEX_OPENAI_BASE_URL` or `RECODEX_OPENAI_API_KEY`) takes precedence over a Command
+/// Code sign-in; `OPENAI_API_KEY` is used only when neither is configured.
 #[derive(Clone, Default)]
 pub struct HarnessConfig {
     pub base_url: Option<String>,
     pub api_key: Option<String>,
+    pub openai_api_key: Option<String>,
     pub models: Option<Vec<String>>,
     pub max_steps: Option<usize>,
 }
@@ -65,7 +75,8 @@ impl HarnessConfig {
         };
         Self {
             base_url: var("RECODEX_OPENAI_BASE_URL"),
-            api_key: var("RECODEX_OPENAI_API_KEY").or_else(|| var("OPENAI_API_KEY")),
+            api_key: var("RECODEX_OPENAI_API_KEY"),
+            openai_api_key: var("OPENAI_API_KEY"),
             models: var("RECODEX_OPENAI_MODELS").map(|models| {
                 models
                     .split(',')
@@ -77,18 +88,16 @@ impl HarnessConfig {
         }
     }
 
-    fn client(&self) -> Result<Arc<dyn ModelClient>, String> {
-        if self.base_url.is_none() && self.api_key.is_none() {
-            return Err(
-                "Set RECODEX_OPENAI_API_KEY (or OPENAI_API_KEY), or RECODEX_OPENAI_BASE_URL for a local server"
-                    .into(),
-            );
-        }
+    fn explicit(&self) -> bool {
+        self.base_url.is_some() || self.api_key.is_some()
+    }
+
+    fn openai(&self, api_key: Option<String>) -> Result<Arc<dyn ModelClient>, String> {
         Ok(Arc::new(OpenAiCompatible::new(
             self.base_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BASE_URL.into()),
-            self.api_key.clone(),
+            api_key,
             self.models.clone(),
         )?))
     }
@@ -107,18 +116,28 @@ struct PendingApproval {
 
 pub struct Harness {
     ledger: Result<Ledger, String>,
-    model: Result<Arc<dyn ModelClient>, String>,
+    model: StdMutex<Result<Arc<dyn ModelClient>, String>>,
+    /// Label of the active model connection, e.g. "Command Code".
+    connection: StdMutex<String>,
+    account: account::Account,
     max_steps: usize,
     emit: StdMutex<Option<Emit>>,
     runs: StdMutex<HashMap<String, ActiveRun>>,
     approvals: StdMutex<HashMap<String, PendingApproval>>,
-    catalog: Mutex<Option<(Instant, Vec<Value>)>>,
+    catalog: Mutex<Option<(Instant, Vec<Value>, u64)>>,
+    /// Bumped on every connection change so a catalog fetched for an old connection is
+    /// neither served nor cached.
+    connection_generation: AtomicU64,
 }
 
 impl Harness {
+    /// `path` is the ledger file; Command Code credentials are stored next to it.
     pub fn new(path: &Path, config: HarnessConfig) -> Arc<Self> {
-        let model = config.client();
-        Self::build(path, model, config.max_steps)
+        let directory = path.parent().unwrap_or(Path::new("."));
+        let account = account::Account::new(config, command_code::Store::new(directory));
+        let harness = Self::build(path, account, None);
+        harness.reconnect();
+        harness
     }
 
     #[cfg(test)]
@@ -127,22 +146,31 @@ impl Harness {
         client: Arc<dyn ModelClient>,
         max_steps: Option<usize>,
     ) -> Arc<Self> {
-        Self::build(path, Ok(client), max_steps)
+        let harness = Self::build(path, account::Account::disabled(), max_steps);
+        harness.set_client(Ok(client), "Test".into());
+        harness
     }
 
-    fn build(
-        path: &Path,
-        model: Result<Arc<dyn ModelClient>, String>,
-        max_steps: Option<usize>,
-    ) -> Arc<Self> {
+    #[cfg(test)]
+    pub(crate) fn with_account(path: &Path, account: account::Account) -> Arc<Self> {
+        let harness = Self::build(path, account, None);
+        harness.reconnect();
+        harness
+    }
+
+    fn build(path: &Path, account: account::Account, max_steps: Option<usize>) -> Arc<Self> {
+        let max_steps = max_steps.or(account.config.max_steps);
         let harness = Arc::new(Self {
             ledger: Ledger::open(path),
-            model,
+            model: StdMutex::new(Err("No model connection is configured".into())),
+            connection: StdMutex::new(String::new()),
+            account,
             max_steps: max_steps.unwrap_or(DEFAULT_MAX_STEPS).max(1),
             emit: StdMutex::new(None),
             runs: StdMutex::new(HashMap::new()),
             approvals: StdMutex::new(HashMap::new()),
             catalog: Mutex::new(None),
+            connection_generation: AtomicU64::new(0),
         });
         if let Ok(ledger) = &harness.ledger {
             if let Err(error) = driver::recover(ledger) {
@@ -171,16 +199,32 @@ impl Harness {
         id.starts_with(THREAD_PREFIX)
     }
 
+    /// The active model client, if a connection is configured.
+    fn client(&self) -> Result<Arc<dyn ModelClient>, String> {
+        self.model.lock().unwrap().clone()
+    }
+
+    /// Replace the model connection. Running steps keep the client they started with.
+    fn set_client(&self, client: Result<Arc<dyn ModelClient>, String>, label: String) {
+        *self.model.lock().unwrap() = client;
+        *self.connection.lock().unwrap() = label;
+        self.connection_generation.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn connection_label(&self) -> String {
+        self.connection.lock().unwrap().clone()
+    }
+
     pub fn available(&self) -> bool {
-        self.ledger.is_ok() && self.model.is_ok()
+        self.ledger.is_ok() && self.model.lock().unwrap().is_ok()
     }
 
     pub fn error(&self) -> Option<String> {
         self.ledger
             .as_ref()
             .err()
-            .or(self.model.as_ref().err())
             .cloned()
+            .or_else(|| self.model.lock().unwrap().as_ref().err().cloned())
     }
 
     pub async fn cached_model_count(&self) -> usize {
@@ -188,17 +232,19 @@ impl Harness {
             .lock()
             .await
             .as_ref()
-            .map_or(0, |(_, models)| models.len())
+            .map_or(0, |(_, models, _)| models.len())
     }
 
     pub async fn models(&self) -> Result<Vec<Value>, String> {
         let mut catalog = self.catalog.lock().await;
-        if let Some((at, models)) = catalog.as_ref() {
-            if at.elapsed() < CATALOG_TTL {
+        let generation = self.connection_generation.load(Ordering::SeqCst);
+        if let Some((at, models, cached)) = catalog.as_ref() {
+            if *cached == generation && at.elapsed() < CATALOG_TTL {
                 return Ok(models.clone());
             }
         }
-        let client = self.model.as_ref().map_err(Clone::clone)?;
+        let client = self.client()?;
+        let label = self.connection_label();
         let models: Vec<Value> = client
             .models()
             .await?
@@ -209,7 +255,7 @@ impl Harness {
                     "id": key,
                     "model": key,
                     "displayName": model.id,
-                    "description": "OpenAI-compatible model run by the ReCodex harness",
+                    "description": format!("{label} model run by the ReCodex harness"),
                     "isDefault": false,
                     "hidden": false,
                     "defaultReasoningEffort": "off",
@@ -218,13 +264,15 @@ impl Harness {
                         .map(|(effort, description)| json!({"reasoningEffort":effort,"description":description}))
                         .collect::<Vec<_>>(),
                     "provider": PROVIDER,
-                    "providerLabel": PROVIDER_LABEL,
+                    "providerLabel": label,
                     "providerModel": model.id,
                     "contextWindow": model.context_window
                 })
             })
             .collect();
-        *catalog = Some((Instant::now(), models.clone()));
+        if self.connection_generation.load(Ordering::SeqCst) == generation {
+            *catalog = Some((Instant::now(), models.clone(), generation));
+        }
         Ok(models)
     }
 
