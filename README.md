@@ -6,7 +6,7 @@ A local desktop workspace for ReCodex's own coding-agent harness, built with Tau
 
 - Streamed Markdown chat, conversation history, and generation cancellation.
 - Live model catalog and per-model reasoning effort selection.
-- An agent harness that runs in the app: an SQLite session ledger, tool execution in the project, and approval prompts. Models come from any OpenAI-compatible Chat Completions API.
+- An agent harness that runs in the app: an SQLite session ledger, tool execution in the project, and approval prompts. Models come from Command Code (browser sign-in) or any OpenAI-compatible Chat Completions API.
 - Command and file-change activity, diffs, and approval prompts.
 - Open, rename, switch, and remove local projects. Removing a project only removes its sidebar registration.
 - Browse and edit existing UTF-8 files, save with Ctrl/Cmd+S, and detect changes made on disk before saving.
@@ -18,21 +18,26 @@ A local desktop workspace for ReCodex's own coding-agent harness, built with Tau
 
 Install Node.js, pnpm, Rust stable, and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). On Windows, WebView2 and the Visual Studio C++ build tools are required.
 
-Set an API key for an OpenAI-compatible endpoint, or point the app at a local server, before launching it:
+Launch the app, open **Settings**, and choose **Sign in** under **Command Code account**. ReCodex opens the Command Code sign-in page in your browser, receives an API key on a local callback port, and stores it in the app-data directory. A [Command Code](https://commandcode.ai) plan with API access is required.
 
 ```sh
 pnpm install
-RECODEX_OPENAI_API_KEY=sk-... pnpm tauri dev
+pnpm tauri dev
 ```
 
+To use another OpenAI-compatible API instead, set it before launching the app:
+
 ```sh
+RECODEX_OPENAI_API_KEY=sk-... pnpm tauri dev
 RECODEX_OPENAI_BASE_URL=http://localhost:11434/v1 pnpm tauri dev
 ```
 
 | Variable | Meaning |
 | --- | --- |
-| `RECODEX_OPENAI_API_KEY` | Bearer token. Falls back to `OPENAI_API_KEY`. |
-| `RECODEX_OPENAI_BASE_URL` | API base, default `https://api.openai.com/v1`. |
+| `RECODEX_OPENAI_API_KEY` | Bearer token for an OpenAI-compatible endpoint; takes precedence over Command Code. |
+| `RECODEX_OPENAI_BASE_URL` | API base, default `https://api.openai.com/v1`; takes precedence over Command Code. |
+| `COMMAND_CODE_API_KEY` | Command Code API key; overrides the sign-in. |
+| `OPENAI_API_KEY` | Used only when nothing else is configured. |
 | `RECODEX_OPENAI_MODELS` | Optional comma-separated model IDs; otherwise the catalog comes from `GET /models`. |
 | `RECODEX_HARNESS_MAX_STEPS` | Step limit per turn, default 64. |
 
@@ -42,7 +47,7 @@ Choose **Open a project**, select its directory, choose a model, and send a mess
 
 ## Connect PCs on a home LAN
 
-Run the desktop app on each PC and configure the model API on the PCs that will host projects. Open the projects you want to use on their respective PCs.
+Run the desktop app on each PC and sign in to Command Code (or configure another model API) on the PCs that will host projects. Open the projects you want to use on their respective PCs.
 
 1. On the PC that owns a project, open **Connections**, select the projects to share, and choose **Start hosting**. The default listen address is `0.0.0.0:43177`.
 2. Other PCs find it automatically under **Nearby PCs** using mDNS. Copy its **Connection invitation** to a PC you want to authorize through a trusted channel. Invitations expire after ten minutes and can be used once.
@@ -84,7 +89,7 @@ Biome handles frontend formatting and linting. Use `pnpm format`, `pnpm format:c
 - `src/lib/conversation.ts` reconciles optimistic user messages, incremental output, and completed items.
 - `src/lib/components/ui` contains the generated Rhea components; `components.json` retains the registry configuration.
 
-Chats are stored in `harness.sqlite3` in the platform's application-data directory for `com.poti.recodex`. API credentials are read from the environment and never stored. The project registry is `projects.json` in the platform's application-data directory for `com.poti.recodex`; model and last project preferences use local storage.
+Chats are stored in `harness.sqlite3` and a Command Code sign-in in `command-code-auth.json` (mode `0600`), both in the platform's application-data directory for `com.poti.recodex`. Other API credentials are read from the environment and never stored. The project registry is `projects.json` in the platform's application-data directory for `com.poti.recodex`; model and last project preferences use local storage.
 
 The basic editor handles existing UTF-8 text files up to 2 MB. It omits `.git`, `node_modules`, `target`, and `.svelte-kit` from browsing. Reload an open file to see external changes. Each host view keeps independent conversation state. Switching between hosts keeps their views and running work. LAN hosts are discovered automatically and require the host desktop app to remain open. Full terminal emulation, attachments, and Git operations are outside this implementation.
 

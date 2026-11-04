@@ -6,21 +6,59 @@ Rust host process (`src-tauri/src/harness/`). It implements the core of the cont
 [harness-design.md](harness-design.md); branches, compaction, memory, plugins, and multiple
 agents are not implemented.
 
-## Configuration
+## Model connection
 
-The harness talks to any OpenAI-compatible Chat Completions endpoint.
+The harness sends Chat Completions requests to one connection, chosen in this order:
+
+1. An explicit OpenAI-compatible endpoint: `RECODEX_OPENAI_BASE_URL` or
+   `RECODEX_OPENAI_API_KEY`.
+2. A Command Code API key, from `COMMAND_CODE_API_KEY`, ReCodex's own sign-in, or the
+   Command Code CLI's `~/.commandcode/auth.json` (in that order).
+3. `OPENAI_API_KEY` against `https://api.openai.com/v1`.
 
 | Variable | Meaning |
 | --- | --- |
-| `RECODEX_OPENAI_API_KEY` | Bearer token. Falls back to `OPENAI_API_KEY`. |
+| `RECODEX_OPENAI_API_KEY` | Bearer token for the OpenAI-compatible endpoint. |
 | `RECODEX_OPENAI_BASE_URL` | API base, default `https://api.openai.com/v1`. Set it alone for a local server such as Ollama (`http://localhost:11434/v1`). |
+| `COMMAND_CODE_API_KEY` | Command Code API key; overrides any sign-in. |
+| `OPENAI_API_KEY` | Used only when no other connection is configured. |
 | `RECODEX_OPENAI_MODELS` | Optional comma-separated model IDs. When unset, the catalog is read from `GET /models`. |
 | `RECODEX_HARNESS_MAX_STEPS` | Step limit per run, default 64. |
 
-The provider is available when an API key or a base URL is set and the session ledger opened.
-`provider/list` reports the reason otherwise. Models appear in the picker as
-`recodex/<model-id>`; chat IDs start with `rx-`. The credentials are read from the environment
-of the host process and are never written to the ledger.
+Models appear in the picker as `recodex/<model-id>`; chat IDs start with `rx-`.
+`provider/list` reports the active connection and why it is unavailable. Environment variables
+are read once at startup; a sign-in or sign-out switches the connection immediately, and a
+step that already started keeps the connection it began with. Credentials are never written to
+the ledger.
+
+### Command Code sign-in
+
+**Sign in** under **Command Code account** in Settings runs the same browser flow as `cmd login`
+in the Command Code CLI (observed in command-code 1.88; the Studio endpoint is not publicly
+documented and may change):
+
+1. The host binds a loopback port from 127.0.0.1:5959 to 5968 and generates a 256-bit state
+   token.
+2. The UI opens `https://commandcode.ai/studio/auth/cli?callback=http://127.0.0.1:<port>/callback&state=<state>&mode=redirect`.
+3. After the user approves, the Studio posts `apiKey`, `userId`, `userName`, `keyName`, and
+   `state` to the callback, as a form (redirected to `/callback/complete`) or as JSON. A
+   mismatched state is rejected, and a denial ends the attempt.
+4. The key is checked with `GET https://api.commandcode.ai/alpha/whoami`. An invalid key is not
+   stored.
+5. The credentials are written to `command-code-auth.json` in the app-data directory with mode
+   `0600` (atomic replacement), and the harness switches to the Provider API at
+   `https://api.commandcode.ai/provider/v1`.
+
+An attempt times out after five minutes, and starting a new attempt or choosing **Cancel**
+closes the previous callback port. Only the host's own desktop UI can sign in or out; LAN and
+Web UI clients see the state but cannot change it. **Sign out** deletes only ReCodex's file. The
+issued key stays valid until it is revoked in Command Code Studio, and a key from the
+environment or the CLI's file cannot be signed out from ReCodex. ReCodex reads the CLI's file
+but never writes it.
+
+The Provider API requires a Command Code plan with API access. Models that Command Code serves
+only through Anthropic `/messages` (Claude models) are omitted from the picker, because the
+harness speaks Chat Completions.
 
 ## Components
 
@@ -32,6 +70,8 @@ of the host process and are never written to the ledger.
 | `tools.rs` | Tool Registry, Tool Scheduler, and the local Execution Environment. |
 | `policy.rs` | Authorization Service with session grants. |
 | `driver.rs` | Run Driver and crash recovery. |
+| `account.rs` | Model connection selection and the Command Code account. |
+| `command_code.rs` | Command Code browser sign-in, key validation, and credential storage. |
 | `mod.rs` | Harness Coordinator: session and run lifecycle, approvals, catalog. |
 
 `host.rs` exposes the harness to local, LAN, and Web UI clients, orders operations, and relays
