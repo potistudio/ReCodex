@@ -15,6 +15,11 @@ export interface Model {
 		reasoningEffort: string;
 		description: string;
 	}[];
+	provider?: string;
+	providerLabel?: string;
+	providerModel?: string;
+	contextWindow?: number;
+	maxTokens?: number;
 }
 export interface Item {
 	id: string;
@@ -73,7 +78,11 @@ export interface Thread {
 	cwd: string;
 	updatedAt: number;
 	turns: Turn[];
+	provider?: string;
+	providerLabel?: string;
+	model?: string;
 }
+
 export interface Question {
 	id: string;
 	header: string;
@@ -108,6 +117,8 @@ export interface ServerEvent {
 		permissions?: Record<string, unknown>;
 		availableDecisions?: unknown[];
 		networkApprovalContext?: { host: string; protocol: string };
+		provider?: string;
+		connected?: boolean;
 	};
 }
 export interface FileEntry {

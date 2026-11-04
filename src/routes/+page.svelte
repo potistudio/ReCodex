@@ -873,20 +873,44 @@ function shortcuts(event: KeyboardEvent) {
 		/>
 		<div class="settings-row">
 			<span
-				><strong>Account</strong
-				><small>{app.account?.email || app.account?.type || "Not signed in"}</small></span
+				><strong>Codex account</strong
+				><small
+					>{app.account?.email ||
+						app.account?.type ||
+						(app.providers.some((provider) => provider.id === "codex" && provider.available)
+							? "Not signed in"
+							: "Codex unavailable")}</small
+				></span
 			>
-			{#if !app.account}
+			{#if !app.account && app.requiresAuth}
 				<Button disabled={!app.connected || app.remote} onclick={() => app.login()}>Sign in</Button>
-			{:else}
+			{:else if app.account}
 				<span class="account-plan">{app.account.planType || app.account.type}</span>
 			{/if}
 		</div>
+		<div class="settings-row">
+			<span
+				><strong>Model providers</strong
+				><small
+					>{#if app.providers.length}
+						{app.providers
+							.map(
+								(provider) =>
+									`${provider.label}${provider.available ? "" : " (unavailable)"}`,
+							)
+							.join(" · ")}
+					{:else}
+						Checking…
+					{/if}</small
+				></span
+			>
+		</div>
 		{@render rateLimitDetails()}
 		<p class="settings-note">
-			ReCodex uses your installed Codex CLI and its sign-in. If Codex is not found, set
+			ReCodex uses your installed Codex and Pi CLIs. Codex models use Codex sign-in; Pi models use Pi's own
+			configuration and credentials. If a CLI is not found, set
 			<code>RECODEX_CODEX_PATH</code>
-			to the executable path and restart the app.
+			or <code>RECODEX_PI_PATH</code> to its executable path and restart the app.
 		</p>
 		{#if app.logs.length}
 			<details class="diagnostics">

@@ -304,7 +304,13 @@ $effect(() => {
 									void tick().then(() => modelButton?.focus());
 								}}
 							>
-								<span><strong>{option.displayName}</strong><small>{option.description}</small></span>
+								<span
+									><strong>{option.displayName}</strong
+									><small
+										>{option.providerLabel ? `${option.providerLabel} · ` : ""}
+										{option.description}</small
+									></span
+								>
 								{#if option.model === model}
 									<span aria-hidden="true">✓</span>
 								{/if}

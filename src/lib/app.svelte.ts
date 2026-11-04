@@ -118,6 +118,9 @@ export class App {
 		email?: string;
 		planType?: string;
 	} | null>(null);
+	providers = $state<{ id: string; label: string; available: boolean; error?: string | null; modelCount?: number }[]>(
+		[],
+	);
 	requiresAuth = $state(true);
 	rateLimits = $state<RateLimits | null>(null);
 	logs = $state<string[]>([]);
@@ -233,9 +236,17 @@ export class App {
 		const result = await this.rpc<{
 			account: { type: string; email?: string; planType?: string } | null;
 			requiresOpenaiAuth: boolean;
+			providers?: {
+				id: string;
+				label: string;
+				available: boolean;
+				error?: string | null;
+				modelCount?: number;
+			}[];
 		}>("account/read");
 		this.account = result.account;
 		this.requiresAuth = result.requiresOpenaiAuth;
+		this.providers = result.providers ?? [];
 	}
 	async readRateLimits() {
 		this.rateLimits = await this.rpc<RateLimits>("account/rateLimits/read");
@@ -529,6 +540,19 @@ export class App {
 		}
 		if (method === "recodex/log") {
 			this.logs = [...this.logs.slice(-49), params.message ?? ""];
+			return;
+		}
+		if (method === "recodex/providerStatus") {
+			const provider = params.provider ?? "provider";
+			this.providers = this.providers.map((entry) =>
+				entry.id === provider
+					? { ...entry, available: params.connected === true, error: params.message ?? null }
+					: entry,
+			);
+			this.logs = [
+				...this.logs.slice(-49),
+				`${provider}: ${params.message ?? `connected=${params.connected === true}`}`,
+			];
 			return;
 		}
 		if (method === "account/login/completed" || method === "account/updated") {
