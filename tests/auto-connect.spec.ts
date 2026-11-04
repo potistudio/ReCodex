@@ -93,7 +93,9 @@ test("restores trusted hosts, reconnects on discovery without resending turns, a
 						],
 						nextCursor: null,
 					};
-				if (args.method === "provider/list") return [{ id: "recodex", label: "ReCodex", available: true }];
+				if (args.method === "provider/list") return [{ id: "recodex", label: "Command Code", available: true }];
+				if (args.method === "account/read")
+					return { available: true, connection: "Command Code", loginPending: false, signedIn: false };
 				if (args.method === "thread/list") return { data: [thread], nextCursor: null };
 				if (args.method === "thread/resume") return { thread, model: "m", reasoningEffort: "medium" };
 				if (args.method === "host/replay")

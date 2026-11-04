@@ -204,7 +204,9 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 						],
 						nextCursor: null,
 					};
-				if (args.method === "provider/list") return [{ id: "recodex", label: "ReCodex", available: true }];
+				if (args.method === "provider/list") return [{ id: "recodex", label: "Command Code", available: true }];
+				if (args.method === "account/read")
+					return { available: true, connection: "Command Code", loginPending: false, signedIn: false };
 				if (args.method === "thread/list") {
 					host.threadListCwds = [
 						...((host.threadListCwds as string[] | undefined) ?? []),
@@ -533,6 +535,8 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(page.locator(".assistant-message").getByText(/stream average/)).toBeVisible();
 	await page.locator(".account-button").click();
 	await expect(page.getByText("Model providers", { exact: true })).toBeVisible();
+	await expect(page.getByText("Command Code account", { exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
 	await page.getByRole("button", { name: "Close" }).click();
 	await expect(page.locator(".user-message")).toHaveCount(2);
 	expect(

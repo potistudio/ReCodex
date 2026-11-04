@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { updateItems } from "./conversation";
 import {
 	estimateTokens,
@@ -12,6 +13,17 @@ import {
 } from "./generation-speed";
 import { invoke, ipcMode, listen, resolveIpcMode } from "./ipc.svelte";
 import type { Item, Model, Project, ServerEvent, Thread, ThreadTokenUsage, TokenUsageBreakdown, Turn } from "./types";
+
+export interface CommandCodeAccount {
+	available: boolean;
+	connection: string;
+	loginPending: boolean;
+	signedIn: boolean;
+	userName?: string;
+	keyName?: string;
+	source?: string;
+	canSignOut?: boolean;
+}
 
 interface HostEnvelope {
 	hostId?: string;
@@ -102,6 +114,7 @@ export class App {
 	activeTurn = $derived(this.thread ? (this.activeTurnsByThread[this.thread.id] ?? null) : null);
 	approvals = $derived(this.thread ? (this.approvalsByThread[this.thread.id] ?? []) : []);
 	thinkingLabel = $derived(this.thread ? (this.thinkingLabelsByThread[this.thread.id]?.text ?? "") : "");
+	account = $state<CommandCodeAccount | null>(null);
 	providers = $state<{ id: string; label: string; available: boolean; error?: string | null; modelCount?: number }[]>(
 		[],
 	);
@@ -161,22 +174,8 @@ export class App {
 		await this.guard(async () => {
 			await invoke("server_connect", { hostId: this.hostId });
 			this.connected = true;
-			const models: Model[] = [];
-			let cursor: string | null = null;
-			do {
-				const page: { data: Model[]; nextCursor: string | null } = await this.rpc("model/list", { cursor });
-				models.push(...page.data.filter((model) => !model.hidden));
-				cursor = page.nextCursor;
-			} while (cursor);
-			this.models = models;
-			const saved = localStorage.getItem(this.preference("recodex-model"));
-			this.selectModel(
-				models.find((model) => model.model === saved)?.model ??
-					models.find((model) => model.isDefault)?.model ??
-					models[0]?.model ??
-					"",
-			);
-			await this.readProviders();
+			await this.loadModels();
+			await Promise.all([this.readProviders(), this.readAccount()]);
 			this.projects = await invoke<Project[]>("projects_load", { hostId: this.hostId });
 			const selected = this.project?.path ?? localStorage.getItem(this.preference("recodex-project"));
 			this.project = this.projects.find((p) => p.path === selected) ?? this.projects[0] ?? null;
@@ -214,8 +213,58 @@ export class App {
 		for (const envelope of this.queuedEvents) this.hostEvent(envelope);
 		this.queuedEvents = [];
 	}
+	async loadModels() {
+		const models: Model[] = [];
+		let cursor: string | null = null;
+		do {
+			const page: { data: Model[]; nextCursor: string | null } = await this.rpc("model/list", { cursor });
+			models.push(...page.data.filter((model) => !model.hidden));
+			cursor = page.nextCursor;
+		} while (cursor);
+		this.models = models;
+		const saved = localStorage.getItem(this.preference("recodex-model"));
+		this.selectModel(
+			models.find((model) => model.model === saved)?.model ??
+				models.find((model) => model.isDefault)?.model ??
+				models[0]?.model ??
+				"",
+		);
+	}
 	async readProviders() {
 		this.providers = await this.rpc<typeof this.providers>("provider/list");
+	}
+	async readAccount() {
+		this.account = await this.rpc<CommandCodeAccount>("account/read");
+	}
+	/** Sign in to Command Code in the browser. Credentials are stored on this PC only. */
+	async login() {
+		if (!isTauri() || this.remote) {
+			this.error = `Sign in to Command Code on ${this.hostName}.`;
+			return;
+		}
+		await this.guard(async () => {
+			const result = await this.rpc<{ authUrl: string }>("account/login/start");
+			await this.readAccount();
+			await openUrl(result.authUrl);
+		});
+	}
+	async cancelLogin() {
+		await this.guard(async () => {
+			await this.rpc("account/login/cancel");
+			await this.readAccount();
+		});
+	}
+	async logout() {
+		await this.guard(async () => {
+			this.account = await this.rpc<CommandCodeAccount>("account/logout");
+		});
+	}
+	/** Reload everything that depends on the model connection after it changes. */
+	private async accountChanged() {
+		await this.guard(async () => {
+			await Promise.all([this.readAccount(), this.readProviders()]);
+			await this.loadModels();
+		});
 	}
 	selectModel(model: string) {
 		this.model = model;
@@ -505,6 +554,15 @@ export class App {
 				...this.logs.slice(-49),
 				`${provider}: ${params.message ?? `connected=${params.connected === true}`}`,
 			];
+			return;
+		}
+		if (method === "account/updated") {
+			void this.accountChanged();
+			return;
+		}
+		if (method === "account/login/completed") {
+			if (params.success === false) this.error = params.error?.message ?? "Command Code sign-in failed";
+			void this.guard(() => this.readAccount());
 			return;
 		}
 		if (event.id !== undefined) {

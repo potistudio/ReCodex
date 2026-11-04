@@ -737,10 +737,16 @@ function shortcuts(event: KeyboardEvent) {
 							</div>
 						{:else if app.connected && !app.models.length && unavailableProviders.length}
 							<div class="connection-action">
-								<span
-									>{unavailableProviders[0].error ?? "No model provider is available"}
-									on {app.hostName}, then reconnect.</span
-								>
+								{#if app.account?.available && !app.account.signedIn && !app.remote && isTauri()}
+									<Button size="sm" disabled={app.account.loginPending} onclick={() => app.login()}
+										>{app.account.loginPending ? "Waiting for the browser…" : "Sign in to Command Code"}</Button
+									>
+								{:else}
+									<span
+										>{unavailableProviders[0].error ?? "No model provider is available"}
+										on {app.hostName}, then reconnect.</span
+									>
+								{/if}
 							</div>
 						{/if}
 					</div>
@@ -789,6 +795,30 @@ function shortcuts(event: KeyboardEvent) {
 			connections={hosts.filter((host) => host.remote).map((host) => ({id:host.hostId,name:host.hostName,connected:host.connected,connecting:host.connecting,error:host.error}))}
 			onpaired={addHost}
 		/>
+		{#if app.account?.available}
+			<div class="settings-row">
+				<span
+					><strong>Command Code account</strong
+					><small
+						>{#if app.account.signedIn}
+							{app.account.userName || "Signed in"}
+							· {app.account.source}
+						{:else if app.account.loginPending}
+							Waiting for the browser sign-in…
+						{:else}
+							Not signed in
+						{/if}</small
+					></span
+				>
+				{#if app.account.loginPending}
+					<Button variant="outline" onclick={() => app.cancelLogin()}>Cancel</Button>
+				{:else if app.account.signedIn && app.account.canSignOut}
+					<Button variant="outline" disabled={app.remote} onclick={() => app.logout()}>Sign out</Button>
+				{:else if !app.account.signedIn}
+					<Button disabled={!app.connected || app.remote} onclick={() => app.login()}>Sign in</Button>
+				{/if}
+			</div>
+		{/if}
 		<div class="settings-row">
 			<span
 				><strong>Model providers</strong
@@ -807,9 +837,10 @@ function shortcuts(event: KeyboardEvent) {
 			>
 		</div>
 		<p class="settings-note">
-			ReCodex runs its own agent harness against an OpenAI-compatible API. Set
+			ReCodex runs its own agent harness. Sign in to Command Code, or set
 			<code>RECODEX_OPENAI_API_KEY</code>
-			or <code>RECODEX_OPENAI_BASE_URL</code> on the host and restart the app.
+			or <code>RECODEX_OPENAI_BASE_URL</code> on the host and restart the app to use another OpenAI-compatible
+			API.
 		</p>
 		{#if app.logs.length}
 			<details class="diagnostics">

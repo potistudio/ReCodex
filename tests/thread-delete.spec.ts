@@ -48,7 +48,9 @@ test("deletes a chat only after confirmation and preserves it on failure", async
 				if (command !== "server_request") throw new Error(`Unexpected command: ${command}`);
 				const params = args.params as Record<string, unknown>;
 				if (args.method === "model/list") return { data: [], nextCursor: null };
-				if (args.method === "provider/list") return [{ id: "recodex", label: "ReCodex", available: true }];
+				if (args.method === "provider/list") return [{ id: "recodex", label: "Command Code", available: true }];
+				if (args.method === "account/read")
+					return { available: true, connection: "Command Code", loginPending: false, signedIn: false };
 				if (args.method === "thread/list") {
 					if (host.deferThreadList) {
 						const snapshot = [...threads];

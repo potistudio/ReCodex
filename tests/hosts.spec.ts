@@ -107,7 +107,10 @@ test("hosts explicitly selected projects and isolates remote chats, files, and b
 							],
 							nextCursor: null,
 						};
-					if (args.method === "provider/list") return [{ id: "recodex", label: "ReCodex", available: true }];
+					if (args.method === "provider/list")
+						return [{ id: "recodex", label: "Command Code", available: true }];
+					if (args.method === "account/read")
+						return { available: true, connection: "Command Code", loginPending: false, signedIn: false };
 					if (args.method === "thread/list") return { data: [thread(id)], nextCursor: null };
 					if (args.method === "thread/resume")
 						return { thread: thread(id), model: "model", reasoningEffort: "medium" };
