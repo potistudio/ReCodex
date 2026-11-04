@@ -1,9 +1,8 @@
 # ReCodex harness
 
-The ReCodex harness is the third model provider next to the Codex app-server and Pi
-adapters. Unlike those adapters it does not delegate to another agent product: the run loop,
-session history, tool execution, and authorization run inside the Rust host process
-(`src-tauri/src/harness/`). It implements the core of the contracts proposed in
+The ReCodex harness is the app's agent runtime. It does not delegate to another agent
+product: the run loop, session history, tool execution, and authorization run inside the
+Rust host process (`src-tauri/src/harness/`). It implements the core of the contracts proposed in
 [harness-design.md](harness-design.md); branches, compaction, memory, plugins, and multiple
 agents are not implemented.
 
@@ -35,9 +34,9 @@ of the host process and are never written to the ledger.
 | `driver.rs` | Run Driver and crash recovery. |
 | `mod.rs` | Harness Coordinator: session and run lifecycle, approvals, catalog. |
 
-`host.rs` routes `rx-` chats to the harness, merges its models and chats into the existing
-catalogs, and relays approval answers. The UI uses the same Codex-compatible event vocabulary
-as for the other providers.
+`host.rs` exposes the harness to local, LAN, and Web UI clients, orders operations, and relays
+approval answers. Events use the `thread/*`, `turn/*`, and `item/*` vocabulary the UI
+consumes.
 
 ## Ledger and projections
 
