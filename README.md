@@ -6,6 +6,7 @@ A local desktop workspace for Codex, built with Tauri 2, SvelteKit, Svelte 5, an
 
 - Streamed Markdown chat, conversation history, and generation cancellation.
 - Live model catalog and per-model reasoning effort selection.
+- Multiple model providers in one catalog: the Codex app-server adapter and a Pi RPC adapter. Provider-specific models are selected from the same picker.
 - Command and file-change activity, diffs, approval prompts, and structured user questions.
 - Open, rename, switch, and remove local projects. Removing a project only removes its sidebar registration.
 - Browse and edit existing UTF-8 files, save with Ctrl/Cmd+S, and detect changes made on disk before saving.
@@ -30,7 +31,14 @@ $env:RECODEX_CODEX_PATH = 'C:\path\to\codex.exe'
 pnpm tauri dev
 ```
 
-Choose **Open a project**, select its directory, choose a model, and send a message. Open **Files** for direct editing. A new chat uses the selected directory as its working directory with `workspace-write` and `on-request` approval settings.
+Pi models are available when the [Pi CLI](https://pi.dev) is installed and configured with its own sign-in or provider API keys. ReCodex starts `pi --mode rpc` lazily for each Pi chat. Set `RECODEX_PI_PATH` when `pi` is not on `PATH`. Pi credentials and model configuration stay in Pi's own agent directory; ReCodex does not copy them.
+
+```powershell
+$env:RECODEX_PI_PATH = 'C:\path\to\pi.cmd'
+pnpm tauri dev
+```
+
+Choose **Open a project**, select its directory, choose a Codex or Pi model, and send a message. Open **Files** for direct editing. A Codex chat uses `workspace-write` and `on-request` approval settings. Pi runs with its own tools and configuration; ReCodex does not simulate Codex approval prompts for Pi chats. See [Pi provider adapter](docs/pi-provider.md) for the event mapping, persistence, and capability differences.
 
 `pnpm dev` runs a browser-only preview. Desktop IPC and filesystem access are intentionally unavailable in that preview; it does not generate simulated assistant responses.
 
@@ -78,17 +86,18 @@ Biome handles frontend formatting and linting. Use `pnpm format`, `pnpm format:c
 
 ## Architecture and scope
 
-- `src-tauri/src/host.rs` owns the transport-independent workspace, Codex lifecycle, operation ordering, approval state, and bounded event replay.
+- `src-tauri/src/host.rs` owns the transport-independent workspace, provider routing, operation ordering, Pi approval state, and bounded event replay.
+- `src-tauri/src/pi.rs` runs Pi in RPC mode, correlates JSONL commands, persists Pi sessions, and translates Pi events into the Codex-compatible event stream used by the UI.
 - `src-tauri/src/discovery.rs` browses and advertises LAN hosts using mDNS/DNS-SD; `lan_store.rs` persists trust and hosting preferences with atomic file replacement.
 - `src-tauri/src/lan.rs` provides certificate-verified TLS WebSockets, single-use pairing invitations, persistent device credentials, revocation, and remote request correlation.
-- `src-tauri/src/server.rs` owns the child process, initialization, concurrent request correlation, response timeouts, and event forwarding. The child terminates when the app exits.
+- `src-tauri/src/server.rs` owns the Codex child process, initialization, concurrent request correlation, response timeouts, and event forwarding. The child terminates when the app exits.
 - `src-tauri/src/workspace.rs` stores project registrations in the supplied app-data directory and restricts editor paths to registered roots, including resolved symbolic links.
 - `src/lib/app.svelte.ts` coordinates projects, account state, models, conversations, streaming events, and server requests.
 - `src/lib/conversation.ts` reconciles optimistic user messages, incremental output, and completed items.
 - `src/lib/components/ui` contains the generated Rhea components; `components.json` retains the registry configuration.
 
-Conversation history and authentication remain owned by Codex. The project registry is `projects.json` in the platform's application-data directory for `com.poti.recodex`; model and last project preferences use local storage.
+Conversation history and authentication remain owned by each provider. Codex chats and ChatGPT sign-in stay in Codex; Pi chats, model credentials, and provider configuration stay in Pi's agent directory except for ReCodex-owned session files under the app-data directory. The project registry is `projects.json` in the platform's application-data directory for `com.poti.recodex`; model and last project preferences use local storage.
 
-The basic editor handles existing UTF-8 text files up to 2 MB. It omits `.git`, `node_modules`, `target`, and `.svelte-kit` from browsing. Reload an open file to see external changes. Each host view keeps independent conversation state. Switching between hosts keeps their views and running work. Unsupported server-initiated tools return an explicit protocol error. LAN hosts are discovered automatically and require the host desktop app to remain open. Full terminal emulation, attachments, and Git operations are outside this implementation.
+The basic editor handles existing UTF-8 text files up to 2 MB. It omits `.git`, `node_modules`, `target`, and `.svelte-kit` from browsing. Reload an open file to see external changes. Each host view keeps independent conversation state. Switching between hosts keeps their views and running work. Unsupported server-initiated tools return an explicit protocol error. LAN hosts are discovered automatically and require the host desktop app to remain open. Full terminal emulation, attachments, and Git operations are outside this implementation. Pi chats do not expose Codex approvals, sandbox guarantees, or structured user questions; those capabilities are Codex-only. Pi extensions run in the Pi process with the user's privileges, so only use the Pi provider with projects and Pi configurations you trust.
 
-The bridge follows the [official app-server documentation](https://developers.openai.com/codex/app-server/). Rhea is provided through the [shadcn-svelte registry](https://www.shadcn-svelte.com/docs/changelog).
+The bridge follows the [official app-server documentation](https://developers.openai.com/codex/app-server/). Pi integration follows the [Pi RPC protocol](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc.md). Rhea is provided through the [shadcn-svelte registry](https://www.shadcn-svelte.com/docs/changelog).
