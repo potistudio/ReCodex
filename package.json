@@ -1,7 +1,7 @@
 {
   "name": "recodex",
   "version": "0.0.1-alpha",
-  "description": "My own Codex App",
+  "description": "A local desktop workspace for an agent harness",
   "author": "potistudio <potistudio@proton.me>",
   "license": "MIT",
   "private": true,
@@ -13,13 +13,12 @@
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && biome check .",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "tauri": "node scripts/with-codex.mjs tauri",
-    "test": "vitest run src/lib/conversation.test.ts src/lib/working.test.ts src/lib/usage.test.ts src/lib/providers.test.ts",
+    "tauri": "tauri",
+    "test": "vitest run src/lib/conversation.test.ts src/lib/working.test.ts src/lib/usage.test.ts",
     "test:e2e": "playwright test",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
-    "test:server": "node scripts/with-codex.mjs cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored",
     "pull:refs": "node scripts/pull-refs.mjs"
   },
   "dependencies": {
@@ -42,7 +41,6 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.7",
     "@internationalized/date": "^3.12.4",
-    "@openai/codex": "0.153.4",
     "@playwright/test": "^1.63.0",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.65.1",
