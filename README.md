@@ -6,7 +6,7 @@ A local desktop workspace for Codex, built with Tauri 2, SvelteKit, Svelte 5, an
 
 - Streamed Markdown chat, conversation history, and generation cancellation.
 - Live model catalog and per-model reasoning effort selection.
-- Multiple model providers in one catalog: the Codex app-server adapter and a Pi RPC adapter. Provider-specific models are selected from the same picker.
+- Multiple model providers in one catalog: the Codex app-server adapter, a Pi RPC adapter, and ReCodex's own harness for OpenAI-compatible APIs. Provider-specific models are selected from the same picker.
 - Command and file-change activity, diffs, approval prompts, and structured user questions.
 - Open, rename, switch, and remove local projects. Removing a project only removes its sidebar registration.
 - Browse and edit existing UTF-8 files, save with Ctrl/Cmd+S, and detect changes made on disk before saving.
@@ -32,6 +32,12 @@ pnpm tauri dev
 ```
 
 Pi models are available when the [Pi CLI](https://pi.dev) is installed and configured with its own sign-in or provider API keys. ReCodex starts `pi --mode rpc` lazily for each Pi chat. Set `RECODEX_PI_PATH` when `pi` is not on `PATH`. Pi credentials and model configuration stay in Pi's own agent directory; ReCodex does not copy them.
+
+ReCodex harness models are available when `RECODEX_OPENAI_API_KEY` (or `OPENAI_API_KEY`) is set, or when `RECODEX_OPENAI_BASE_URL` points at a local OpenAI-compatible server. The harness runs the agent loop, tools, and approvals in the host and stores its chats in an SQLite ledger under the app-data directory. Its commands run without a sandbox after you approve them. See [ReCodex harness](docs/recodex-harness.md).
+
+```sh
+RECODEX_OPENAI_BASE_URL=http://localhost:11434/v1 pnpm tauri dev
+```
 
 ```powershell
 $env:RECODEX_PI_PATH = 'C:\path\to\pi.cmd'
@@ -87,6 +93,7 @@ Biome handles frontend formatting and linting. Use `pnpm format`, `pnpm format:c
 ## Architecture and scope
 
 - `src-tauri/src/host.rs` owns the transport-independent workspace, provider routing, operation ordering, Pi approval state, and bounded event replay.
+- `src-tauri/src/harness/` is ReCodex's own agent harness: the SQLite session ledger, run driver, OpenAI-compatible model gateway, tool scheduler, and approval policy.
 - `src-tauri/src/pi.rs` runs Pi in RPC mode, correlates JSONL commands, persists Pi sessions, and translates Pi events into the Codex-compatible event stream used by the UI.
 - `src-tauri/src/discovery.rs` browses and advertises LAN hosts using mDNS/DNS-SD; `lan_store.rs` persists trust and hosting preferences with atomic file replacement.
 - `src-tauri/src/lan.rs` provides certificate-verified TLS WebSockets, single-use pairing invitations, persistent device credentials, revocation, and remote request correlation.
@@ -96,7 +103,7 @@ Biome handles frontend formatting and linting. Use `pnpm format`, `pnpm format:c
 - `src/lib/conversation.ts` reconciles optimistic user messages, incremental output, and completed items.
 - `src/lib/components/ui` contains the generated Rhea components; `components.json` retains the registry configuration.
 
-Conversation history and authentication remain owned by each provider. Codex chats and ChatGPT sign-in stay in Codex; Pi chats, model credentials, and provider configuration stay in Pi's agent directory except for ReCodex-owned session files under the app-data directory. The project registry is `projects.json` in the platform's application-data directory for `com.poti.recodex`; model and last project preferences use local storage.
+Conversation history and authentication remain owned by each provider. Codex chats and ChatGPT sign-in stay in Codex; Pi chats, model credentials, and provider configuration stay in Pi's agent directory except for ReCodex-owned session files under the app-data directory. ReCodex harness chats are owned by ReCodex in `harness.sqlite3` under the app-data directory. The project registry is `projects.json` in the platform's application-data directory for `com.poti.recodex`; model and last project preferences use local storage.
 
 The basic editor handles existing UTF-8 text files up to 2 MB. It omits `.git`, `node_modules`, `target`, and `.svelte-kit` from browsing. Reload an open file to see external changes. Each host view keeps independent conversation state. Switching between hosts keeps their views and running work. Unsupported server-initiated tools return an explicit protocol error. LAN hosts are discovered automatically and require the host desktop app to remain open. Full terminal emulation, attachments, and Git operations are outside this implementation. Pi chats do not expose Codex approvals, sandbox guarantees, or structured user questions; those capabilities are Codex-only. Pi extensions run in the Pi process with the user's privileges, so only use the Pi provider with projects and Pi configurations you trust.
 
