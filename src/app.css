@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "@fontsource-variable/inter";
 @import "./lib/motion.css";
+
 /* Generated component dark variants stay inert; the app uses a fixed light palette. */
 @custom-variant dark (&:is(.dark *));
 
@@ -13,9 +14,9 @@
 	font-synthesis: none;
 	text-rendering: optimizeLegibility;
 	-webkit-font-smoothing: antialiased;
-	--background: #fcfcfa;
+	--background: #fcfcfd;
 	--foreground: #282927;
-	--card: #ffffff;
+	--card: #f8f8f9;
 	--card-foreground: var(--foreground);
 	--popover: #ffffff;
 	--popover-foreground: var(--foreground);
@@ -992,14 +993,17 @@ textarea,
 	background: var(--border);
 	margin: 0 3px;
 }
+
 .send-button {
 	border-radius: 100%;
 }
+
 .send-button:disabled {
 	opacity: 1;
 	background: var(--muted);
 	color: var(--muted-foreground);
 }
+
 .connection-action {
 	padding-top: 10px;
 	text-align: center;
