@@ -1,16 +1,13 @@
 //! End-to-end harness tests through `Host`, with a scripted model and a mock HTTP endpoint.
 use super::{
     ledger::{kind, Ledger},
-    model::{
-        BoxFuture, Delta, ModelClient, ModelError, ModelInfo, ModelRequest, ModelResponse, OnDelta,
-        OpenAiCompatible, ToolCallRequest, Usage,
-    },
+    model::{Delta, ModelClient, ModelRequest, OpenAiCompatible},
+    testing::{reply, tool_call, Scripted, Step},
     Harness,
 };
 use crate::{host::Host, workspace};
 use serde_json::{json, Value};
 use std::{
-    collections::VecDeque,
     path::Path,
     sync::{Arc, Mutex},
     time::Duration,
@@ -19,84 +16,6 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::broadcast,
 };
-
-enum Step {
-    Reply(ModelResponse),
-    /// Never answers; used to exercise cancellation while a request is in flight.
-    Hang,
-}
-
-#[derive(Default)]
-struct Scripted {
-    steps: Mutex<VecDeque<Step>>,
-    requests: Mutex<Vec<Vec<Value>>>,
-}
-
-impl Scripted {
-    fn new(steps: Vec<Step>) -> Arc<Self> {
-        Arc::new(Self {
-            steps: Mutex::new(steps.into()),
-            requests: Mutex::default(),
-        })
-    }
-}
-
-impl ModelClient for Scripted {
-    fn models(&self) -> BoxFuture<'_, Result<Vec<ModelInfo>, String>> {
-        Box::pin(async {
-            Ok(vec![ModelInfo {
-                id: "test-model".into(),
-                context_window: Some(1000),
-            }])
-        })
-    }
-
-    fn stream<'a>(
-        &'a self,
-        request: &'a ModelRequest,
-        on_delta: OnDelta<'a>,
-    ) -> BoxFuture<'a, Result<ModelResponse, ModelError>> {
-        Box::pin(async move {
-            self.requests.lock().unwrap().push(request.messages.clone());
-            let step = self.steps.lock().unwrap().pop_front();
-            match step {
-                Some(Step::Reply(response)) => {
-                    if !response.text.is_empty() {
-                        on_delta(Delta::Text(response.text.clone()));
-                    }
-                    Ok(response)
-                }
-                Some(Step::Hang) => std::future::pending().await,
-                None => Err(ModelError {
-                    message: "script exhausted".into(),
-                    retryable: false,
-                }),
-            }
-        })
-    }
-}
-
-fn tool_call(id: &str, name: &str, arguments: Value) -> ToolCallRequest {
-    ToolCallRequest {
-        id: id.into(),
-        name: name.into(),
-        arguments: arguments.to_string(),
-    }
-}
-
-fn reply(text: &str, tool_calls: Vec<ToolCallRequest>) -> Step {
-    Step::Reply(ModelResponse {
-        text: text.into(),
-        tool_calls,
-        usage: Some(Usage {
-            input: 10,
-            output: 5,
-            total: 15,
-            ..Usage::default()
-        }),
-        ..ModelResponse::default()
-    })
-}
 
 struct Setup {
     host: Arc<Host>,

@@ -63,7 +63,7 @@ let retryDelay = 1000;
 let nextId = 1;
 
 function deliver(payload: unknown) {
-	for (const handler of listeners.get("codex-event") ?? []) handler(payload);
+	for (const handler of listeners.get("host-event") ?? []) handler(payload);
 }
 
 function rejectPending(error: string) {
@@ -113,7 +113,7 @@ function openSocket(): Promise<WebSocket> {
 					}
 					return;
 				}
-				if (message?.method === "codex-event") deliver(message.params);
+				if (message?.method === "host-event") deliver(message.params);
 			} catch {
 				// Ignore malformed frames; the host controls this endpoint.
 			}

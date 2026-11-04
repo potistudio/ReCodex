@@ -29,7 +29,7 @@ test("hosts explicitly selected projects and isolates remote chats, files, and b
 		});
 		const emit = (id: string, event: unknown) => {
 			for (const listener of listeners)
-				callbacks.get(listener)?.({ event: "codex-event", payload: { hostId: id, event } });
+				callbacks.get(listener)?.({ event: "host-event", payload: { hostId: id, event } });
 		};
 		native.emitHostEvent = emit;
 		native.__TAURI_INTERNALS__ = {
@@ -40,7 +40,7 @@ test("hosts explicitly selected projects and isolates remote chats, files, and b
 			async invoke(command: string, args: Args = {}) {
 				const id = (args.hostId as string) ?? "local";
 				if (command === "plugin:event|listen") {
-					if (args.event === "codex-event") listeners.add(args.handler as number);
+					if (args.event === "host-event") listeners.add(args.handler as number);
 					return args.handler;
 				}
 				if (command === "plugin:event|unlisten") {
@@ -107,8 +107,7 @@ test("hosts explicitly selected projects and isolates remote chats, files, and b
 							],
 							nextCursor: null,
 						};
-					if (args.method === "account/read") return { account: null, requiresOpenaiAuth: false };
-					if (args.method === "account/rateLimits/read") return null;
+					if (args.method === "provider/list") return [{ id: "recodex", label: "ReCodex", available: true }];
 					if (args.method === "thread/list") return { data: [thread(id)], nextCursor: null };
 					if (args.method === "thread/resume")
 						return { thread: thread(id), model: "model", reasoningEffort: "medium" };
@@ -125,7 +124,7 @@ test("hosts explicitly selected projects and isolates remote chats, files, and b
 	});
 	await page.goto("/");
 	await page.getByRole("button", { name: "Local chat", exact: true }).click();
-	await page.getByRole("textbox", { name: "Message Codex" }).fill("Run locally");
+	await page.getByRole("textbox", { name: "Message ReCodex" }).fill("Run locally");
 	await page.getByRole("button", { name: "Send message", exact: true }).click();
 	await expect(page.getByRole("button", { name: "Stop generation" })).toBeVisible();
 	await page.getByRole("button", { name: "Connections", exact: true }).click();
@@ -149,7 +148,7 @@ test("hosts explicitly selected projects and isolates remote chats, files, and b
 	await page.keyboard.press("Escape");
 	await page.getByRole("button", { name: "Remote chat", exact: true }).click();
 	await expect(page.getByRole("button", { name: "Stop generation" })).toHaveCount(0);
-	await page.getByRole("textbox", { name: "Message Codex" }).fill("Run remotely");
+	await page.getByRole("textbox", { name: "Message ReCodex" }).fill("Run remotely");
 	await page.getByRole("button", { name: "Send message", exact: true }).click();
 	await page.evaluate(() => {
 		const emit = (window as unknown as { emitHostEvent: (id: string, event: unknown) => void }).emitHostEvent;

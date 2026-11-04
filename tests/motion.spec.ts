@@ -67,8 +67,7 @@ test.beforeEach(async ({ page }) => {
 						],
 						nextCursor: null,
 					};
-				if (args.method === "account/read") return { account: null, requiresOpenaiAuth: false };
-				if (args.method === "account/rateLimits/read") return null;
+				if (args.method === "provider/list") return [{ id: "recodex", label: "ReCodex", available: true }];
 				if (args.method === "thread/list") return { data: [], nextCursor: null };
 				throw new Error(`Unexpected method: ${args.method}`);
 			},

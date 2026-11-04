@@ -1,7 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { updateItems } from "./conversation";
 import {
 	estimateTokens,
@@ -12,17 +11,7 @@ import {
 	recordUsage,
 } from "./generation-speed";
 import { invoke, ipcMode, listen, resolveIpcMode } from "./ipc.svelte";
-import type {
-	Item,
-	Model,
-	Project,
-	RateLimits,
-	ServerEvent,
-	Thread,
-	ThreadTokenUsage,
-	TokenUsageBreakdown,
-	Turn,
-} from "./types";
+import type { Item, Model, Project, ServerEvent, Thread, ThreadTokenUsage, TokenUsageBreakdown, Turn } from "./types";
 
 interface HostEnvelope {
 	hostId?: string;
@@ -75,7 +64,7 @@ export class App {
 			if (this.epoch === envelope.epoch && envelope.sequence <= this.sequence) return;
 			if (this.epoch && envelope.epoch !== this.epoch) {
 				this.connected = false;
-				this.error = "The host's Codex process restarted. Reconnect to reload its state.";
+				this.error = "The host restarted. Reconnect to reload its state.";
 				return;
 			}
 			this.epoch = envelope.epoch;
@@ -113,16 +102,9 @@ export class App {
 	activeTurn = $derived(this.thread ? (this.activeTurnsByThread[this.thread.id] ?? null) : null);
 	approvals = $derived(this.thread ? (this.approvalsByThread[this.thread.id] ?? []) : []);
 	thinkingLabel = $derived(this.thread ? (this.thinkingLabelsByThread[this.thread.id]?.text ?? "") : "");
-	account = $state<{
-		type: string;
-		email?: string;
-		planType?: string;
-	} | null>(null);
 	providers = $state<{ id: string; label: string; available: boolean; error?: string | null; modelCount?: number }[]>(
 		[],
 	);
-	requiresAuth = $state(true);
-	rateLimits = $state<RateLimits | null>(null);
 	logs = $state<string[]>([]);
 	fileRevision = $state(0);
 	busy = $derived(this.sending || this.activeTurn !== null || this.loading);
@@ -144,7 +126,7 @@ export class App {
 		const mode = await resolveIpcMode();
 		if (mode === "preview") return;
 		await this.guard(async () => {
-			const unlisten = await listen<ServerEvent | HostEnvelope>("codex-event", ({ payload }) => {
+			const unlisten = await listen<ServerEvent | HostEnvelope>("host-event", ({ payload }) => {
 				if ("event" in payload) {
 					if (payload.hostId === this.hostId) this.hostEvent(payload);
 				} else if (!this.remote) this.onEvent(payload);
@@ -194,7 +176,7 @@ export class App {
 					models[0]?.model ??
 					"",
 			);
-			await Promise.all([this.readAccount(), this.readRateLimits()]);
+			await this.readProviders();
 			this.projects = await invoke<Project[]>("projects_load", { hostId: this.hostId });
 			const selected = this.project?.path ?? localStorage.getItem(this.preference("recodex-project"));
 			this.project = this.projects.find((p) => p.path === selected) ?? this.projects[0] ?? null;
@@ -232,38 +214,8 @@ export class App {
 		for (const envelope of this.queuedEvents) this.hostEvent(envelope);
 		this.queuedEvents = [];
 	}
-	async readAccount() {
-		const result = await this.rpc<{
-			account: { type: string; email?: string; planType?: string } | null;
-			requiresOpenaiAuth: boolean;
-			providers?: {
-				id: string;
-				label: string;
-				available: boolean;
-				error?: string | null;
-				modelCount?: number;
-			}[];
-		}>("account/read");
-		this.account = result.account;
-		this.requiresAuth = result.requiresOpenaiAuth;
-		this.providers = result.providers ?? [];
-	}
-	async readRateLimits() {
-		this.rateLimits = await this.rpc<RateLimits>("account/rateLimits/read");
-	}
-	async login() {
-		if (!isTauri()) {
-			this.error = "Sign in to Codex on the host PC, then reopen the Web UI.";
-			return;
-		}
-		if (this.remote) {
-			this.error = `Sign in to Codex on ${this.hostName}, then reconnect here.`;
-			return;
-		}
-		await this.guard(async () => {
-			const result = await this.rpc<{ authUrl: string }>("account/login/start", { type: "chatgpt" });
-			await openUrl(result.authUrl);
-		});
+	async readProviders() {
+		this.providers = await this.rpc<typeof this.providers>("provider/list");
 	}
 	selectModel(model: string) {
 		this.model = model;
@@ -531,7 +483,7 @@ export class App {
 		if (method === "recodex/disconnected") {
 			this.connected = false;
 			for (const turnId of Object.values(this.activeTurnsByThread)) delete this.generationByTurn[turnId];
-			this.error = "Codex disconnected. Reconnect to continue. Check the chat before retrying a change.";
+			this.error = "The host disconnected. Reconnect to continue. Check the chat before retrying a change.";
 			return;
 		}
 		if (method === "recodex/fileChanged") {
@@ -553,15 +505,6 @@ export class App {
 				...this.logs.slice(-49),
 				`${provider}: ${params.message ?? `connected=${params.connected === true}`}`,
 			];
-			return;
-		}
-		if (method === "account/login/completed" || method === "account/updated") {
-			if (params.success === false) this.error = params.error?.message ?? "Sign in failed";
-			else void this.guard(() => this.readAccount());
-			return;
-		}
-		if (method === "account/rateLimits/updated") {
-			void this.readRateLimits().catch(() => {});
 			return;
 		}
 		if (event.id !== undefined) {

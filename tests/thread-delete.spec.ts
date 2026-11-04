@@ -15,7 +15,7 @@ test("deletes a chat only after confirmation and preserves it on failure", async
 			{ id: "one", name: "First chat", preview: "First chat", cwd: "/project", updatedAt: 2, turns: [] },
 			{ id: "two", name: "Second chat", preview: "Second chat", cwd: "/project", updatedAt: 1, turns: [] },
 		];
-		const emit = (payload: unknown) => callbacks.get(listener)?.({ event: "codex-event", payload });
+		const emit = (payload: unknown) => callbacks.get(listener)?.({ event: "host-event", payload });
 		host.emitTestEvent = emit;
 		host.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
 		host.__TAURI_INTERNALS__ = {
@@ -36,7 +36,7 @@ test("deletes a chat only after confirmation and preserves it on failure", async
 						snapshot: { activeTurns: {}, approvals: [] },
 					};
 				if (command === "plugin:event|listen") {
-					if (args.event === "codex-event") listener = args.handler as number;
+					if (args.event === "host-event") listener = args.handler as number;
 					return 1;
 				}
 				if (command === "plugin:event|unlisten" || command === "server_connect") return;
@@ -48,8 +48,7 @@ test("deletes a chat only after confirmation and preserves it on failure", async
 				if (command !== "server_request") throw new Error(`Unexpected command: ${command}`);
 				const params = args.params as Record<string, unknown>;
 				if (args.method === "model/list") return { data: [], nextCursor: null };
-				if (args.method === "account/read") return { account: null, requiresOpenaiAuth: false };
-				if (args.method === "account/rateLimits/read") return null;
+				if (args.method === "provider/list") return [{ id: "recodex", label: "ReCodex", available: true }];
 				if (args.method === "thread/list") {
 					if (host.deferThreadList) {
 						const snapshot = [...threads];

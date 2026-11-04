@@ -1,7 +1,7 @@
 //! Web UI hosting. Serves the desktop UI build over HTTPS with the shared LAN identity and
 //! bridges a browser session onto `Host` through the same shared-project boundary that LAN
 //! peers use (`Host::request(true, …)`). There is no application authentication: anyone who
-//! can reach the listener may drive the host's Codex account for shared projects, so enable
+//! can reach the listener may drive the host's model provider for shared projects, so enable
 //! it only on trusted networks.
 use crate::{host::Host, lan};
 use futures_util::{SinkExt, StreamExt};
@@ -515,13 +515,13 @@ where
                 match event {
                     Ok(envelope) => host.remote_event(&envelope).map(|event| {
                         Message::Text(
-                            json!({"method":"codex-event","params":{"hostId":"local","event":event["event"],"epoch":event["epoch"],"sequence":event["sequence"]}})
+                            json!({"method":"host-event","params":{"hostId":"local","event":event["event"],"epoch":event["epoch"],"sequence":event["sequence"]}})
                                 .to_string()
                                 .into(),
                         )
                     }),
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => Some(Message::Text(
-                        json!({"method":"codex-event","params":{"hostId":"local","event":{"method":"recodex/disconnected","params":{}}}})
+                        json!({"method":"host-event","params":{"hostId":"local","event":{"method":"recodex/disconnected","params":{}}}})
                             .to_string()
                             .into(),
                     )),

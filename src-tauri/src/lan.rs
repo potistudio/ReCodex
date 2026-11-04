@@ -742,14 +742,18 @@ mod tests {
         );
         remote.request("files/save",json!({"root":project_id(&fixture.root),"path":"main.txt","content":"remote","expected":"original"})).await.unwrap();
         fixture.host.request(false,"files/save",json!({"root":fixture.root,"path":"main.txt","content":"local","expected":"remote"})).await.unwrap();
-        remote
-            .request("thread/start", json!({"cwd":project_id(&fixture.root)}))
+        let thread = remote
+            .request(
+                "thread/start",
+                json!({"cwd":project_id(&fixture.root),"model":"recodex/test-model"}),
+            )
             .await
-            .unwrap();
+            .unwrap()["thread"]["id"]
+            .clone();
         remote
             .request(
                 "turn/start",
-                json!({"threadId":"shared-thread","input":[{"type":"text","text":"test"}]}),
+                json!({"threadId":thread,"input":[{"type":"text","text":"test"}]}),
             )
             .await
             .unwrap();

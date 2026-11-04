@@ -47,7 +47,7 @@ const modelIndex = $derived(
 const efforts = $derived(selectedModel?.supportedReasoningEfforts ?? []);
 const selectedEffort = $derived(effort || selectedModel?.defaultReasoningEffort || "");
 const triggerLabel = $derived(
-	open ? "Selecting model..." : `${selectedModel?.displayName || "Codex"} · ${effortLabel(selectedEffort)}`,
+	open ? "Selecting model..." : `${selectedModel?.displayName || "Model"} · ${effortLabel(selectedEffort)}`,
 );
 const effortLabels = $derived([
 	...new Set([...efforts.map((option) => effortLabel(option.reasoningEffort)), effortLabel(selectedEffort)]),
@@ -219,7 +219,7 @@ $effect(() => {
 									in:rollIn={{ y: 8 * modelRollDirection }}
 									out:rollOut={{ y: -8 * modelRollDirection }}
 								>
-									{selectedModel?.displayName || "Codex"}
+									{selectedModel?.displayName || "Model"}
 								</span>
 							{/key}
 						</span>

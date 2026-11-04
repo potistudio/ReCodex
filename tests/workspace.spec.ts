@@ -5,10 +5,10 @@ const hideCssStudio = "css-studio-panel { display: none !important; }";
 test("browser preview and connection controls", async ({ page }) => {
 	await page.goto("/");
 	await page.addStyleTag({ content: hideCssStudio });
-	await expect(page.getByRole("textbox", { name: "Message Codex" })).toBeVisible();
+	await expect(page.getByRole("textbox", { name: "Message ReCodex" })).toBeVisible();
 	await expect(page.getByRole("combobox", { name: "Active host" })).toHaveValue("local");
 	await expect(page.getByText("Browser preview ·", { exact: false })).toBeVisible();
-	await page.getByRole("textbox", { name: "Message Codex" }).fill("Give me a concise overview");
+	await page.getByRole("textbox", { name: "Message ReCodex" }).fill("Give me a concise overview");
 	await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
 	await page.getByRole("button", { name: /Your workspace/ }).click();
 	await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
@@ -44,7 +44,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 			updatedAt: 0,
 			turns: [],
 		};
-		const emit = (payload: unknown) => callbacks.get(listener)?.({ event: "codex-event", payload });
+		const emit = (payload: unknown) => callbacks.get(listener)?.({ event: "host-event", payload });
 		host.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
 		host.__TAURI_INTERNALS__ = {
 			transformCallback(callback: (event: unknown) => void) {
@@ -64,7 +64,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 						snapshot: { activeTurns: {}, approvals: [] },
 					};
 				if (command === "plugin:event|listen") {
-					if (args.event === "codex-event") listener = args.handler as number;
+					if (args.event === "host-event") listener = args.handler as number;
 					return 1;
 				}
 				if (command === "plugin:event|unlisten") return;
@@ -204,25 +204,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 						],
 						nextCursor: null,
 					};
-				if (args.method === "account/read")
-					return {
-						account: {
-							type: "chatgpt",
-							email: "test@example.com",
-							planType: "plus",
-						},
-						requiresOpenaiAuth: true,
-					};
-				if (args.method === "account/rateLimits/read")
-					return {
-						rateLimits: {
-							limitId: "codex",
-							limitName: "Codex",
-							primary: { usedPercent: 61, windowDurationMins: 10080, resetsAt: 1789355330 },
-							secondary: null,
-						},
-						rateLimitsByLimitId: null,
-					};
+				if (args.method === "provider/list") return [{ id: "recodex", label: "ReCodex", available: true }];
 				if (args.method === "thread/list") {
 					host.threadListCwds = [
 						...((host.threadListCwds as string[] | undefined) ?? []),
@@ -401,15 +383,8 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	});
 	await page.goto("/");
 	await page.addStyleTag({ content: `${hideCssStudio} .messages { padding-top: 1200px !important; }` });
-	await expect(page.getByText("Codex connected", { exact: true })).toBeVisible();
-	await expect(page.getByLabel("Codex rate-limit allowance")).toContainText("39% left");
-	await expect(page.locator(".rate-limit-track > span")).toHaveCSS("width", /.+px/);
+	await expect(page.getByText("Connected to This PC", { exact: true })).toBeVisible();
 	await page.getByRole("button", { name: "Hide sidebar" }).click();
-	await expect(page.getByRole("button", { name: "Codex rate-limit allowance" })).toBeVisible();
-	await page.getByRole("button", { name: "Codex rate-limit allowance" }).click();
-	await expect(page.locator(".rate-limit-popover").getByText("39% remaining")).toBeVisible();
-	await page.keyboard.press("Escape");
-	await expect(page.locator(".rate-limit-popover")).toBeHidden();
 	await page.getByRole("button", { name: "Show sidebar" }).click();
 	const modelEffortTrigger = page.locator(".composer .model-effort-trigger");
 	await expect(modelEffortTrigger).toHaveAccessibleName("Model A · Medium");
@@ -437,7 +412,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(modelEffortTrigger).toHaveAccessibleName("Model B · Medium");
 	await expect(modelEffortTrigger.locator(".model-effort-selecting")).toBeHidden();
 	await expect(modelEffortTrigger).toBeFocused();
-	const composer = page.getByRole("textbox", { name: "Message Codex" });
+	const composer = page.getByRole("textbox", { name: "Message ReCodex" });
 	await composer.fill("日本語の確定");
 	await composer.dispatchEvent("compositionstart");
 	// Some engines do not expose isComposing on the confirmation key.
@@ -557,9 +532,7 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 	await expect(page.locator(".assistant-message").getByText(/1,000 tokens/)).toBeVisible();
 	await expect(page.locator(".assistant-message").getByText(/stream average/)).toBeVisible();
 	await page.locator(".account-button").click();
-	await expect(
-		page.getByRole("region", { name: "Rate limits" }).getByText("39% remaining", { exact: true }),
-	).toBeVisible();
+	await expect(page.getByText("Model providers", { exact: true })).toBeVisible();
 	await page.getByRole("button", { name: "Close" }).click();
 	await expect(page.locator(".user-message")).toHaveCount(2);
 	expect(

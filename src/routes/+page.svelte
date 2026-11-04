@@ -13,7 +13,6 @@ import XIconData from "@iconify-icons/fluent/dismiss-24-regular";
 import PencilIconData from "@iconify-icons/fluent/edit-24-regular";
 import FolderIconData from "@iconify-icons/fluent/folder-24-regular";
 import FolderPlusIconData from "@iconify-icons/fluent/folder-add-24-regular";
-import GaugeIconData from "@iconify-icons/fluent/gauge-24-regular";
 import MoreHorizontalIconData from "@iconify-icons/fluent/more-horizontal-24-regular";
 import PanelLeftCloseIconData from "@iconify-icons/fluent/panel-left-contract-24-regular";
 import PanelLeftOpenIconData from "@iconify-icons/fluent/panel-left-expand-24-regular";
@@ -23,7 +22,6 @@ import SquareIconData from "@iconify-icons/fluent/square-24-filled";
 import { isTauri } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
-import { Popover } from "bits-ui";
 import { onMount, tick } from "svelte";
 import { App } from "$lib/app.svelte";
 import Approval from "$lib/components/Approval.svelte";
@@ -38,9 +36,8 @@ import { Input } from "$lib/components/ui/input";
 import type { HostCatalog, HostSummary } from "$lib/hosts";
 import { confirm, invoke, listen } from "$lib/ipc.svelte";
 import { appear, reveal } from "$lib/motion";
-import { isCodexProvider, requiresCodexAuth } from "$lib/providers";
-import type { Project, RateLimitSnapshot, RateLimitWindow, Thread } from "$lib/types";
-import { formatResetTime, formatTokenCount, formatUsageWindow, remainingPercent } from "$lib/usage";
+import type { Project, Thread } from "$lib/types";
+import { formatTokenCount } from "$lib/usage";
 import { workingState } from "$lib/working";
 
 const localApp = new App();
@@ -141,28 +138,8 @@ const workTokenCount = $derived(Math.max(displayedWorkTokens.length, outgoingWor
 const filteredThreads = $derived(
 	app.threads.filter((thread) => (thread.name || thread.preview).toLowerCase().includes(search.toLowerCase())),
 );
-const activeModel = $derived(app.models.find((model) => model.model === app.model));
-const needsCodexAuth = $derived(
-	isCodexProvider(app.thread?.provider) && requiresCodexAuth(activeModel, app.requiresAuth),
-);
-const ready = $derived(app.connected && !!app.project && (!needsCodexAuth || !!app.account));
-const primaryRemaining = $derived(
-	app.rateLimits?.rateLimits.primary ? remainingPercent(app.rateLimits.rateLimits.primary.usedPercent) : null,
-);
-const rateLimitSnapshots = $derived.by(() => {
-	const rateLimits = app.rateLimits;
-	if (!rateLimits) return [];
-	const snapshots = [rateLimits.rateLimits, ...Object.values(rateLimits.rateLimitsByLimitId ?? {})].filter(
-		(snapshot): snapshot is RateLimitSnapshot => Boolean(snapshot),
-	);
-	return [...new Map(snapshots.map((snapshot) => [snapshot.limitId ?? "default", snapshot])).values()];
-});
-function rateLimitName(snapshot: RateLimitSnapshot) {
-	return snapshot.limitName ?? snapshot.limitId ?? "Codex";
-}
-function rateLimitWindows(snapshot: RateLimitSnapshot): RateLimitWindow[] {
-	return [snapshot.primary, snapshot.secondary].filter((window): window is RateLimitWindow => window !== null);
-}
+const ready = $derived(app.connected && !!app.project && !!app.model);
+const unavailableProviders = $derived(app.providers.filter((provider) => !provider.available));
 function labelTokens(label: string) {
 	return label.match(/\S+\s*/g) ?? [];
 }
@@ -344,7 +321,7 @@ async function relocateProject() {
 async function removeProject() {
 	if (!(await canLeaveFiles())) return;
 	if (
-		await confirm("Remove this project from ReCodex? Files and Codex conversations will stay on disk.", {
+		await confirm("Remove this project from ReCodex? Files and chats will stay on disk.", {
 			title: "Remove project",
 		})
 	) {
@@ -379,7 +356,7 @@ function shortcuts(event: KeyboardEvent) {
 
 <svelte:head>
 	<title>ReCodex</title>
-	<meta name="description" content="A quiet workspace for your next idea. Chat, code, and create with Codex.">
+	<meta name="description" content="A quiet workspace for your next idea. Chat, code, and create with ReCodex.">
 </svelte:head>
 
 <svelte:window
@@ -391,41 +368,6 @@ function shortcuts(event: KeyboardEvent) {
 		}
 	}}
 />
-
-{#snippet rateLimitDetails()}
-	<section class="rate-limit-panel" aria-label="Rate limits">
-		<div>
-			<strong>Rate limits</strong>
-			<small>Remaining allowance from your signed-in Codex account.</small>
-		</div>
-		{#if rateLimitSnapshots.length}
-			<div class="rate-limit-list">
-				{#each rateLimitSnapshots as snapshot (snapshot.limitId ?? "default")}
-					{#each rateLimitWindows(
-							snapshot,
-						) as window, index (`${snapshot.limitId ?? "default"}-${index}`)}
-						<div class="rate-limit-row">
-							<span
-								><strong>{rateLimitName(snapshot)}</strong
-								><small>{formatUsageWindow(window)}</small></span
-							>
-							<span class="rate-limit-value"
-								><strong>{remainingPercent(window.usedPercent)}% remaining</strong>
-								<small
-									>{formatResetTime(window.resetsAt)
-											? `Resets ${formatResetTime(window.resetsAt)}`
-											: "Reset unavailable"}</small
-								></span
-							>
-						</div>
-					{/each}
-				{/each}
-			</div>
-		{:else}
-			<p>Rate-limit details are unavailable for this account.</p>
-		{/if}
-	</section>
-{/snippet}
 
 <header class="topbar" class:mac-window={isMacClient}>
 	<div class="topbar-left">
@@ -462,27 +404,6 @@ function shortcuts(event: KeyboardEvent) {
 	</div>
 
 	<div class="topbar-right">
-		<Popover.Root>
-			<Popover.Trigger class="rate-limit-indicator" aria-label="Codex rate-limit allowance">
-				<Icon icon={GaugeIconData} width={14} aria-hidden="true" />
-				<span
-					class="rate-limit-track"
-					class:low={primaryRemaining !== null && primaryRemaining <= 20}
-					aria-hidden="true"
-				>
-					{#if primaryRemaining !== null}
-						<span style:width={`${primaryRemaining}%`}></span>
-					{/if}
-				</span>
-				<strong>{primaryRemaining === null ? "—" : `${primaryRemaining}% left`}</strong>
-			</Popover.Trigger>
-			<Popover.Portal>
-				<Popover.Content class="rate-limit-popover" align="end" sideOffset={8} aria-label="Rate limits">
-					{@render rateLimitDetails()}
-				</Popover.Content>
-			</Popover.Portal>
-		</Popover.Root>
-
 		{#if app.project}
 			<span class="project-breadcrumb"><Icon icon={FolderIconData} width={14} />{app.project.name}</span>
 			<Button variant="ghost" size="sm" class={filesOpen ? "files-active" : ""} onclick={() => (filesOpen = true)}
@@ -580,7 +501,7 @@ function shortcuts(event: KeyboardEvent) {
 								<span class="thread-summary">
 									<span class="truncate">{thread.name || thread.preview || "Untitled chat"}</span>
 									{#if app.tokenUsageFor(thread.id)}
-										<small title="Total tokens reported by Codex for this session"
+										<small title="Total tokens reported by the model for this session"
 											>{formatTokenCount(app.tokenUsageFor(thread.id).total.totalTokens)}
 											tokens</small
 										>
@@ -622,23 +543,16 @@ function shortcuts(event: KeyboardEvent) {
 					{/if}
 				</div>
 				<div class="sidebar-footer">
-					<button
-						type="button"
-						class="account-button"
-						onclick={() => {
-							settingsOpen = true;
-							void app.readRateLimits().catch(() => {});
-						}}
-					>
-						<span class="avatar">{app.account?.email?.[0]?.toUpperCase() || "R"}</span
+					<button type="button" class="account-button" onclick={() => (settingsOpen = true)}>
+						<span class="avatar">R</span
 						><span
-							><strong>{app.account?.email?.split("@")[0] || "Your workspace"}</strong
+							><strong>Your workspace</strong
 							><small
 								><span class="connection-dot" class:online={app.connected}></span>
 								{app.connecting
 									? "Connecting…"
 									: app.connected
-										? "Codex connected"
+										? `Connected to ${app.hostName}`
 										: "Not connected"}</small
 							></span
 						><Icon icon={Settings2IconData} width={17} />
@@ -654,7 +568,7 @@ function shortcuts(event: KeyboardEvent) {
 				<section class="chat-pane" aria-label="Chat">
 					{#if !isTauri()}
 						<div class="preview-banner">
-							Browser preview · Open the desktop app to connect to Codex and your files.
+							Browser preview · Open the desktop app to connect to ReCodex and your files.
 						</div>
 					{/if}
 					{#if app.error}
@@ -772,9 +686,9 @@ function shortcuts(event: KeyboardEvent) {
 								onkeydown={inputKey}
 								oncompositionstart={() => (composing = true)}
 								oncompositionend={() => (composing = false)}
-								aria-label="Message Codex"
+								aria-label="Message ReCodex"
 								placeholder={app.project
-									? "Ask Codex to build, explain, or fix anything…"
+									? "Ask ReCodex to build, explain, or fix anything…"
 									: "What would you like to create?"}
 								rows="2"
 							></textarea>
@@ -818,16 +732,15 @@ function shortcuts(event: KeyboardEvent) {
 									size="sm"
 									disabled={app.connecting}
 									onclick={() => app.connect()}
-									>{app.connecting ? "Connecting to Codex…" : "Connect to Codex"}</Button
+									>{app.connecting ? "Connecting…" : "Connect"}</Button
 								>
 							</div>
-						{:else if app.connected && needsCodexAuth && !app.account}
+						{:else if app.connected && !app.models.length && unavailableProviders.length}
 							<div class="connection-action">
-								{#if app.remote}
-									<span>Sign in to Codex on {app.hostName}, then reconnect.</span>
-								{:else}
-									<Button size="sm" onclick={() => app.login()}>Sign in with ChatGPT</Button>
-								{/if}
+								<span
+									>{unavailableProviders[0].error ?? "No model provider is available"}
+									on {app.hostName}, then reconnect.</span
+								>
 							</div>
 						{/if}
 					</div>
@@ -856,7 +769,7 @@ function shortcuts(event: KeyboardEvent) {
 		>
 		<div class="settings-row">
 			<span
-				><strong>Codex connection</strong
+				><strong>Host connection</strong
 				><small
 					>{app.connected ? `Connected to ${app.hostName}` : `Not connected to ${app.hostName}`}</small
 				></span
@@ -878,30 +791,13 @@ function shortcuts(event: KeyboardEvent) {
 		/>
 		<div class="settings-row">
 			<span
-				><strong>Codex account</strong
-				><small
-					>{app.account?.email ||
-						app.account?.type ||
-						(app.providers.some((provider) => provider.id === "codex" && provider.available)
-							? "Not signed in"
-							: "Codex unavailable")}</small
-				></span
-			>
-			{#if !app.account && app.requiresAuth}
-				<Button disabled={!app.connected || app.remote} onclick={() => app.login()}>Sign in</Button>
-			{:else if app.account}
-				<span class="account-plan">{app.account.planType || app.account.type}</span>
-			{/if}
-		</div>
-		<div class="settings-row">
-			<span
 				><strong>Model providers</strong
 				><small
 					>{#if app.providers.length}
 						{app.providers
 							.map(
 								(provider) =>
-									`${provider.label}${provider.available ? "" : " (unavailable)"}`,
+									`${provider.label}${provider.available ? "" : ` (unavailable: ${provider.error ?? "unknown error"})`}`,
 							)
 							.join(" · ")}
 					{:else}
@@ -910,12 +806,10 @@ function shortcuts(event: KeyboardEvent) {
 				></span
 			>
 		</div>
-		{@render rateLimitDetails()}
 		<p class="settings-note">
-			ReCodex uses your installed Codex and Pi CLIs. Codex models use Codex sign-in; Pi models use Pi's own
-			configuration and credentials. If a CLI is not found, set
-			<code>RECODEX_CODEX_PATH</code>
-			or <code>RECODEX_PI_PATH</code> to its executable path and restart the app.
+			ReCodex runs its own agent harness against an OpenAI-compatible API. Set
+			<code>RECODEX_OPENAI_API_KEY</code>
+			or <code>RECODEX_OPENAI_BASE_URL</code> on the host and restart the app.
 		</p>
 		{#if app.logs.length}
 			<details class="diagnostics">

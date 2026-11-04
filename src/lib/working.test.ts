@@ -6,7 +6,7 @@ describe("workingState", () => {
 		expect(workingState([{ id: "reasoning-1", type: "reasoning" }], false)).toEqual({ label: "Thinking" });
 	});
 
-	it("shows Codex's live thinking label", () => {
+	it("shows the live thinking label", () => {
 		expect(workingState([], false, "Assessing the request")).toEqual({ label: "Assessing the request" });
 	});
 

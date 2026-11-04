@@ -31,7 +31,7 @@ test("restores trusted hosts, reconnects on discovery without resending turns, a
 		};
 		native.disconnectPc = () => {
 			online = false;
-			emit("codex-event", { hostId: "desktop", event: { method: "recodex/disconnected", params: {} } });
+			emit("host-event", { hostId: "desktop", event: { method: "recodex/disconnected", params: {} } });
 		};
 		const thread = {
 			id: "chat",
@@ -93,8 +93,7 @@ test("restores trusted hosts, reconnects on discovery without resending turns, a
 						],
 						nextCursor: null,
 					};
-				if (args.method === "account/read") return { account: null, requiresOpenaiAuth: false };
-				if (args.method === "account/rateLimits/read") return null;
+				if (args.method === "provider/list") return [{ id: "recodex", label: "ReCodex", available: true }];
 				if (args.method === "thread/list") return { data: [thread], nextCursor: null };
 				if (args.method === "thread/resume") return { thread, model: "m", reasoningEffort: "medium" };
 				if (args.method === "host/replay")
@@ -113,7 +112,7 @@ test("restores trusted hosts, reconnects on discovery without resending turns, a
 					counts.start++;
 					running = true;
 					const turn = { id: "turn", status: "inProgress" };
-					emit("codex-event", {
+					emit("host-event", {
 						hostId: "desktop",
 						event: { method: "turn/started", params: { threadId: "chat", turn } },
 					});
@@ -131,13 +130,13 @@ test("restores trusted hosts, reconnects on discovery without resending turns, a
 		.toBeGreaterThan(0);
 	await page.evaluate(() => (window as unknown as { announcePc: () => void }).announcePc());
 	await page.getByRole("button", { name: "Desktop chat", exact: true }).click();
-	await page.getByRole("textbox", { name: "Message Codex" }).fill("Run once");
+	await page.getByRole("textbox", { name: "Message ReCodex" }).fill("Run once");
 	await page.getByRole("button", { name: "Send message", exact: true }).click();
 	await expect(page.getByRole("button", { name: "Stop generation" })).toBeVisible();
 	await page.evaluate(() => (window as unknown as { disconnectPc: () => void }).disconnectPc());
-	await expect(page.getByRole("button", { name: "Connect to Codex", exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
 	await page.evaluate(() => (window as unknown as { announcePc: () => void }).announcePc());
-	await expect(page.getByRole("button", { name: "Connect to Codex", exact: true })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Connect", exact: true })).toHaveCount(0);
 	expect(await page.evaluate(() => (window as unknown as { autoCounts: { start: number } }).autoCounts.start)).toBe(
 		1,
 	);

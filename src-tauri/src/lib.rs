@@ -3,8 +3,6 @@ mod harness;
 mod host;
 mod lan;
 mod lan_store;
-mod pi;
-mod server;
 mod web;
 mod workspace;
 use host::{Host, LOCAL};
@@ -167,7 +165,7 @@ impl Connections {
 fn emit_remote(app: tauri::AppHandle, id: String) -> impl Fn(Value) + Send + 'static {
     move |envelope| {
         let _ = app.emit(
-            "codex-event",
+            "host-event",
             json!({"hostId":id,"event":envelope["event"],"epoch":envelope["epoch"],"sequence":envelope["sequence"]}),
         );
     }
@@ -426,8 +424,8 @@ pub fn run() {
             let mut events = local.events.subscribe(); let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 loop { match events.recv().await {
-                    Ok(envelope) => { let _ = handle.emit("codex-event", json!({"hostId":LOCAL,"event":envelope["event"],"epoch":envelope["epoch"],"sequence":envelope["sequence"]})); }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => { let _ = handle.emit("codex-event", json!({"hostId":LOCAL,"event":{"method":"recodex/disconnected","params":{}}})); }
+                    Ok(envelope) => { let _ = handle.emit("host-event", json!({"hostId":LOCAL,"event":envelope["event"],"epoch":envelope["epoch"],"sequence":envelope["sequence"]})); }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => { let _ = handle.emit("host-event", json!({"hostId":LOCAL,"event":{"method":"recodex/disconnected","params":{}}})); }
                     Err(_) => break,
                 } }
             });
