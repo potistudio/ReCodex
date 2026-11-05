@@ -13,3 +13,11 @@ onMount(() => {
 <div class="app-frame">
 	<Workspace />
 </div>
+
+<style>
+.app-frame {
+	display: flex;
+	flex-direction: column;
+	height: 100dvh;
+}
+</style>
