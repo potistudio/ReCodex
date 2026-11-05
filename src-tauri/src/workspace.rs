@@ -169,7 +169,7 @@ pub fn files_list(state: &Workspace, root: String, path: String) -> Result<Vec<E
     for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let name = entry.file_name().to_string_lossy().to_string();
-        if [".git", "node_modules", "target", ".svelte-kit"].contains(&name.as_str()) {
+        if [".git", "node_modules", "target", "build"].contains(&name.as_str()) {
             continue;
         }
         let relative = Path::new(&path)
