@@ -1,9 +1,8 @@
 <script lang="ts">
-import "../app.css";
+import "./app.css";
 import { registerHyperellipse } from "hyperellipse";
 import { onMount } from "svelte";
-
-let { children } = $props();
+import Workspace from "$lib/Workspace.svelte";
 
 onMount(() => {
 	const controller = registerHyperellipse();
@@ -12,5 +11,5 @@ onMount(() => {
 </script>
 
 <div class="app-frame">
-	{@render children()}
+	<Workspace />
 </div>

@@ -1,5 +1,6 @@
 import process from "node:process";
-import { sveltekit } from "@sveltejs/kit/vite";
+import { fileURLToPath } from "node:url";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
@@ -7,7 +8,22 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
-	plugins: [tailwindcss(), sveltekit()],
+	plugins: [tailwindcss(), svelte()],
+
+	resolve: {
+		alias: {
+			$lib: fileURLToPath(new URL("./src/lib", import.meta.url)),
+		},
+	},
+
+	// `static/` assets are copied verbatim into the build output, as Tauri expects.
+	publicDir: "static",
+
+	build: {
+		// `src-tauri/tauri.conf.json` points `frontendDist` at `../build`.
+		outDir: "build",
+		emptyOutDir: true,
+	},
 
 	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
 	//
