@@ -23,7 +23,7 @@
 | ---------------- | ------------------------------------------------------------------- |
 | Pi Agent         | `refs/pi`、`9376c8d17cd37f05d4f439f892026b03769aa789`               |
 | DeepSeek Harness | `refs/deepseek-harness`、`ce7073d51254c26cd63b22a60835b8f948deb447` |
-| ReCodex          | 現在の`README.md`と`src-tauri/src/host.rs`。統合先候補の分析に使用  |
+| ReCodex          | 現在の`README.md`と`desktop/src/host.rs`。統合先候補の分析に使用  |
 
 Piの`runLoop`、モデル向けcontext変換、並列tool実行と、DeepSeekの`ReactLoopAgent.step`、`buildRequest`、`ToolExecutionPipeline.prepare`を確認した。実モデル比較、負荷試験、OS隔離の侵入試験は実施していない。速度・費用・解決率の優劣は未検証である。[P1][P2][D1][D2][D3]
 
@@ -510,5 +510,5 @@ session移行は、message・artifact・provider replay情報・実行receipt・
 [D8]: https://github.com/deepseek-ai/deepseek-harness/blob/ce7073d51254c26cd63b22a60835b8f948deb447/packages/subagent/README.md
 [D9]: https://github.com/deepseek-ai/deepseek-harness/blob/ce7073d51254c26cd63b22a60835b8f948deb447/packages/sdk/README.md
 [D10]: https://github.com/deepseek-ai/deepseek-harness/blob/ce7073d51254c26cd63b22a60835b8f948deb447/docs/subsystems/compaction.md
-[R1]: ../src-tauri/src/host.rs
+[R1]: ../desktop/src/host.rs
 [R2]: ../README.md

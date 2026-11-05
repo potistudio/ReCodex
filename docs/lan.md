@@ -4,7 +4,7 @@ Each ReCodex desktop app is a client and can optionally host explicitly selected
 
 ## Ownership and routing
 
-`Host` in `src-tauri/src/host.rs` owns the local agent harness, workspace registry, active turns, approvals, ordered operations, and event history. It takes a storage directory rather than a Tauri handle. `workspace.rs` contains filesystem and registry operations. Tauri commands in `lib.rs` adapt these operations for the desktop UI.
+`Host` in `desktop/src/host.rs` owns the local agent harness, workspace registry, active turns, approvals, ordered operations, and event history. It takes a storage directory rather than a Tauri handle. `workspace.rs` contains filesystem and registry operations. Tauri commands in `lib.rs` adapt these operations for the desktop UI.
 
 Every UI `App` instance has a host ID. Each instance keeps its own projects, model catalog, provider status, chat state, event cursor, and saved project/model preferences. File IPC includes the same host ID. Events carry their source host ID, so equal thread or item IDs on different hosts cannot mix. Changing the selected host does not cancel the previous host's turn.
 
@@ -64,7 +64,7 @@ Mutations are not automatically retried after a timeout or lost response: they m
 
 ## Verification
 
-The macOS bundle declares its Bonjour service and local-network usage description in `src-tauri/Info.plist`. OS local-network permissions and firewall rules still apply. Discovery failure is shown in Connections; a manual address remains available.
+The macOS bundle declares its Bonjour service and local-network usage description in `desktop/Info.plist`. OS local-network permissions and firewall rules still apply. Discovery failure is shown in Connections; a manual address remains available.
 
 Rust tests use a scripted model that requests one command approval per turn, with no credentials, external network access, or model calls. They cover project/method boundaries, cross-device local/remote editing, concurrent-save conflicts, same-chat start races, independent chats, cross-device stopping, single-answer approval races and notifications, replay privacy, certificate validation, invitation expiry/reuse, revocation, real TLS WebSocket chat/file/reconnect flows, pairing across host/client restarts, durable revocation/forgetting, and discovery record changes/removal. The opt-in `live_mdns_discovery_and_removal` test runs real publisher/browser daemons on a separate UDP multicast port.
 

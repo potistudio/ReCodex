@@ -67,8 +67,8 @@ pnpm check
 pnpm test
 pnpm test:e2e
 pnpm build
-cargo test --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path desktop/Cargo.toml
+cargo clippy --manifest-path desktop/Cargo.toml --all-targets -- -D warnings
 pnpm tauri build
 ```
 
@@ -76,15 +76,16 @@ The Playwright suite uses installed Microsoft Edge and mocked Tauri IPC to test 
 
 Rust tests use a scripted model and a local mock HTTP server, so they need no API key or network access.
 
-Biome handles frontend formatting and linting. Use `pnpm format`, `pnpm format:check`, and `pnpm lint` for frontend changes; use `cargo fmt --manifest-path src-tauri/Cargo.toml` for Rust changes.
+Biome handles frontend formatting and linting. Use `pnpm format`, `pnpm format:check`, and `pnpm lint` for frontend changes; use `cargo fmt --manifest-path desktop/Cargo.toml` for Rust changes.
 
 ## Architecture and scope
 
-- `src-tauri/src/host.rs` owns the transport-independent workspace, operation ordering, pending approvals, and bounded event replay.
-- `src-tauri/src/harness/` is ReCodex's own agent harness: the SQLite session ledger, run driver, OpenAI-compatible model gateway, tool scheduler, and approval policy.
-- `src-tauri/src/discovery.rs` browses and advertises LAN hosts using mDNS/DNS-SD; `lan_store.rs` persists trust and hosting preferences with atomic file replacement.
-- `src-tauri/src/lan.rs` provides certificate-verified TLS WebSockets, single-use pairing invitations, persistent device credentials, revocation, and remote request correlation.
-- `src-tauri/src/workspace.rs` stores project registrations in the supplied app-data directory and restricts editor paths to registered roots, including resolved symbolic links.
+- `desktop/` is the Tauri shell and Rust host: the window, IPC commands, bundle, and harness process.
+- `desktop/src/host.rs` owns the transport-independent workspace, operation ordering, pending approvals, and bounded event replay.
+- `desktop/src/harness/` is ReCodex's own agent harness: the SQLite session ledger, run driver, OpenAI-compatible model gateway, tool scheduler, and approval policy.
+- `desktop/src/discovery.rs` browses and advertises LAN hosts using mDNS/DNS-SD; `lan_store.rs` persists trust and hosting preferences with atomic file replacement.
+- `desktop/src/lan.rs` provides certificate-verified TLS WebSockets, single-use pairing invitations, persistent device credentials, revocation, and remote request correlation.
+- `desktop/src/workspace.rs` stores project registrations in the supplied app-data directory and restricts editor paths to registered roots, including resolved symbolic links.
 - `web/` holds the Svelte web client used by the desktop WebView, the browser Web UI, and browser preview.
 - `web/src/App.svelte` is the single view host; `web/src/lib/Workspace.svelte` holds the workspace UI.
 - `web/src/lib/app.svelte.ts` coordinates projects, providers, models, conversations, streaming events, and server requests.

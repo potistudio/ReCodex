@@ -8,7 +8,7 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
-	// The web client lives in `web/`; Tauri keeps its config in `src-tauri/`.
+	// The web client lives in `web/`; Tauri keeps its config in `desktop/`.
 	root: fileURLToPath(new URL("./web", import.meta.url)),
 	plugins: [tailwindcss(), svelte({ configFile: fileURLToPath(new URL("./svelte.config.js", import.meta.url)) })],
 
@@ -22,7 +22,7 @@ export default defineConfig(() => ({
 	publicDir: "static",
 
 	build: {
-		// `src-tauri/tauri.conf.json` points `frontendDist` at `../build`.
+		// `desktop/tauri.conf.json` points `frontendDist` at `../build`.
 		outDir: "../build",
 		emptyOutDir: true,
 	},
@@ -44,8 +44,8 @@ export default defineConfig(() => ({
 				}
 			: undefined,
 		watch: {
-			// 3. tell Vite to ignore watching `src-tauri`
-			ignored: ["**/src-tauri/**"],
+			// 3. tell Vite to ignore watching `desktop`
+			ignored: ["**/desktop/**"],
 		},
 	},
 }));

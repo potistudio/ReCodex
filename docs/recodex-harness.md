@@ -2,7 +2,7 @@
 
 The ReCodex harness is the app's agent runtime. It does not delegate to another agent
 product: the run loop, session history, tool execution, and authorization run inside the
-Rust host process (`src-tauri/src/harness/`). It implements the core of the contracts proposed in
+Rust host process (`desktop/src/harness/`). It implements the core of the contracts proposed in
 [harness-design.md](harness-design.md); branches, compaction, memory, plugins, and multiple
 agents are not implemented.
 
@@ -196,7 +196,7 @@ On startup the harness closes runs that never recorded `run.finished`:
 
 ## Tests
 
-`cargo test --manifest-path src-tauri/Cargo.toml --lib harness` runs the harness tests
+`cargo test --manifest-path desktop/Cargo.toml --lib harness` runs the harness tests
 without network access. They cover the ledger, stream parsing, path boundaries, scheduling,
 policy, approval and decline flows through `Host`, interruption during a model request, crash
 recovery, and the HTTP adapter against a local mock server.

@@ -570,7 +570,7 @@ ReCodexは既にRust hostが以下を所有している。
 - LANのTLS/device認証、revocation
 - ファイル保存のstale check
 
-根拠: ReCodex `README.md` のArchitecture and scope、`src-tauri/src/host.rs`。
+根拠: ReCodex `README.md` のArchitecture and scope、`desktop/src/host.rs`。
 
 ### 11.2 そのままPiを採用した場合の問題
 
@@ -740,4 +740,4 @@ Provider API
 - OSサンドボックスやLAN越しの侵入試験は未実施。
 - 857個のテストの全内容はレビューしていない。
 - `refs/pi` の上流最新版との差分は、このcommit以降については追跡していない。
-- ReCodexの `src-tauri/src/host.rs` の全実装は本書では精読していない。READMEの契約のみ参照している。
+- ReCodexの `desktop/src/host.rs` の全実装は本書では精読していない。READMEの契約のみ参照している。
