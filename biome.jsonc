@@ -55,7 +55,7 @@
 	},
 	"overrides": [
 		{
-			"includes": ["static/**/*.svg"],
+			"includes": ["web/static/**/*.svg"],
 			"linter": {
 				"enabled": false
 			}

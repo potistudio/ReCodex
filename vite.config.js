@@ -8,20 +8,22 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
-	plugins: [tailwindcss(), svelte()],
+	// The web client lives in `web/`; Tauri keeps its config in `src-tauri/`.
+	root: fileURLToPath(new URL("./web", import.meta.url)),
+	plugins: [tailwindcss(), svelte({ configFile: fileURLToPath(new URL("./svelte.config.js", import.meta.url)) })],
 
 	resolve: {
 		alias: {
-			$lib: fileURLToPath(new URL("./src/lib", import.meta.url)),
+			$lib: fileURLToPath(new URL("./web/src/lib", import.meta.url)),
 		},
 	},
 
-	// `static/` assets are copied verbatim into the build output, as Tauri expects.
+	// `web/static/` assets are copied verbatim into the build output, as Tauri expects.
 	publicDir: "static",
 
 	build: {
 		// `src-tauri/tauri.conf.json` points `frontendDist` at `../build`.
-		outDir: "build",
+		outDir: "../build",
 		emptyOutDir: true,
 	},
 

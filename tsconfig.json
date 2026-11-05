@@ -17,14 +17,14 @@
 		"strict": true,
 		"verbatimModuleSyntax": true,
 		"paths": {
-			"$lib": ["./src/lib"],
-			"$lib/*": ["./src/lib/*"]
+			"$lib": ["./web/src/lib"],
+			"$lib/*": ["./web/src/lib/*"]
 		}
 	},
 	"include": [
-		"src/**/*.js",
-		"src/**/*.ts",
-		"src/**/*.svelte",
+		"web/**/*.js",
+		"web/**/*.ts",
+		"web/**/*.svelte",
 		"tests/**/*.ts",
 		"playwright.config.ts",
 		"vite.config.js"

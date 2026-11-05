@@ -85,10 +85,11 @@ Biome handles frontend formatting and linting. Use `pnpm format`, `pnpm format:c
 - `src-tauri/src/discovery.rs` browses and advertises LAN hosts using mDNS/DNS-SD; `lan_store.rs` persists trust and hosting preferences with atomic file replacement.
 - `src-tauri/src/lan.rs` provides certificate-verified TLS WebSockets, single-use pairing invitations, persistent device credentials, revocation, and remote request correlation.
 - `src-tauri/src/workspace.rs` stores project registrations in the supplied app-data directory and restricts editor paths to registered roots, including resolved symbolic links.
-- `src/App.svelte` is the single view host; `src/lib/Workspace.svelte` holds the workspace UI.
-- `src/lib/app.svelte.ts` coordinates projects, providers, models, conversations, streaming events, and server requests.
-- `src/lib/conversation.ts` reconciles optimistic user messages, incremental output, and completed items.
-- `src/lib/components/ui` contains the generated Rhea components; `components.json` retains the registry configuration.
+- `web/` holds the Svelte web client used by the desktop WebView, the browser Web UI, and browser preview.
+- `web/src/App.svelte` is the single view host; `web/src/lib/Workspace.svelte` holds the workspace UI.
+- `web/src/lib/app.svelte.ts` coordinates projects, providers, models, conversations, streaming events, and server requests.
+- `web/src/lib/conversation.ts` reconciles optimistic user messages, incremental output, and completed items.
+- `web/src/lib/components/ui` contains the generated Rhea components; `components.json` retains the registry configuration.
 
 Chats are stored in `harness.sqlite3` and a Command Code sign-in in `command-code-auth.json` (mode `0600`), both in the platform's application-data directory for `com.poti.recodex`. Other API credentials are read from the environment and never stored. The project registry is `projects.json` in the platform's application-data directory for `com.poti.recodex`; model and last project preferences use local storage.
 
