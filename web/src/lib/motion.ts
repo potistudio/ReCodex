@@ -1,10 +1,19 @@
 import { cubicOut } from "svelte/easing";
 import { type FlyParams, fly, type SlideParams, slide } from "svelte/transition";
 
+// Builds minify `320ms` to `.32s`, so the unit has to be honoured.
+export function toMilliseconds(value: string) {
+	const match = /^\s*([+-]?(?:\d+\.?\d*|\.\d+))\s*(ms|s)?\s*$/i.exec(value);
+	if (!match) return 0;
+	const amount = Number.parseFloat(match[1]);
+	if (!Number.isFinite(amount)) return 0;
+	return match[2]?.toLowerCase() === "s" ? amount * 1000 : amount;
+}
+
 function duration(node: Element, token: string) {
 	return matchMedia("(prefers-reduced-motion: reduce)").matches
 		? 0
-		: Number.parseFloat(getComputedStyle(node).getPropertyValue(token));
+		: toMilliseconds(getComputedStyle(node).getPropertyValue(token));
 }
 
 export function reveal(node: Element, { axis = "y" }: Pick<SlideParams, "axis"> = {}) {
