@@ -877,7 +877,7 @@ function shortcuts(event: KeyboardEvent) {
 			</details>
 		{/if}
 		<div class="settings-version">
-			<Icon icon={Code2IconData} width={14} />ReCodex <span>0.0.1-alpha</span>
+			<Icon icon={Code2IconData} width={14} />ReCodex <span>{__APP_VERSION__}</span>
 		</div></Dialog.Content
 	></Dialog.Root
 >

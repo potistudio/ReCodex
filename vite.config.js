@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
+import pkg from "./package.json" with { type: "json" };
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -17,6 +18,12 @@ export default defineConfig(() => ({
 		alias: {
 			$lib: fileURLToPath(new URL("./web/src/lib", import.meta.url)),
 		},
+	},
+
+	// `package.json` is the single source of the app version: Tauri reads it through `tauri.conf.json`, and the UI
+	// gets it here. `desktop/Cargo.toml` cannot read it, so `scripts/check-versions.mjs` keeps the two equal.
+	define: {
+		__APP_VERSION__: JSON.stringify(pkg.version),
 	},
 
 	// `web/static/` assets are copied verbatim into the build output, as Tauri expects.
