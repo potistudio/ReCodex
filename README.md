@@ -32,14 +32,14 @@ RECODEX_OPENAI_API_KEY=sk-... pnpm tauri dev
 RECODEX_OPENAI_BASE_URL=http://localhost:11434/v1 pnpm tauri dev
 ```
 
-| Variable | Meaning |
-| --- | --- |
-| `RECODEX_OPENAI_API_KEY` | Bearer token for an OpenAI-compatible endpoint; takes precedence over Command Code. |
-| `RECODEX_OPENAI_BASE_URL` | API base, default `https://api.openai.com/v1`; takes precedence over Command Code. |
-| `COMMAND_CODE_API_KEY` | Command Code API key; overrides the sign-in. |
-| `OPENAI_API_KEY` | Used only when nothing else is configured. |
-| `RECODEX_OPENAI_MODELS` | Optional comma-separated model IDs; otherwise the catalog comes from `GET /models`. |
-| `RECODEX_HARNESS_MAX_STEPS` | Step limit per turn, default 64. |
+| Variable                    | Meaning                                                                             |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| `RECODEX_OPENAI_API_KEY`    | Bearer token for an OpenAI-compatible endpoint; takes precedence over Command Code. |
+| `RECODEX_OPENAI_BASE_URL`   | API base, default `https://api.openai.com/v1`; takes precedence over Command Code.  |
+| `COMMAND_CODE_API_KEY`      | Command Code API key; overrides the sign-in.                                        |
+| `OPENAI_API_KEY`            | Used only when nothing else is configured.                                          |
+| `RECODEX_OPENAI_MODELS`     | Optional comma-separated model IDs; otherwise the catalog comes from `GET /models`. |
+| `RECODEX_HARNESS_MAX_STEPS` | Step limit per turn, default 64.                                                    |
 
 Choose **Open a project**, select its directory, choose a model, and send a message. Open **Files** for direct editing. The agent can read files freely; file changes and commands wait for your approval unless you allow them for the session. Approved commands run with your user privileges and no sandbox. See [ReCodex harness](docs/recodex-harness.md) for the ledger, tools, policy, and recovery behavior.
 

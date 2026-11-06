@@ -16,14 +16,14 @@ The harness sends Chat Completions requests to one connection, chosen in this or
    Command Code CLI's `~/.commandcode/auth.json` (in that order).
 3. `OPENAI_API_KEY` against `https://api.openai.com/v1`.
 
-| Variable | Meaning |
-| --- | --- |
-| `RECODEX_OPENAI_API_KEY` | Bearer token for the OpenAI-compatible endpoint. |
-| `RECODEX_OPENAI_BASE_URL` | API base, default `https://api.openai.com/v1`. Set it alone for a local server such as Ollama (`http://localhost:11434/v1`). |
-| `COMMAND_CODE_API_KEY` | Command Code API key; overrides any sign-in. |
-| `OPENAI_API_KEY` | Used only when no other connection is configured. |
-| `RECODEX_OPENAI_MODELS` | Optional comma-separated model IDs. When unset, the catalog is read from `GET /models`. |
-| `RECODEX_HARNESS_MAX_STEPS` | Step limit per run, default 64. |
+| Variable                    | Meaning                                                                                                                      |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `RECODEX_OPENAI_API_KEY`    | Bearer token for the OpenAI-compatible endpoint.                                                                             |
+| `RECODEX_OPENAI_BASE_URL`   | API base, default `https://api.openai.com/v1`. Set it alone for a local server such as Ollama (`http://localhost:11434/v1`). |
+| `COMMAND_CODE_API_KEY`      | Command Code API key; overrides any sign-in.                                                                                 |
+| `OPENAI_API_KEY`            | Used only when no other connection is configured.                                                                            |
+| `RECODEX_OPENAI_MODELS`     | Optional comma-separated model IDs. When unset, the catalog is read from `GET /models`.                                      |
+| `RECODEX_HARNESS_MAX_STEPS` | Step limit per run, default 64.                                                                                              |
 
 Models appear in the picker as `recodex/<model-id>`; chat IDs start with `rx-`.
 `provider/list` reports the active connection and why it is unavailable. Environment variables
@@ -61,11 +61,11 @@ but never writes it.
 `CommandCodeClient` sends each model to the wire that serves it, using the
 `supported_endpoints` field of `GET /provider/v1/models`:
 
-| Model | Wire | Endpoint |
-| --- | --- | --- |
-| `claude-*`, or only `/messages` advertised | Anthropic Messages | `/provider/v1/messages` |
-| `/responses` advertised | OpenAI Responses (`store: false`) | `/provider/v1/responses` |
-| Everything else | Chat Completions | `/provider/v1/chat/completions` |
+| Model                                      | Wire                              | Endpoint                        |
+| ------------------------------------------ | --------------------------------- | ------------------------------- |
+| `claude-*`, or only `/messages` advertised | Anthropic Messages                | `/provider/v1/messages`         |
+| `/responses` advertised                    | OpenAI Responses (`store: false`) | `/provider/v1/responses`        |
+| Everything else                            | Chat Completions                  | `/provider/v1/chat/completions` |
 
 All three use `Authorization: Bearer <key>`; Messages also sends `anthropic-version:
 2023-06-01`. Messages requests do not enable extended thinking, because continuing a tool loop
@@ -92,19 +92,19 @@ without notice.
 
 ## Components
 
-| Module | Role (design-document service) |
-| --- | --- |
-| `ledger.rs` | Session Ledger. SQLite in WAL mode with `synchronous=FULL`, stored as `harness.sqlite3` in the app-data directory. |
-| `context.rs` | Context Engine and Projection Engine. Builds model messages and the UI transcript from ledger events. |
-| `model.rs` | Model Gateway. `ModelClient` trait, shared HTTP/SSE helpers, and the Chat Completions adapter. |
-| `tools.rs` | Tool Registry, Tool Scheduler, and the local Execution Environment. |
-| `policy.rs` | Authorization Service with session grants. |
-| `driver.rs` | Run Driver and crash recovery. |
-| `account.rs` | Model connection selection and the Command Code account. |
-| `command_code.rs` | Command Code browser sign-in, key validation, and credential storage. |
-| `command_code_client.rs` | Per-model routing and the generation fallback for Command Code. |
-| `messages_api.rs`, `responses_api.rs`, `generate_api.rs` | Anthropic Messages, OpenAI Responses, and Command Code generation wire adapters. |
-| `mod.rs` | Harness Coordinator: session and run lifecycle, approvals, catalog. |
+| Module                                                   | Role (design-document service)                                                                                     |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `ledger.rs`                                              | Session Ledger. SQLite in WAL mode with `synchronous=FULL`, stored as `harness.sqlite3` in the app-data directory. |
+| `context.rs`                                             | Context Engine and Projection Engine. Builds model messages and the UI transcript from ledger events.              |
+| `model.rs`                                               | Model Gateway. `ModelClient` trait, shared HTTP/SSE helpers, and the Chat Completions adapter.                     |
+| `tools.rs`                                               | Tool Registry, Tool Scheduler, and the local Execution Environment.                                                |
+| `policy.rs`                                              | Authorization Service with session grants.                                                                         |
+| `driver.rs`                                              | Run Driver and crash recovery.                                                                                     |
+| `account.rs`                                             | Model connection selection and the Command Code account.                                                           |
+| `command_code.rs`                                        | Command Code browser sign-in, key validation, and credential storage.                                              |
+| `command_code_client.rs`                                 | Per-model routing and the generation fallback for Command Code.                                                    |
+| `messages_api.rs`, `responses_api.rs`, `generate_api.rs` | Anthropic Messages, OpenAI Responses, and Command Code generation wire adapters.                                   |
+| `mod.rs`                                                 | Harness Coordinator: session and run lifecycle, approvals, catalog.                                                |
 
 `host.rs` exposes the harness to local, LAN, and Web UI clients, orders operations, and relays
 approval answers. Events use the `thread/*`, `turn/*`, and `item/*` vocabulary the UI
@@ -148,13 +148,13 @@ failed attempt is recorded.
 
 ## Tools
 
-| Tool | Effect | Default policy |
-| --- | --- | --- |
-| `read_file` | read `file:<path>` | allow |
-| `list_directory` | read `file:<path>` | allow |
-| `write_file` | write `file:<path>` | ask (file change) |
-| `edit_file` | write `file:<path>` | ask (file change) |
-| `run_command` | exclusive | ask (command) |
+| Tool             | Effect              | Default policy    |
+| ---------------- | ------------------- | ----------------- |
+| `read_file`      | read `file:<path>`  | allow             |
+| `list_directory` | read `file:<path>`  | allow             |
+| `write_file`     | write `file:<path>` | ask (file change) |
+| `edit_file`      | write `file:<path>` | ask (file change) |
+| `run_command`    | exclusive           | ask (command)     |
 
 The pipeline for each call is: schema validation and path normalization, authorization,
 approval when requested, revalidation, dispatch, and commit of the result.
