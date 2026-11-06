@@ -28,10 +28,12 @@ fn setup(client: Arc<dyn ModelClient>) -> Setup {
     let root = directory.path().join("project");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("notes.txt"), "remember the milk").unwrap();
+    // `project_save` registers the path without the Windows `\\?\` prefix, so match it here.
     let root = std::fs::canonicalize(root)
         .unwrap()
         .to_string_lossy()
-        .into_owned();
+        .trim_start_matches("\\\\?\\")
+        .to_owned();
     let host = Host::new_with_harness(directory.path().join("data"), |path| {
         Harness::with_client(path, client, Some(8))
     })
