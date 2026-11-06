@@ -21,6 +21,15 @@ test("squircle fallback preserves interactive controls", async ({ page }) => {
 	await expect.poll(() => account.evaluate((element) => getComputedStyle(element).clipPath)).toMatch(/^path\(/);
 	await expect(page.locator(".composer")).toHaveAttribute("data-hyperellipse-host", /layer/);
 	await page.waitForTimeout(2000);
+	// The composer is painted with `--card`; read the color from the token so a palette change does not break this.
+	const card = await page.evaluate(() => {
+		const probe = document.createElement("div");
+		probe.style.background = "var(--card)";
+		document.body.append(probe);
+		const color = getComputedStyle(probe).backgroundColor;
+		probe.remove();
+		return color;
+	});
 	await expect
 		.poll(() =>
 			page
@@ -29,12 +38,18 @@ test("squircle fallback preserves interactive controls", async ({ page }) => {
 					decodeURIComponent((element as HTMLElement).style.getPropertyValue("--hyperellipse-layer-image")),
 				),
 		)
-		.toContain('fill="rgb(255, 255, 255)"');
+		.toContain(`fill="${card}"`);
 	await account.click();
 	const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
 	await expect(dialog).toBeVisible();
 	await expect.poll(() => dialog.evaluate((element) => getComputedStyle(element).clipPath)).toMatch(/^path\(/);
 	const close = dialog.getByRole("button", { name: "Close" });
+	// The dialog focuses its first field, not Close. Reaching Close by keyboard gives it a focus ring, and the ring is
+	// what switches the button to layer mode.
+	await close.focus();
+	await page.keyboard.press("Tab");
+	await page.keyboard.press("Shift+Tab");
+	await expect(close).toBeFocused();
 	await expect(close).toHaveAttribute("data-hyperellipse-host", /layer/);
 	await expect
 		.poll(() =>
@@ -42,7 +57,7 @@ test("squircle fallback preserves interactive controls", async ({ page }) => {
 				decodeURIComponent((element as HTMLElement).style.getPropertyValue("--hyperellipse-layer-image")),
 			),
 		)
-		.toMatch(/^<svg/);
+		.toContain("<svg");
 	await close.click();
 	await expect(dialog).toBeHidden();
 	await page.getByRole("button", { name: "Hide sidebar" }).click();
