@@ -62,6 +62,14 @@ Automatic discovery uses UDP 5353 on the local link; allow local-network access 
 
 ## Build and verification
 
+With [mise](https://mise.jdx.dev/), one command runs every check that needs no browser: the web type check, lint, and unit tests, then Rust formatting, clippy, and tests. `mise run verify:web` and `mise run verify:rust` run each half on its own. Playwright and the bundle build stay separate.
+
+```sh
+mise run verify
+```
+
+The individual commands are:
+
 ```sh
 pnpm check
 pnpm test

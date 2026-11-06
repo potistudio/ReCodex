@@ -2,3 +2,19 @@
 biome = "2.6.3"
 node = "24.21.0"
 pnpm = "12.16.1"
+
+[tasks."verify:web"]
+description = "Type-check, lint, and unit-test the web client"
+run = ["pnpm check", "pnpm test"]
+
+[tasks."verify:rust"]
+description = "Check formatting, lint, and test the Rust host"
+run = [
+	"cargo fmt --manifest-path desktop/Cargo.toml --check",
+	"cargo clippy --manifest-path desktop/Cargo.toml --all-targets -- -D warnings",
+	"cargo test --manifest-path desktop/Cargo.toml",
+]
+
+[tasks.verify]
+description = "Run every check that does not need a browser (web + Rust)"
+depends = ["verify:web", "verify:rust"]
