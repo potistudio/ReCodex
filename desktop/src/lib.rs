@@ -12,6 +12,19 @@ use std::{collections::HashMap, sync::Arc};
 use tauri::{Emitter, Manager, State};
 use tokio::sync::{broadcast, Mutex, RwLock};
 
+// Keep the explicit/first saved destination ahead of mDNS. Reserve the remaining
+// slots for current discovery and then saved fallbacks, without duplicates.
+fn connection_endpoints(discovered: Vec<String>, saved: Vec<String>) -> Vec<String> {
+	let mut endpoints: Vec<_> = saved.first().cloned().into_iter().collect();
+	for address in discovered.into_iter().chain(saved) {
+		if !endpoints.contains(&address) {
+			endpoints.push(address);
+		}
+	}
+	endpoints.truncate(8);
+	endpoints
+}
+
 /// Fixed port for the Web UI listener; the LAN listener address stays user-configurable.
 const WEB_ADDRESS: &str = "0.0.0.0:43178";
 struct Connections {
@@ -87,14 +100,7 @@ impl Connections {
 		Ok(())
 	}
 	fn endpoints(&self, id: &str, fallback: Vec<String>) -> Vec<String> {
-		let mut endpoints = self.discovery.addresses(id);
-		for address in fallback {
-			if !endpoints.contains(&address) {
-				endpoints.push(address);
-			}
-		}
-		endpoints.truncate(8);
-		endpoints
+		connection_endpoints(self.discovery.addresses(id), fallback)
 	}
 
 	async fn remember_current(&self, remote: &Arc<lan::Remote>) -> Result<(), String> {
@@ -321,20 +327,14 @@ async fn host_pair(
 	address: Option<String>,
 	invitation: String,
 ) -> Result<Value, String> {
-	let address = address.unwrap_or_default().trim().to_owned();
-	if address.contains('/') || address.len() > 260 {
-		return Err("Invalid manual address".into());
-	}
+	let address = lan::manual_endpoint(&address.unwrap_or_default())?;
 	let invitation: lan::Invitation = serde_json::from_str(&invitation).map_err(|_| "Invalid connection invitation")?;
 	if invitation.host_id() == lan::local_id(&state.local.directory)? {
 		return Err("This is your own PC. Choose This PC in Active host.".into());
 	}
-	let endpoints = state.endpoints(
-		invitation.host_id(),
-		if address.is_empty() { Vec::new() } else { vec![address] },
-	);
+	let endpoints = state.endpoints(invitation.host_id(), address.into_iter().collect());
 	if endpoints.is_empty() {
-		return Err("This PC has not appeared on the LAN yet. Enable hosting there, or use a manual address.".into());
+		return Err("This PC has not appeared on the LAN yet. Enable hosting there, or enter its LAN / Tailscale IP or MagicDNS name.".into());
 	}
 	let remote = lan::Remote::new(String::new(), invitation);
 	remote.update_endpoints(endpoints);
@@ -476,6 +476,20 @@ pub fn run() {
 #[cfg(test)]
 mod connection_tests {
 	use super::*;
+	#[test]
+	fn discovery_cannot_evict_a_manual_tailnet_destination() {
+		let manual = "desktop.tail123.ts.net:43177".to_string();
+		let discovered: Vec<_> = (1..=8).map(|n| format!("192.168.1.{n}:43177")).collect();
+		let endpoints = connection_endpoints(discovered.clone(), vec![manual.clone()]);
+		assert_eq!(endpoints.len(), 8);
+		assert_eq!(endpoints[0], manual);
+		assert_eq!(&endpoints[1..], &discovered[..7]);
+		assert_eq!(connection_endpoints(discovered.clone(), vec![]), discovered);
+		assert_eq!(
+			connection_endpoints(vec![manual.clone()], vec![manual.clone(), "100.100.1.2:43177".into()]),
+			vec![manual, "100.100.1.2:43177".into()]
+		);
+	}
 	#[tokio::test]
 	async fn late_reconnect_cannot_undo_forget_or_replace_new_pairing() {
 		let fixture = host::Fixture::new().await;
