@@ -2,6 +2,17 @@
 
 Each ReCodex desktop app is a client and can optionally host explicitly selected local projects. PCs connect directly; no coordinator, file share, or relay is required. Each PC can host and connect at the same time.
 
+## Set up hosting
+
+Run the desktop app on each PC and sign in to Command Code (or configure another model API) on the PCs that will host projects. Open the projects you want to use on their respective PCs.
+
+1. On the PC that owns a project, open **Connections**, select the projects to share, and choose **Start hosting**. The default listen address is `0.0.0.0:43177`.
+2. Other PCs find it automatically under **Nearby PCs** using mDNS. Copy its **Connection invitation** to a PC you want to authorize through a trusted channel. Invitations expire after ten minutes and can be used once.
+3. Paste the invitation into **Connect to another PC** and choose **Connect to PC**. ReCodex locates the matching host automatically; no IP address is required.
+4. Registered PCs reconnect automatically on launch, after connection loss, and when discovery finds a changed address. **Active host** restores your last selection and switches between connected PCs. Repeat the initial invitation exchange in the opposite direction for mutual hosting.
+
+Automatic discovery uses UDP 5353 on the local link; allow local-network access and the listening TCP port on your private LAN when requested by the OS. If multicast is unavailable, **Manual address (optional)** accepts a LAN IP or hostname and port; registered connections also retry their saved addresses. `0.0.0.0` is a bind address, not a destination. Hosting runs while the host app is open and resumes automatically on the next launch until you choose **Stop hosting**.
+
 ## Ownership and routing
 
 `Host` in `desktop/src/host.rs` owns the local agent harness, workspace registry, active turns, approvals, ordered operations, and event history. It takes a storage directory rather than a Tauri handle. `workspace.rs` contains filesystem and registry operations. Tauri commands in `lib.rs` adapt these operations for the desktop UI.
