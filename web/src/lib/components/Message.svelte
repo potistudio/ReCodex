@@ -88,7 +88,9 @@ $effect(() => {
 				{#if item.type === "agentMessage" && generation}
 					<span
 						class="message-token-usage"
-						title={generation.estimated ? "Estimated from visible text over the last five seconds; excludes reasoning and tool calls" : "Approximate output tokens per second between first and last visible text; output may include reasoning and tool calls, and pauses between messages are included"}
+						title={generation.estimated
+							? "Estimated from visible text over the last five seconds; excludes reasoning and tool calls"
+							: "Approximate output tokens per second between first and last visible text; output may include reasoning and tool calls, and pauses between messages are included"}
 					>
 						{generation.estimated ? "~" : ""}{formatTokenCount(generation.tokens)}
 						output tokens

@@ -204,7 +204,10 @@ $effect(() => {
 					{disabled}
 					onclick={() => {
 						choosingModel = !choosingModel;
-						if (choosingModel) void tick().then(() => modelList?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus());
+						if (choosingModel)
+							void tick().then(() =>
+								modelList?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus(),
+							);
 					}}
 				>
 					<span>

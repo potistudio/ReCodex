@@ -387,7 +387,12 @@ function shortcuts(event: KeyboardEvent) {
 			class="host-selector"
 			aria-label="Active host"
 			value={app.hostId}
-			onchange={(event) => { const select = event.currentTarget; void selectHost(select.value).then(() => { select.value = app.hostId; }); }}
+			onchange={(event) => {
+				const select = event.currentTarget;
+				void selectHost(select.value).then(() => {
+					select.value = app.hostId;
+				});
+			}}
 		>
 			{#each hosts as host (host.hostId)}
 				<option value={host.hostId}>{host.hostName}</option>
@@ -493,9 +498,9 @@ function shortcuts(event: KeyboardEvent) {
 								class:selected={app.thread?.id === thread.id}
 								disabled={app.loading || !app.connected || app.deletingThreadId === thread.id}
 								onclick={() => {
-								scrollMode = "follow";
-								void app.resume(thread);
-							}}
+									scrollMode = "follow";
+									void app.resume(thread);
+								}}
 								title={thread.name || thread.preview}
 							>
 								<span class="thread-summary">
@@ -521,7 +526,11 @@ function shortcuts(event: KeyboardEvent) {
 								size="icon-xs"
 								class="thread-delete"
 								aria-label={`Delete chat: ${thread.name || thread.preview || "Untitled chat"}`}
-								disabled={!app.connected || app.loading || !!app.deletingThreadId || app.isThreadRunning(thread.id) || (app.thread?.id === thread.id && app.sending)}
+								disabled={!app.connected ||
+									app.loading ||
+									!!app.deletingThreadId ||
+									app.isThreadRunning(thread.id) ||
+									(app.thread?.id === thread.id && app.sending)}
 								onclick={() => deleteThread(thread)}
 								><Icon icon={Trash2IconData} width={24} /></Button
 							>
@@ -596,7 +605,16 @@ function shortcuts(event: KeyboardEvent) {
 										<Message
 											{item}
 											tokenUsage={item.turnId ? app.tokenUsageForTurn(item.turnId) : null}
-											generation={item.turnId && item.type === "agentMessage" && !app.items.slice(itemIndex + 1).some((next) => next.turnId === item.turnId && next.type === "agentMessage") ? app.generationForTurn(item.turnId) : null}
+											generation={item.turnId &&
+											item.type === "agentMessage" &&
+											!app.items
+												.slice(itemIndex + 1)
+												.some(
+													(next) =>
+														next.turnId === item.turnId && next.type === "agentMessage",
+												)
+												? app.generationForTurn(item.turnId)
+												: null}
 										/>
 									{/each}
 									{#if app.activeTurn || app.sending}
@@ -739,7 +757,9 @@ function shortcuts(event: KeyboardEvent) {
 							<div class="connection-action">
 								{#if app.account?.available && !app.account.signedIn && !app.remote && isTauri()}
 									<Button size="sm" disabled={app.account.loginPending} onclick={() => app.login()}
-										>{app.account.loginPending ? "Waiting for the browser…" : "Sign in to Command Code"}</Button
+										>{app.account.loginPending
+											? "Waiting for the browser…"
+											: "Sign in to Command Code"}</Button
 									>
 								{:else}
 									<span
@@ -792,7 +812,15 @@ function shortcuts(event: KeyboardEvent) {
 		<HostSettings
 			projects={localApp.projects}
 			{catalog}
-			connections={hosts.filter((host) => host.remote).map((host) => ({id:host.hostId,name:host.hostName,connected:host.connected,connecting:host.connecting,error:host.error}))}
+			connections={hosts
+				.filter((host) => host.remote)
+				.map((host) => ({
+					id: host.hostId,
+					name: host.hostName,
+					connected: host.connected,
+					connecting: host.connecting,
+					error: host.error,
+				}))}
 			onpaired={addHost}
 		/>
 		{#if app.account?.available}

@@ -91,12 +91,22 @@ async function pair() {
 			<span><strong>{status.name}</strong><small>Hosting on {status.address}</small></span>
 			<Button variant="outline" disabled={busy} onclick={stop}>Stop hosting</Button>
 		</div>
-		<p>Shared: {projects.filter((p) => shared.includes(p.path)).map((p) => p.name).join(", ")}</p>
+		<p>
+			Shared:
+			{projects
+				.filter((p) => shared.includes(p.path))
+				.map((p) => p.name)
+				.join(", ")}
+		</p>
 		<Button
 			variant="outline"
 			size="sm"
 			disabled={busy}
-			onclick={() => run(async () => { invitation = await invoke<string>("host_invite"); await refresh(); })}
+			onclick={() =>
+				run(async () => {
+					invitation = await invoke<string>("host_invite");
+					await refresh();
+				})}
 			>Create new invitation</Button
 		>
 		{#if invitation}
@@ -122,7 +132,11 @@ async function pair() {
 					variant="outline"
 					size="sm"
 					disabled={busy}
-					onclick={() => run(async () => { await invoke("host_revoke", { deviceId: device.id }); await refresh(); })}
+					onclick={() =>
+						run(async () => {
+							await invoke("host_revoke", { deviceId: device.id });
+							await refresh();
+						})}
 					>Revoke</Button
 				>
 			</div>
@@ -154,19 +168,31 @@ async function pair() {
 				<span
 					><strong>{host.name}</strong
 					><small
-						>{known?.connected ? "Connected automatically" : known?.connecting ? "Connecting automatically…" : known ? "Reconnecting automatically…" : "Invitation required for first connection"}</small
+						>{known?.connected
+							? "Connected automatically"
+							: known?.connecting
+								? "Connecting automatically…"
+								: known
+									? "Reconnecting automatically…"
+									: "Invitation required for first connection"}</small
 					></span
 				>
 			</div>
 		{:else}
 			<p>Searching your LAN for ReCodex hosts…</p>
 		{/each}
-		{#each connections.filter((host) => !catalog.discovered.some((found) => found.id === host.id)) as host (host.id)}
+		{#each connections.filter(
+			(host) => !catalog.discovered.some((found) => found.id === host.id),
+		) as host (host.id)}
 			<div class="settings-row">
 				<span
 					><strong>{host.name}</strong
 					><small
-						>{host.connected ? "Connected" : host.connecting ? "Connecting automatically…" : "Waiting for this PC to return…"}</small
+						>{host.connected
+							? "Connected"
+							: host.connecting
+								? "Connecting automatically…"
+								: "Waiting for this PC to return…"}</small
 					></span
 				>
 			</div>
@@ -178,7 +204,12 @@ async function pair() {
 			<p role="alert">Hosting: {catalog.hostingError}</p>
 		{/if}
 	</section>
-	<form onsubmit={(event) => { event.preventDefault(); void pair(); }}>
+	<form
+		onsubmit={(event) => {
+			event.preventDefault();
+			void pair();
+		}}
+	>
 		<strong>Connect to another PC</strong>
 		<p>
 			Paste an invitation once. ReCodex finds the matching PC automatically and remembers it for future
