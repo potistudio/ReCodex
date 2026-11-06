@@ -23,8 +23,8 @@ export default defineConfig(() => ({
 	publicDir: "static",
 
 	build: {
-		// `desktop/tauri.conf.json` points `frontendDist` at `../build`.
-		outDir: "../build",
+		// `desktop/tauri.conf.json` points `frontendDist` at `../web/dist`.
+		outDir: "dist",
 		emptyOutDir: true,
 	},
 

@@ -8,7 +8,7 @@ node_modules/
 .vitest/
 test-results/
 playwright-report/
-build/
+dist/
 
 # Environment variables
 .env

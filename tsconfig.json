@@ -29,5 +29,5 @@
 		"playwright.config.ts",
 		"vite.config.js"
 	],
-	"exclude": ["node_modules/**", "build/**"]
+	"exclude": ["node_modules/**", "web/dist/**"]
 }

@@ -44,14 +44,14 @@ fn ui_candidates() -> Vec<PathBuf> {
 			let mut directory = Some(PathBuf::from(base));
 			for _ in 0..4 {
 				let Some(current) = directory else { break };
-				candidates.push(current.join("build"));
+				candidates.push(current.join("web/dist"));
 				directory = current.parent().map(Path::to_path_buf);
 			}
 		}
 	}
 	if let Ok(directory) = std::env::current_dir() {
-		candidates.push(directory.join("build"));
-		candidates.push(directory.join("../build"));
+		candidates.push(directory.join("web/dist"));
+		candidates.push(directory.join("../web/dist"));
 	}
 	candidates.sort();
 	candidates.dedup();
