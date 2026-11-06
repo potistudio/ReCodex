@@ -1,88 +1,55 @@
 import { expect, test } from "@playwright/test";
+import { installTauriMock, type TauriMock } from "./support/tauri-mock";
 
 test("deletes a chat only after confirmation and preserves it on failure", async ({ page }) => {
+	await installTauriMock(page);
 	await page.addInitScript(() => {
 		const host = window as unknown as Record<string, unknown>;
-		host.isTauri = true;
-		host.__TAURI_OS_PLUGIN_INTERNALS__ = { platform: "macos" };
+		const mock = host.tauriMock as TauriMock;
 		host.confirmDelete = false;
 		host.failDelete = false;
 		host.deleteRequests = [];
-		const callbacks = new Map<number, (event: unknown) => void>();
-		let nextCallback = 0;
-		let listener = 0;
 		let threads = [
 			{ id: "one", name: "First chat", preview: "First chat", cwd: "/project", updatedAt: 2, turns: [] },
 			{ id: "two", name: "Second chat", preview: "Second chat", cwd: "/project", updatedAt: 1, turns: [] },
 		];
-		const emit = (payload: unknown) => callbacks.get(listener)?.({ event: "host-event", payload });
+		const emit = (payload: unknown) => mock.emit("host-event", payload);
 		host.emitTestEvent = emit;
-		host.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-		host.__TAURI_INTERNALS__ = {
-			transformCallback(callback: (event: unknown) => void) {
-				callbacks.set(++nextCallback, callback);
-				return nextCallback;
-			},
-			async invoke(command: string, args: Record<string, unknown> = {}) {
-				if (command === "hosts_list")
-					return { registered: [], discovered: [], discoveryError: null, hostingError: null };
-				if (command === "host_status") return null;
-				if (command === "server_request" && args.method === "host/replay")
-					return {
-						reset: false,
-						epoch: "test",
-						sequence: 0,
-						events: [],
-						snapshot: { activeTurns: {}, approvals: [] },
+		mock.commands.projects_load = () => [{ name: "Project", path: "/project", historyPaths: [] }];
+		mock.commands["plugin:dialog|message"] = (args) => {
+			host.confirmText = args.message;
+			return host.confirmDelete ? "Delete" : "Cancel";
+		};
+		mock.methods["model/list"] = () => ({ data: [], nextCursor: null });
+		mock.methods["thread/list"] = () => {
+			if (host.deferThreadList) {
+				const snapshot = [...threads];
+				return new Promise((resolve) => {
+					host.resolveThreadList = () => resolve({ data: snapshot, nextCursor: null });
+				});
+			}
+			return { data: threads, nextCursor: null };
+		};
+		mock.methods["thread/resume"] = (params) => {
+			const thread = threads.find((entry) => entry.id === params.threadId);
+			return { thread, model: "", reasoningEffort: null };
+		};
+		mock.methods["thread/delete"] = async (params) => {
+			(host.deleteRequests as unknown[]).push(params.threadId);
+			if (host.failDelete) throw new Error("Delete failed");
+			const complete = () => {
+				threads = threads.filter((thread) => thread.id !== params.threadId);
+				emit({ method: "thread/deleted", params: { threadId: params.threadId } });
+			};
+			if (host.deferDelete) {
+				await new Promise<void>((resolve) => {
+					host.resolveDelete = () => {
+						complete();
+						resolve();
 					};
-				if (command === "plugin:event|listen") {
-					if (args.event === "host-event") listener = args.handler as number;
-					return 1;
-				}
-				if (command === "plugin:event|unlisten" || command === "server_connect") return;
-				if (command === "projects_load") return [{ name: "Project", path: "/project", historyPaths: [] }];
-				if (command === "plugin:dialog|message") {
-					host.confirmText = args.message;
-					return host.confirmDelete ? "Delete" : "Cancel";
-				}
-				if (command !== "server_request") throw new Error(`Unexpected command: ${command}`);
-				const params = args.params as Record<string, unknown>;
-				if (args.method === "model/list") return { data: [], nextCursor: null };
-				if (args.method === "provider/list") return [{ id: "recodex", label: "Command Code", available: true }];
-				if (args.method === "account/read")
-					return { available: true, connection: "Command Code", loginPending: false, signedIn: false };
-				if (args.method === "thread/list") {
-					if (host.deferThreadList) {
-						const snapshot = [...threads];
-						return new Promise((resolve) => {
-							host.resolveThreadList = () => resolve({ data: snapshot, nextCursor: null });
-						});
-					}
-					return { data: threads, nextCursor: null };
-				}
-				if (args.method === "thread/resume") {
-					const thread = threads.find((entry) => entry.id === params.threadId);
-					return { thread, model: "", reasoningEffort: null };
-				}
-				if (args.method === "thread/delete") {
-					(host.deleteRequests as unknown[]).push(params.threadId);
-					if (host.failDelete) throw new Error("Delete failed");
-					const complete = () => {
-						threads = threads.filter((thread) => thread.id !== params.threadId);
-						emit({ method: "thread/deleted", params: { threadId: params.threadId } });
-					};
-					if (host.deferDelete) {
-						await new Promise<void>((resolve) => {
-							host.resolveDelete = () => {
-								complete();
-								resolve();
-							};
-						});
-					} else complete();
-					return {};
-				}
-				throw new Error(`Unexpected method: ${args.method}`);
-			},
+				});
+			} else complete();
+			return {};
 		};
 	});
 	await page.goto("/");

@@ -1,12 +1,13 @@
 import { expect, type Locator, test } from "@playwright/test";
+import { installTauriMock, type TauriMock } from "./support/tauri-mock";
 
 test.use({ reducedMotion: "no-preference" });
 
 test.beforeEach(async ({ page }) => {
+	await installTauriMock(page);
 	await page.addInitScript(() => {
 		const host = window as unknown as Record<string, unknown>;
-		host.isTauri = true;
-		host.__TAURI_OS_PLUGIN_INTERNALS__ = { platform: "macos" };
+		const mock = host.tauriMock as TauriMock;
 		host.motionEvents = [];
 		document.addEventListener("animationstart", (event) => {
 			(host.motionEvents as string[]).push(event.animationName);
@@ -14,66 +15,38 @@ test.beforeEach(async ({ page }) => {
 		document.addEventListener("transitionrun", (event) => {
 			(host.motionEvents as string[]).push(event.propertyName);
 		});
-		host.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-		host.__TAURI_INTERNALS__ = {
-			transformCallback() {
-				return 1;
-			},
-			async invoke(command: string, args: Record<string, unknown> = {}) {
-				if (command === "hosts_list")
-					return { registered: [], discovered: [], discoveryError: null, hostingError: null };
-				if (command === "host_status") return null;
-				if (command === "server_request" && args.method === "host/replay")
-					return {
-						reset: false,
-						epoch: "test",
-						sequence: 0,
-						events: [],
-						snapshot: { activeTurns: {}, approvals: [] },
-					};
-				if (command === "plugin:event|listen") return 1;
-				if (command === "plugin:event|unlisten" || command === "server_connect") return;
-				if (command === "projects_load")
-					return [{ name: "Motion preview", path: "C:/example", historyPaths: [] }];
-				if (command === "files_list") return [];
-				if (command !== "server_request") throw new Error(`Unexpected command: ${command}`);
-				if (args.method === "model/list")
-					return {
-						data: [
-							{
-								id: "model-a",
-								model: "model-a",
-								displayName: "Model A",
-								description: "Preview model",
-								isDefault: true,
-								hidden: false,
-								defaultReasoningEffort: "medium",
-								supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"].map(
-									(reasoningEffort) => ({ reasoningEffort, description: reasoningEffort }),
-								),
-							},
-							{
-								id: "model-b",
-								model: "model-b",
-								displayName: "Model B",
-								description: "Alternative preview model",
-								isDefault: false,
-								hidden: false,
-								defaultReasoningEffort: "high",
-								supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"].map(
-									(reasoningEffort) => ({ reasoningEffort, description: reasoningEffort }),
-								),
-							},
-						],
-						nextCursor: null,
-					};
-				if (args.method === "provider/list") return [{ id: "recodex", label: "Command Code", available: true }];
-				if (args.method === "account/read")
-					return { available: true, connection: "Command Code", loginPending: false, signedIn: false };
-				if (args.method === "thread/list") return { data: [], nextCursor: null };
-				throw new Error(`Unexpected method: ${args.method}`);
-			},
-		};
+		const efforts = () =>
+			["low", "medium", "high", "xhigh", "max", "ultra"].map((reasoningEffort) => ({
+				reasoningEffort,
+				description: reasoningEffort,
+			}));
+		mock.commands.projects_load = () => [{ name: "Motion preview", path: "C:/example", historyPaths: [] }];
+		mock.commands.files_list = () => [];
+		mock.methods["model/list"] = () => ({
+			data: [
+				{
+					id: "model-a",
+					model: "model-a",
+					displayName: "Model A",
+					description: "Preview model",
+					isDefault: true,
+					hidden: false,
+					defaultReasoningEffort: "medium",
+					supportedReasoningEfforts: efforts(),
+				},
+				{
+					id: "model-b",
+					model: "model-b",
+					displayName: "Model B",
+					description: "Alternative preview model",
+					isDefault: false,
+					hidden: false,
+					defaultReasoningEffort: "high",
+					supportedReasoningEfforts: efforts(),
+				},
+			],
+			nextCursor: null,
+		});
 	});
 	await page.goto("/");
 	await expect(page.locator(".model-effort-trigger")).toBeEnabled();

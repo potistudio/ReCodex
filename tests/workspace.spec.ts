@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { installTauriMock, type TauriMock } from "./support/tauri-mock";
 
 const hideCssStudio = "css-studio-panel { display: none !important; }";
 
@@ -17,14 +18,10 @@ test("browser preview and connection controls", async ({ page }) => {
 test("desktop IPC flow: project, model, streaming approval, file save, history", async ({ page }) => {
 	const errors: string[] = [];
 	page.on("pageerror", (error) => errors.push(error.message));
+	await installTauriMock(page);
 	await page.addInitScript(() => {
-		type Payload = Record<string, unknown>;
-		const host = window as unknown as Payload;
-		host.isTauri = true;
-		host.__TAURI_OS_PLUGIN_INTERNALS__ = { platform: "macos" };
-		const callbacks = new Map<number, (event: unknown) => void>();
-		let listener = 0;
-		let callbackId = 0;
+		const host = window as unknown as Record<string, unknown>;
+		const mock = host.tauriMock as TauriMock;
 		let turnCount = 0;
 		let file = "export const answer = 41;\n";
 		let projects = [{ name: "Example project", path: "C:/example", historyPaths: [] as string[] }];
@@ -44,243 +41,227 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 			updatedAt: 0,
 			turns: [],
 		};
-		const emit = (payload: unknown) => callbacks.get(listener)?.({ event: "host-event", payload });
-		host.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-		host.__TAURI_INTERNALS__ = {
-			transformCallback(callback: (event: unknown) => void) {
-				callbacks.set(++callbackId, callback);
-				return callbackId;
-			},
-			async invoke(command: string, args: Payload = {}) {
-				if (command === "hosts_list")
-					return { registered: [], discovered: [], discoveryError: null, hostingError: null };
-				if (command === "host_status") return null;
-				if (command === "server_request" && args.method === "host/replay")
-					return {
-						reset: false,
-						epoch: "test",
-						sequence: 0,
-						events: [],
-						snapshot: { activeTurns: {}, approvals: [] },
-					};
-				if (command === "plugin:event|listen") {
-					if (args.event === "host-event") listener = args.handler as number;
-					return 1;
-				}
-				if (command === "plugin:event|unlisten") return;
-				if (command === "server_connect") return;
-				if (command === "projects_load") return projects;
-				if (command === "project_save") {
-					projects = projects.map((project) => ({
-						...project,
-						name: (args.name as string | undefined) ?? project.name,
-					}));
-					return projects;
-				}
-				if (command === "project_relocate") {
-					host.relocateParams = args;
-					const sourcePath = (args.sourcePath as string) ?? "";
-					const destinationPath = (args.destinationPath as string) ?? "";
-					const project = projects.find((entry) => entry.path === sourcePath);
-					if (!project) throw new Error("Open this project first");
-					project.historyPaths.push(project.path);
-					project.path = destinationPath;
-					project.historyPaths = project.historyPaths.filter((path) => path !== destinationPath);
-					projects = projects.filter(
-						(entry, index, entries) => index === entries.findIndex((item) => item.path === entry.path),
-					);
-					return project;
-				}
-				if (command === "files_list")
-					return [
+		const emit = (payload: unknown) => mock.emit("host-event", payload);
+		mock.commands.projects_load = () => projects;
+		mock.commands.project_save = (args) => {
+			projects = projects.map((project) => ({
+				...project,
+				name: (args.name as string | undefined) ?? project.name,
+			}));
+			return projects;
+		};
+		mock.commands.project_relocate = (args) => {
+			host.relocateParams = args;
+			const sourcePath = (args.sourcePath as string) ?? "";
+			const destinationPath = (args.destinationPath as string) ?? "";
+			const project = projects.find((entry) => entry.path === sourcePath);
+			if (!project) throw new Error("Open this project first");
+			project.historyPaths.push(project.path);
+			project.path = destinationPath;
+			project.historyPaths = project.historyPaths.filter((path) => path !== destinationPath);
+			projects = projects.filter(
+				(entry, index, entries) => index === entries.findIndex((item) => item.path === entry.path),
+			);
+			return project;
+		};
+		mock.commands.files_list = () => [{ name: "main.ts", path: "main.ts", isDirectory: false }];
+		mock.commands.file_read = () => file;
+		mock.commands.file_save = (args) => {
+			if (args.expected !== file) throw new Error("File changed on disk");
+			file = args.content as string;
+		};
+		mock.commands["plugin:dialog|confirm"] = () => true;
+		mock.commands["plugin:dialog|open"] = () => "D:/relocated-working-directory";
+		mock.commands.server_respond = (args) => {
+			host.approvalResult = args.result;
+			emit({
+				method: "thread/tokenUsage/updated",
+				params: {
+					threadId: thread.id,
+					turnId: "turn-1",
+					tokenUsage: {
+						total: {
+							totalTokens: 1000,
+							inputTokens: 600,
+							cachedInputTokens: 400,
+							cacheWriteInputTokens: 0,
+							outputTokens: 200,
+							reasoningOutputTokens: 200,
+						},
+						last: {
+							totalTokens: 1000,
+							inputTokens: 600,
+							cachedInputTokens: 400,
+							cacheWriteInputTokens: 0,
+							outputTokens: 200,
+							reasoningOutputTokens: 200,
+						},
+						modelContextWindow: 272000,
+					},
+				},
+			});
+			emit({
+				method: "item/completed",
+				params: {
+					threadId: thread.id,
+					turnId: "turn-1",
+					item: {
+						id: "command-1",
+						type: "commandExecution",
+						command: "pnpm check",
+						status: "completed",
+					},
+				},
+			});
+			emit({
+				method: "item/completed",
+				params: {
+					threadId: thread.id,
+					turnId: "turn-1",
+					item: {
+						id: "answer-1",
+						type: "agentMessage",
+						text: "This is a **SvelteKit** project.",
+					},
+				},
+			});
+			emit({
+				method: "turn/completed",
+				params: {
+					threadId: thread.id,
+					turn: {
+						id: "turn-1",
+						status: "completed",
+						items: [],
+					},
+				},
+			});
+		};
+		mock.methods["model/list"] = () => ({
+			data: [
+				{
+					id: "m1",
+					model: "model-a",
+					displayName: "Model A",
+					description: "Fast model",
+					isDefault: true,
+					defaultReasoningEffort: "medium",
+					supportedReasoningEfforts: [
+						{ reasoningEffort: "low", description: "Faster responses" },
+						{ reasoningEffort: "medium", description: "Balanced reasoning" },
+					],
+				},
+				{
+					id: "m2",
+					model: "model-b",
+					displayName: "Model B",
+					description: "Reasoning model",
+					isDefault: false,
+					defaultReasoningEffort: "high",
+					supportedReasoningEfforts: [
+						{ reasoningEffort: "medium", description: "Balanced reasoning" },
+						{ reasoningEffort: "high", description: "Deeper reasoning" },
+					],
+				},
+			],
+			nextCursor: null,
+		});
+		mock.methods["thread/list"] = (params) => {
+			host.threadListCwds = [...((host.threadListCwds as string[] | undefined) ?? []), params.cwd as string];
+			return { data: [thread, backgroundThread], nextCursor: null };
+		};
+		mock.methods["thread/start"] = async (params) => {
+			host.startParams = params;
+			if (host.delayThreadStart) await new Promise<void>((resolve) => (host.releaseThreadStart = resolve));
+			return { thread };
+		};
+		mock.methods["thread/resume"] = (params) => {
+			host.resumeThreadIds = [
+				...((host.resumeThreadIds as string[] | undefined) ?? []),
+				params.threadId as string,
+			];
+			const resumedThread = params.threadId === backgroundThread.id ? backgroundThread : thread;
+			return {
+				thread: {
+					...resumedThread,
+					turns: [
 						{
-							name: "main.ts",
-							path: "main.ts",
-							isDirectory: false,
-						},
-					];
-				if (command === "file_read") return file;
-				if (command === "file_save") {
-					if (args.expected !== file) throw new Error("File changed on disk");
-					file = args.content as string;
-					return;
-				}
-				if (command === "plugin:dialog|confirm") return true;
-				if (command === "plugin:dialog|open") return "D:/relocated-working-directory";
-				if (command === "server_respond") {
-					host.approvalResult = args.result;
-					emit({
-						method: "thread/tokenUsage/updated",
-						params: {
-							threadId: thread.id,
-							turnId: "turn-1",
-							tokenUsage: {
-								total: {
-									totalTokens: 1000,
-									inputTokens: 600,
-									cachedInputTokens: 400,
-									cacheWriteInputTokens: 0,
-									outputTokens: 200,
-									reasoningOutputTokens: 200,
+							id: "old-turn",
+							status: "completed",
+							items: [
+								{
+									id: "old-answer",
+									type: "agentMessage",
+									text:
+										resumedThread.id === backgroundThread.id
+											? "Background conversation"
+											: "Restored conversation",
 								},
-								last: {
-									totalTokens: 1000,
-									inputTokens: 600,
-									cachedInputTokens: 400,
-									cacheWriteInputTokens: 0,
-									outputTokens: 200,
-									reasoningOutputTokens: 200,
-								},
-								modelContextWindow: 272000,
-							},
+							],
 						},
-					});
-					emit({
-						method: "item/completed",
-						params: {
-							threadId: thread.id,
-							turnId: "turn-1",
-							item: {
-								id: "command-1",
-								type: "commandExecution",
-								command: "pnpm check",
-								status: "completed",
-							},
-						},
-					});
-					emit({
-						method: "item/completed",
-						params: {
-							threadId: thread.id,
-							turnId: "turn-1",
-							item: {
-								id: "answer-1",
-								type: "agentMessage",
-								text: "This is a **SvelteKit** project.",
-							},
-						},
-					});
+					],
+				},
+				model: "model-a",
+			};
+		};
+		mock.methods["turn/start"] = (params) => {
+			turnCount += 1;
+			const turnId = `turn-${turnCount}`;
+			host.turnParams = params;
+			host.turnInputs = [...((host.turnInputs as unknown[] | undefined) ?? []), params];
+			setTimeout(() => {
+				emit({
+					method: "turn/started",
+					params: { threadId: thread.id, turn: { id: turnId, status: "inProgress", items: [] } },
+				});
+				if (turnId !== "turn-1") {
 					emit({
 						method: "turn/completed",
 						params: {
 							threadId: thread.id,
-							turn: {
-								id: "turn-1",
-								status: "completed",
-								items: [],
-							},
+							turn: { id: turnId, status: "completed", items: [] },
 						},
 					});
 					return;
 				}
-				if (command !== "server_request") throw new Error(`Unexpected command: ${command}`);
-				if (args.method === "model/list")
-					return {
-						data: [
-							{
-								id: "m1",
-								model: "model-a",
-								displayName: "Model A",
-								description: "Fast model",
-								isDefault: true,
-								defaultReasoningEffort: "medium",
-								supportedReasoningEfforts: [
-									{ reasoningEffort: "low", description: "Faster responses" },
-									{ reasoningEffort: "medium", description: "Balanced reasoning" },
-								],
-							},
-							{
-								id: "m2",
-								model: "model-b",
-								displayName: "Model B",
-								description: "Reasoning model",
-								isDefault: false,
-								defaultReasoningEffort: "high",
-								supportedReasoningEfforts: [
-									{ reasoningEffort: "medium", description: "Balanced reasoning" },
-									{ reasoningEffort: "high", description: "Deeper reasoning" },
-								],
-							},
-						],
-						nextCursor: null,
-					};
-				if (args.method === "provider/list") return [{ id: "recodex", label: "Command Code", available: true }];
-				if (args.method === "account/read")
-					return { available: true, connection: "Command Code", loginPending: false, signedIn: false };
-				if (args.method === "thread/list") {
-					host.threadListCwds = [
-						...((host.threadListCwds as string[] | undefined) ?? []),
-						(args.params as { cwd: string }).cwd,
-					];
-					return { data: [thread, backgroundThread], nextCursor: null };
-				}
-				if (args.method === "thread/start") {
-					host.startParams = args.params;
-					if (host.delayThreadStart)
-						await new Promise<void>((resolve) => (host.releaseThreadStart = resolve));
-					return { thread };
-				}
-				if (args.method === "thread/resume") {
-					host.resumeThreadIds = [
-						...((host.resumeThreadIds as string[] | undefined) ?? []),
-						(args.params as { threadId: string }).threadId,
-					];
-					const resumedThread =
-						(args.params as { threadId: string }).threadId === backgroundThread.id
-							? backgroundThread
-							: thread;
-					return {
-						thread: {
-							...resumedThread,
-							turns: [
-								{
-									id: "old-turn",
-									status: "completed",
-									items: [
-										{
-											id: "old-answer",
-											type: "agentMessage",
-											text:
-												resumedThread.id === backgroundThread.id
-													? "Background conversation"
-													: "Restored conversation",
-										},
-									],
-								},
-							],
+				emit({
+					method: "item/started",
+					params: {
+						threadId: thread.id,
+						item: {
+							id: "user-1",
+							type: "userMessage",
+							content: (params as { input: unknown }).input,
 						},
-						model: "model-a",
-					};
-				}
-				if (args.method === "turn/start") {
-					turnCount += 1;
-					const turnId = `turn-${turnCount}`;
-					host.turnParams = args.params;
-					host.turnInputs = [...((host.turnInputs as unknown[] | undefined) ?? []), args.params];
+					},
+				});
+				emit({
+					method: "item/reasoning/summaryTextDelta",
+					params: {
+						threadId: thread.id,
+						itemId: "reasoning-1",
+						summaryIndex: 0,
+						delta: "**Reviewing ",
+					},
+				});
+				setTimeout(() => {
+					emit({
+						method: "item/reasoning/summaryTextDelta",
+						params: {
+							threadId: thread.id,
+							itemId: "reasoning-1",
+							summaryIndex: 0,
+							delta: "the project**",
+						},
+					});
 					setTimeout(() => {
 						emit({
-							method: "turn/started",
-							params: { threadId: thread.id, turn: { id: turnId, status: "inProgress", items: [] } },
-						});
-						if (turnId !== "turn-1") {
-							emit({
-								method: "turn/completed",
-								params: {
-									threadId: thread.id,
-									turn: { id: turnId, status: "completed", items: [] },
-								},
-							});
-							return;
-						}
-						emit({
-							method: "item/started",
+							method: "item/reasoning/summaryTextDelta",
 							params: {
 								threadId: thread.id,
-								item: {
-									id: "user-1",
-									type: "userMessage",
-									content: (args.params as { input: unknown }).input,
-								},
+								itemId: "reasoning-1",
+								summaryIndex: 1,
+								delta: "**Assessing ",
 							},
 						});
 						emit({
@@ -288,99 +269,67 @@ test("desktop IPC flow: project, model, streaming approval, file save, history",
 							params: {
 								threadId: thread.id,
 								itemId: "reasoning-1",
-								summaryIndex: 0,
-								delta: "**Reviewing ",
+								summaryIndex: 1,
+								delta: "dependencies**",
 							},
 						});
 						setTimeout(() => {
 							emit({
-								method: "item/reasoning/summaryTextDelta",
+								method: "item/agentMessage/delta",
 								params: {
 									threadId: thread.id,
-									itemId: "reasoning-1",
-									summaryIndex: 0,
-									delta: "the project**",
+									itemId: "answer-1",
+									turnId,
+									delta: "This is a **",
 								},
 							});
-							setTimeout(() => {
-								emit({
-									method: "item/reasoning/summaryTextDelta",
-									params: {
-										threadId: thread.id,
-										itemId: "reasoning-1",
-										summaryIndex: 1,
-										delta: "**Assessing ",
+							emit({
+								method: "item/agentMessage/delta",
+								params: {
+									threadId: thread.id,
+									itemId: "answer-1",
+									turnId,
+									delta: "SvelteKit**",
+								},
+							});
+							emit({
+								method: "item/started",
+								params: {
+									threadId: thread.id,
+									item: {
+										id: "command-1",
+										type: "commandExecution",
+										command: "pnpm check",
+										status: "inProgress",
 									},
-								});
-								emit({
-									method: "item/reasoning/summaryTextDelta",
-									params: {
-										threadId: thread.id,
-										itemId: "reasoning-1",
-										summaryIndex: 1,
-										delta: "dependencies**",
-									},
-								});
-								setTimeout(() => {
-									emit({
-										method: "item/agentMessage/delta",
-										params: {
-											threadId: thread.id,
-											itemId: "answer-1",
-											turnId,
-											delta: "This is a **",
-										},
-									});
-									emit({
-										method: "item/agentMessage/delta",
-										params: {
-											threadId: thread.id,
-											itemId: "answer-1",
-											turnId,
-											delta: "SvelteKit**",
-										},
-									});
-									emit({
-										method: "item/started",
-										params: {
-											threadId: thread.id,
-											item: {
-												id: "command-1",
-												type: "commandExecution",
-												command: "pnpm check",
-												status: "inProgress",
-											},
-										},
-									});
-									emit({
-										method: "item/commandExecution/outputDelta",
-										params: {
-											threadId: thread.id,
-											itemId: "command-1",
-											delta: "Checking types…\n",
-										},
-									});
-									emit({
-										id: 42,
-										method: "item/commandExecution/requestApproval",
-										params: {
-											threadId: thread.id,
-											turnId,
-											command: "pnpm check",
-											reason: "Validate the project",
-											availableDecisions: ["accept"],
-										},
-									});
-								}, 1000);
-							}, 50);
-						}, 50);
-					}, 20);
-					return {
-						turn: { id: turnId, status: "inProgress", items: [] },
-					};
-				}
-				throw new Error(`Unexpected method: ${args.method}`);
-			},
+								},
+							});
+							emit({
+								method: "item/commandExecution/outputDelta",
+								params: {
+									threadId: thread.id,
+									itemId: "command-1",
+									delta: "Checking types…\n",
+								},
+							});
+							emit({
+								id: 42,
+								method: "item/commandExecution/requestApproval",
+								params: {
+									threadId: thread.id,
+									turnId,
+									command: "pnpm check",
+									reason: "Validate the project",
+									availableDecisions: ["accept"],
+								},
+							});
+						}, 1000);
+					}, 50);
+				}, 50);
+			}, 20);
+			return {
+				turn: { id: turnId, status: "inProgress", items: [] },
+			};
 		};
 	});
 	await page.goto("/");

@@ -1,17 +1,14 @@
 import { expect, test } from "@playwright/test";
+import { installTauriMock, type TauriMock } from "./support/tauri-mock";
 
 test("hosts explicitly selected projects and isolates remote chats, files, and background turns", async ({ page }) => {
 	const errors: string[] = [];
 	page.on("pageerror", (error) => errors.push(error.message));
+	await installTauriMock(page);
 	await page.addInitScript(() => {
 		type Args = Record<string, unknown>;
 		const native = window as unknown as Args;
-		native.isTauri = true;
-		native.__TAURI_OS_PLUGIN_INTERNALS__ = { platform: "macos" };
-		native.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-		const callbacks = new Map<number, (event: unknown) => void>();
-		const listeners = new Set<number>();
-		let callbackId = 0;
+		const mock = native.tauriMock as TauriMock;
 		let hosting: Args | null = null;
 		const files: Record<string, string> = { local: "local file", desktop: "remote file" };
 		const project = (id: string) => ({
@@ -27,102 +24,49 @@ test("hosts explicitly selected projects and isolates remote chats, files, and b
 			turns: [],
 			updatedAt: 1,
 		});
-		const emit = (id: string, event: unknown) => {
-			for (const listener of listeners)
-				callbacks.get(listener)?.({ event: "host-event", payload: { hostId: id, event } });
+		native.emitHostEvent = (id: string, event: unknown) => mock.emitHost(event, id);
+		mock.commands.host_status = () => hosting;
+		mock.commands.host_start = (args) => {
+			native.hostedProjects = args.projects;
+			hosting = {
+				id: "this-pc",
+				name: args.name,
+				address: args.address,
+				devices: [],
+				sharedProjects: args.projects,
+			};
+			return hosting;
 		};
-		native.emitHostEvent = emit;
-		native.__TAURI_INTERNALS__ = {
-			transformCallback(callback: (event: unknown) => void) {
-				callbacks.set(++callbackId, callback);
-				return callbackId;
-			},
-			async invoke(command: string, args: Args = {}) {
-				const id = (args.hostId as string) ?? "local";
-				if (command === "plugin:event|listen") {
-					if (args.event === "host-event") listeners.add(args.handler as number);
-					return args.handler;
-				}
-				if (command === "plugin:event|unlisten") {
-					listeners.delete(args.eventId as number);
-					return;
-				}
-				if (command === "hosts_list")
-					return { registered: [], discovered: [], discoveryError: null, hostingError: null };
-				if (command === "host_status") return hosting;
-				if (command === "host_start") {
-					native.hostedProjects = args.projects;
-					hosting = {
-						id: "this-pc",
-						name: args.name,
-						address: args.address,
-						devices: [],
-						sharedProjects: args.projects,
-					};
-					return hosting;
-				}
-				if (command === "host_invite") return "test-invitation";
-				if (command === "host_stop") {
-					hosting = null;
-					return;
-				}
-				if (command === "host_pair") {
-					native.pairAddress = args.address;
-					return { id: "desktop", name: "Desktop" };
-				}
-				if (command === "server_connect") return;
-				if (command === "projects_load") return [project(id)];
-				if (command === "files_list") return [{ name: "main.txt", path: "main.txt", isDirectory: false }];
-				if (command === "file_read") {
-					native.fileHost = id;
-					return files[id];
-				}
-				if (command === "file_save") {
-					native.savedFile = args;
-					if (args.expected !== files[id]) throw Error("Conflict");
-					files[id] = args.content as string;
-					return;
-				}
-				if (command === "server_request") {
-					const params = args.params as Args;
-					if (args.method === "host/replay")
-						return {
-							reset: false,
-							epoch: `test-${id}`,
-							sequence: 0,
-							events: [],
-							snapshot: { activeTurns: {}, approvals: [] },
-						};
-					if (args.method === "model/list")
-						return {
-							data: [
-								{
-									id: "model",
-									model: "model",
-									displayName: "Model",
-									isDefault: true,
-									defaultReasoningEffort: "medium",
-									supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Medium" }],
-								},
-							],
-							nextCursor: null,
-						};
-					if (args.method === "provider/list")
-						return [{ id: "recodex", label: "Command Code", available: true }];
-					if (args.method === "account/read")
-						return { available: true, connection: "Command Code", loginPending: false, signedIn: false };
-					if (args.method === "thread/list") return { data: [thread(id)], nextCursor: null };
-					if (args.method === "thread/resume")
-						return { thread: thread(id), model: "model", reasoningEffort: "medium" };
-					if (args.method === "turn/start") {
-						native.lastTurn = { hostId: id, ...params };
-						const turn = { id: `turn-${id}`, status: "inProgress" };
-						emit(id, { method: "turn/started", params: { threadId: "same-thread", turn } });
-						return { turn };
-					}
-				}
-				throw Error(`Unexpected command: ${command} ${args.method ?? ""}`);
-			},
+		mock.commands.host_invite = () => "test-invitation";
+		mock.commands.host_stop = () => {
+			hosting = null;
+		};
+		mock.commands.host_pair = (args) => {
+			native.pairAddress = args.address;
+			return { id: "desktop", name: "Desktop" };
+		};
+		mock.commands.projects_load = (_args, id) => [project(id)];
+		mock.commands.files_list = () => [{ name: "main.txt", path: "main.txt", isDirectory: false }];
+		mock.commands.file_read = (_args, id) => {
+			native.fileHost = id;
+			return files[id];
+		};
+		mock.commands.file_save = (args, id) => {
+			native.savedFile = args;
+			if (args.expected !== files[id]) throw Error("Conflict");
+			files[id] = args.content as string;
+		};
+		mock.methods["thread/list"] = (_params, id) => ({ data: [thread(id)], nextCursor: null });
+		mock.methods["thread/resume"] = (_params, id) => ({
+			thread: thread(id),
+			model: "model",
+			reasoningEffort: "medium",
+		});
+		mock.methods["turn/start"] = (params, id) => {
+			native.lastTurn = { hostId: id, ...params };
+			const turn = { id: `turn-${id}`, status: "inProgress" };
+			mock.emitHost({ method: "turn/started", params: { threadId: "same-thread", turn } }, id);
+			return { turn };
 		};
 	});
 	await page.goto("/");
