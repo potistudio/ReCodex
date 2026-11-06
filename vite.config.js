@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
@@ -25,6 +26,11 @@ export default defineConfig(() => ({
 		// `desktop/tauri.conf.json` points `frontendDist` at `../build`.
 		outDir: "../build",
 		emptyOutDir: true,
+	},
+
+	test: {
+		// Unit tests are `*.test.ts` next to the code. Playwright specs are `*.spec.ts`, so keep them out.
+		include: ["src/**/*.test.ts"],
 	},
 
 	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
