@@ -3,6 +3,9 @@ biome = "2.6.3"
 node = "24.21.0"
 pnpm = "12.16.1"
 
+# Rust is pinned in rust-toolchain.toml, which rustup reads directly. Listing it here as well makes
+# every `mise run` fail on Windows (mise cannot replace its install directory), so keep it out.
+
 [tasks."verify:web"]
 description = "Type-check, lint, and unit-test the web client"
 run = ["pnpm check", "pnpm test"]
