@@ -1,8 +1,9 @@
 [package]
 name = "recodex"
 version = "0.0.1-alpha"
-description = "A Tauri App"
-authors = ["you"]
+description = "A local desktop workspace for an agent harness"
+authors = ["potistudio <potistudio@proton.me>"]
+license = "MIT"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
