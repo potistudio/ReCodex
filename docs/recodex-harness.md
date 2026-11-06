@@ -99,12 +99,12 @@ without notice.
 | `model.rs`                                               | Model Gateway. `ModelClient` trait, shared HTTP/SSE helpers, and the Chat Completions adapter.                     |
 | `tools.rs`                                               | Tool Registry, Tool Scheduler, and the local Execution Environment.                                                |
 | `policy.rs`                                              | Authorization Service with session grants.                                                                         |
-| `driver.rs`                                              | Run Driver and crash recovery.                                                                                     |
+| `driver.rs`                                              | Run Driver: agent invocation, active-run registry, cancellation, approval waits, step loop, and crash recovery.    |
 | `account.rs`                                             | Model connection selection and the Command Code account.                                                           |
 | `command_code.rs`                                        | Command Code browser sign-in, key validation, and credential storage.                                              |
 | `command_code_client.rs`                                 | Per-model routing and the generation fallback for Command Code.                                                    |
 | `messages_api.rs`, `responses_api.rs`, `generate_api.rs` | Anthropic Messages, OpenAI Responses, and Command Code generation wire adapters.                                   |
-| `mod.rs`                                                 | Harness Coordinator: session and run lifecycle, approvals, catalog.                                                |
+| `mod.rs`                                                 | Harness Coordinator: session lifecycle, model catalog, and the public API.                                         |
 
 `host.rs` exposes the harness to local, LAN, and Web UI clients, orders operations, and relays
 approval answers. Events use the `thread/*`, `turn/*`, and `item/*` vocabulary the UI

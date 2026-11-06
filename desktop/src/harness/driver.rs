@@ -1,12 +1,13 @@
-//! Run Driver: sequences steps (one model request plus its tool calls), attempts, approvals,
-//! and run termination. Facts are committed to the ledger before they are broadcast.
+//! Run Driver: owns agent invocation, the active-run registry, cancellation, approval waits,
+//! and the step loop (one model request plus its tool calls). Facts are committed to the
+//! ledger before they are broadcast.
 use super::{
 	context,
 	ledger::{kind, Ledger},
 	model::{Delta, ModelRequest, ModelResponse, ToolCallRequest, Usage},
 	policy::{self, ApprovalKind, Decision, Grants},
 	tools::{self, Outcome, PreparedCall},
-	Harness,
+	Harness, MODEL_PREFIX,
 };
 use futures_util::future::join_all;
 use serde_json::{json, Value};
@@ -16,10 +17,180 @@ use std::{
 	sync::{Arc, Mutex as StdMutex},
 	time::{Duration, Instant},
 };
-use tokio::sync::watch;
+use tokio::sync::{oneshot, watch};
 use uuid::Uuid;
 
 const MAX_ATTEMPTS: u32 = 3;
+
+struct ActiveRun {
+	run_id: String,
+	cancel: watch::Sender<bool>,
+}
+
+struct PendingApproval {
+	session: String,
+	run: String,
+	answer: oneshot::Sender<String>,
+}
+
+/// Owns the agent invocation lifecycle: active runs, cancellation, approval waits, and the
+/// step loop. Every agent turn enters and leaves through this type.
+pub(super) struct Driver {
+	max_steps: usize,
+	runs: StdMutex<HashMap<String, ActiveRun>>,
+	approvals: StdMutex<HashMap<String, PendingApproval>>,
+}
+
+impl Driver {
+	pub(super) fn new(max_steps: usize) -> Self {
+		Self {
+			max_steps,
+			runs: StdMutex::new(HashMap::new()),
+			approvals: StdMutex::new(HashMap::new()),
+		}
+	}
+
+	pub(super) fn is_running(&self, session: &str) -> bool {
+		self.runs.lock().unwrap().contains_key(session)
+	}
+
+	/// Accept a prompt, record it, and start a run. Returns once the input is committed.
+	pub(super) fn turn(
+		&self,
+		harness: &Arc<Harness>,
+		id: &str,
+		text: &str,
+		model: Option<&str>,
+		effort: Option<&str>,
+	) -> Result<Value, String> {
+		if text.trim().is_empty() {
+			return Err("A text message is required".into());
+		}
+		let ledger = harness.ledger()?;
+		let session = ledger.session(id)?.ok_or("This chat no longer exists")?;
+		let model = model
+			.filter(|model| !model.is_empty())
+			.map(str::to_owned)
+			.or(session.model.clone())
+			.ok_or("Choose a model for this chat")?;
+		let provider_model = model
+			.strip_prefix(MODEL_PREFIX)
+			.ok_or("This chat uses the ReCodex harness. Start a new chat to use another provider.")?
+			.to_owned();
+		let effort = effort
+			.filter(|effort| !effort.is_empty())
+			.map(str::to_owned)
+			.or(session.effort.clone());
+		let mut runs = self.runs.lock().unwrap();
+		if runs.contains_key(id) {
+			return Err("This chat already has a running turn".into());
+		}
+		if session.model.as_deref() != Some(model.as_str()) || session.effort != effort {
+			ledger.append(id, None, kind::SESSION_MODEL, json!({"model":model,"effort":effort}))?;
+		}
+		let input_id = Uuid::new_v4().to_string();
+		let run_id = Uuid::new_v4().to_string();
+		ledger.append(id, None, kind::INPUT_ACCEPTED, json!({"inputId":input_id,"text":text}))?;
+		ledger.append(
+			id,
+			None,
+			kind::RUN_STARTED,
+			json!({"runId":run_id,"inputId":input_id,"model":model,"effort":effort,"maxSteps":self.max_steps}),
+		)?;
+		let (cancel, cancelled) = watch::channel(false);
+		runs.insert(
+			id.to_owned(),
+			ActiveRun {
+				run_id: run_id.clone(),
+				cancel,
+			},
+		);
+		drop(runs);
+		let turn = json!({"id":run_id,"status":"inProgress","items":[]});
+		harness.emit(json!({"method":"turn/started","params":{"threadId":id,"turn":turn}}));
+		harness.emit(json!({"method":"item/completed","params":{
+			"threadId":id,
+			"turnId":run_id,
+			"item":{"id":format!("{run_id}-user"),"type":"userMessage","content":[{"type":"text","text":text}]}
+		}}));
+		tokio::spawn(run(
+			harness.clone(),
+			RunSpec {
+				session: id.to_owned(),
+				run_id,
+				cwd: session.cwd,
+				model: provider_model,
+				effort: effort.filter(|effort| effort != "off"),
+				cancel: cancelled,
+			},
+		));
+		Ok(json!({"turn": turn}))
+	}
+
+	/// Request cancellation. The run reports `turn/completed` once it has actually stopped.
+	pub(super) fn interrupt(&self, harness: &Harness, id: &str, turn_id: &str) -> Result<(), String> {
+		let runs = self.runs.lock().unwrap();
+		let run = runs.get(id).ok_or("This chat has no running turn")?;
+		if run.run_id != turn_id {
+			return Err("This turn is not running in this chat".into());
+		}
+		if !*run.cancel.borrow() {
+			harness
+				.ledger()?
+				.append(id, None, kind::RUN_CANCEL_REQUESTED, json!({"runId":turn_id}))?;
+			let _ = run.cancel.send(true);
+		}
+		Ok(())
+	}
+
+	/// Deliver an approval answer. Each request accepts exactly one answer.
+	pub(super) fn respond(&self, request_id: &str, result: &Value) -> Result<(), String> {
+		let pending = self
+			.approvals
+			.lock()
+			.unwrap()
+			.remove(request_id)
+			.ok_or("This request has already been resolved")?;
+		let decision = result["decision"]
+			.as_str()
+			.filter(|decision| matches!(*decision, "accept" | "acceptForSession" | "decline" | "cancel"))
+			.unwrap_or("decline");
+		pending
+			.answer
+			.send(decision.to_owned())
+			.map_err(|_| "This request is no longer waiting for an answer".to_owned())
+	}
+
+	pub(super) fn shutdown(&self) {
+		for run in self.runs.lock().unwrap().values() {
+			let _ = run.cancel.send(true);
+		}
+	}
+
+	fn register_approval(&self, request_id: &str, session: &str, run: &str) -> oneshot::Receiver<String> {
+		let (answer, receiver) = oneshot::channel();
+		self.approvals.lock().unwrap().insert(
+			request_id.to_owned(),
+			PendingApproval {
+				session: session.to_owned(),
+				run: run.to_owned(),
+				answer,
+			},
+		);
+		receiver
+	}
+
+	fn release_run(&self, session: &str, run: &str) {
+		let mut runs = self.runs.lock().unwrap();
+		if runs.get(session).is_some_and(|active| active.run_id == run) {
+			runs.remove(session);
+		}
+		self.approvals
+			.lock()
+			.unwrap()
+			.retain(|_, pending| pending.session != session || pending.run != run);
+	}
+}
 
 pub(super) struct RunSpec {
 	pub session: String,
@@ -55,7 +226,7 @@ pub(super) async fn run(harness: Arc<Harness>, spec: RunSpec) {
 		Ok(_) => (status, error),
 		Err(e) => ("failed", Some(format!("{}; {e}", error.unwrap_or_default()))),
 	};
-	harness.release_run(&spec.session, &spec.run_id);
+	harness.driver.release_run(&spec.session, &spec.run_id);
 	let mut turn = json!({"id":spec.run_id,"status":status,"items":[]});
 	if let Some(error) = error {
 		turn["error"] = json!({"message":error});
@@ -77,7 +248,7 @@ async fn drive(harness: &Arc<Harness>, spec: &RunSpec) -> Result<Finish, String>
 	let definitions = tools::registry();
 	let schemas = tools::schemas(&definitions);
 	let names: Vec<_> = definitions.iter().map(|tool| tool.name).collect();
-	for index in 0..harness.max_steps {
+	for index in 0..harness.driver.max_steps {
 		if cancelled(spec) {
 			return Ok(Finish::Interrupted);
 		}
@@ -149,7 +320,10 @@ async fn drive(harness: &Arc<Harness>, spec: &RunSpec) -> Result<Finish, String>
 			return Ok(Finish::Interrupted);
 		}
 	}
-	Err(format!("Stopped after reaching the step limit ({})", harness.max_steps))
+	Err(format!(
+		"Stopped after reaching the step limit ({})",
+		harness.driver.max_steps
+	))
 }
 
 /// One model request with bounded retries. `None` means the run was cancelled.
@@ -311,6 +485,7 @@ impl Tools<'_> {
 		let request_id = format!("rx-approval-{}", Uuid::new_v4());
 		let receiver = self
 			.harness
+			.driver
 			.register_approval(&request_id, &self.spec.session, &self.spec.run_id);
 		self.record(
 			kind::APPROVAL_REQUESTED,
@@ -480,7 +655,6 @@ async fn run_tools(
 				_ = wait_cancel(spec) => "cancel".into(),
 			}
 		};
-		harness.approvals.lock().unwrap().remove(&request_id);
 		context.record(
 			kind::APPROVAL_RESOLVED,
 			json!({
