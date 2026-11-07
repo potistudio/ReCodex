@@ -164,6 +164,43 @@ failed attempt is recorded.
 `turn/interrupt` records `run.cancelRequested` and signals the run. The turn is reported as
 `interrupted` only after the in-flight model request or command has actually stopped.
 
+## Model input and prompt caching
+
+`context::build_messages` turns the chat's events into Chat Completions messages: a fixed system
+prompt, then for each run its user message, every assistant message with its tool calls, and
+one tool result per call. The first user message of a chat starts with `Project root: <cwd>`.
+
+Providers with prefix caching reuse the longest leading part of a request they have seen
+before, so the layout keeps two properties:
+
+- Every request of a chat starts with the whole previous request. Messages are only appended,
+  including after failed and interrupted runs, and JSON keys are serialized in a fixed order.
+- Nothing before the first user message depends on the project. Chat templates place the tool
+  definitions after the system prompt, so a project path in the system prompt would make every
+  new chat in another project miss the cache for both.
+
+Measured on DeepSeek V4 Flash through `/alpha/generate`, where the cache works in blocks of 128
+tokens:
+
+- A request reads everything from the previous request of the chat that fills whole blocks.
+  Only the new messages and the last partial block are uncached. A chat with three tool steps
+  and a follow-up turn read 76% of its input from the cache.
+- The first request of a new chat reads the shared system prompt and tools (768 of about 800
+  tokens), in any project.
+- `threadId`, `x-project-slug`, `config.workingDir`, and `config.date` do not separate caches.
+  So the date that changes at midnight does not cost a cache miss.
+- The cache outlives a pause: after three 10-minute gaps between turns, every request still
+  read the full previous request.
+
+MiniMax M2.5 always reports zero cached tokens. The probes in `connection/cache_probe.rs` and
+`provider/generate_probe.rs` repeat these measurements with the desktop app's stored Command
+Code sign-in:
+
+```sh
+PROBE_SCENARIO=tools cargo test --manifest-path desktop/Cargo.toml --lib cache_probe -- --ignored --nocapture
+cargo test --manifest-path desktop/Cargo.toml --lib generate_probe -- --ignored --nocapture
+```
+
 ## Tools
 
 | Tool             | Effect              |
