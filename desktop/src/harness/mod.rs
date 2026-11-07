@@ -14,6 +14,7 @@
 //! installed with [`Harness::set_client`]; choosing and building it is not the harness's job.
 mod context;
 mod driver;
+mod ids;
 mod ledger;
 mod minimal;
 mod policy;
