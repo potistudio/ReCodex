@@ -7,8 +7,8 @@
 //! - `policy`: allow / ask / deny decisions and session grants.
 //! - `driver`: the run driver that owns agent invocation, step sequencing, approvals, and
 //!   recovery.
-//! - `minimal`: a single-request run driver with no tools or approvals; not wired into
-//!   [`Harness`].
+//! - `minimal`: a single-request run driver with no tools or approvals, selected with
+//!   [`Harness::set_minimal_driver`].
 //!
 //! The harness talks to models only through [`crate::model::ModelClient`]. The client is
 //! installed with [`Harness::set_client`]; choosing and building it is not the harness's job.
@@ -29,7 +29,7 @@ use serde_json::{json, Value};
 use std::{
 	path::Path,
 	sync::{
-		atomic::{AtomicU64, Ordering},
+		atomic::{AtomicBool, AtomicU64, Ordering},
 		Arc, Mutex as StdMutex,
 	},
 	time::{Duration, Instant},
@@ -57,6 +57,8 @@ pub struct Harness {
 	/// Label of the active model connection, e.g. "Command Code".
 	connection: StdMutex<String>,
 	driver: driver::Driver,
+	/// Run turns through [`minimal`] instead of the full driver. Chosen once at startup.
+	minimal: AtomicBool,
 	emit: StdMutex<Option<Emit>>,
 	catalog: Mutex<Option<(Instant, Vec<Value>, u64)>>,
 	/// Bumped on every connection change so a catalog fetched for an old connection is
@@ -74,6 +76,7 @@ impl Harness {
 			model: StdMutex::new(Err("No model connection is configured".into())),
 			connection: StdMutex::new(String::new()),
 			driver: driver::Driver::new(max_steps),
+			minimal: AtomicBool::new(false),
 			emit: StdMutex::new(None),
 			catalog: Mutex::new(None),
 			connection_generation: AtomicU64::new(0),
@@ -273,16 +276,35 @@ impl Harness {
 		model: Option<&str>,
 		effort: Option<&str>,
 	) -> Result<Value, String> {
-		self.driver.turn(self, id, text, model, effort)
+		if self.minimal.load(Ordering::SeqCst) {
+			minimal::turn(self, id, text, model, effort)
+		} else {
+			self.driver.turn(self, id, text, model, effort)
+		}
+	}
+
+	/// Choose the run driver: the minimal single-request driver (no tools, approvals, or
+	/// interruption) when `on`, the full driver otherwise. Call it before the first turn.
+	pub fn set_minimal_driver(&self, on: bool) {
+		self.minimal.store(on, Ordering::SeqCst);
+	}
+
+	/// Whether the chat has a turn in flight. The ledger is consulted too, because the minimal
+	/// driver keeps no active-run registry.
+	fn is_running(&self, id: &str) -> Result<bool, String> {
+		Ok(self.driver.is_running(id) || self.ledger()?.unfinished_runs()?.iter().any(|(chat, _)| chat == id))
 	}
 
 	/// Request cancellation. The run reports `turn/completed` once it has actually stopped.
 	pub fn interrupt(&self, id: &str, turn_id: &str) -> Result<(), String> {
+		if self.minimal.load(Ordering::SeqCst) {
+			return Err("The minimal driver cannot interrupt a turn".into());
+		}
 		self.driver.interrupt(self, id, turn_id)
 	}
 
 	pub fn delete(&self, id: &str) -> Result<(), String> {
-		if self.driver.is_running(id) {
+		if self.is_running(id)? {
 			return Err("Stop the running turn before deleting this chat".into());
 		}
 		self.ledger()?.delete(id)

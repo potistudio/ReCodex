@@ -24,6 +24,7 @@ The harness sends Chat Completions requests to one connection, chosen in this or
 | `OPENAI_API_KEY`            | Used only when no other connection is configured.                                                                            |
 | `RECODEX_OPENAI_MODELS`     | Optional comma-separated model IDs. When unset, the catalog is read from `GET /models`.                                      |
 | `RECODEX_HARNESS_MAX_STEPS` | Step limit per run, default 64.                                                                                              |
+| `RECODEX_HARNESS_DRIVER`    | Set to `minimal` to run turns without tools, approvals, or interruption (see below).                                         |
 
 Models appear in the picker as `recodex/<model-id>`; chat IDs start with `rx-`.
 `provider/list` reports the active connection and why it is unavailable. Environment variables
@@ -103,6 +104,7 @@ Harness (`desktop/src/harness/`) talks to models only through the contract below
 | `tools.rs`   | Tool Registry, Tool Scheduler, and the local Execution Environment.                                                    |
 | `policy.rs`  | Authorization Service with session grants.                                                                             |
 | `driver.rs`  | Run Driver: agent invocation, active-run registry, cancellation, approval waits, step loop, and crash recovery.        |
+| `minimal.rs` | Optional single-request Run Driver, selected with `RECODEX_HARNESS_DRIVER=minimal`.                                    |
 | `mod.rs`     | Harness Coordinator: session lifecycle, model catalog, and the public API. The model client is installed from outside. |
 
 Model contract (`desktop/src/model.rs`): the `ModelClient` trait and the normalized request,
@@ -190,6 +192,22 @@ approval when requested, revalidation, dispatch, and commit of the result.
 
 There is no OS sandbox. An approved command runs with the user's privileges, and a command can
 read or change files outside the project. Only approve commands you would run yourself.
+
+## Minimal driver
+
+With `RECODEX_HARNESS_DRIVER=minimal`, `Harness::turn` uses `desktop/src/harness/minimal.rs`
+instead of `driver.rs`. A turn is one model request and one reply:
+
+- The prompt, the run, the step, and the reply are written to the ledger in the same order and
+  with the same event kinds as the full driver, and the UI receives the same `turn/*` and
+  `item/*` events. Recovery and transcripts work unchanged.
+- No tools are offered. A tool call in the response is not recorded, because a call without a
+  result would corrupt the context of later turns.
+- There are no approvals, retries, token usage events, or step loop.
+- `turn/interrupt` is rejected, so a request that hangs cannot be stopped. A chat with an
+  unfinished run cannot start another turn or be deleted; the ledger is the only record of
+  whether a run is in flight, and the full driver's run registry is not used.
+- The driver is chosen once at startup. Switching it requires a restart.
 
 ## Recovery
 

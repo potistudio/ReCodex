@@ -35,6 +35,8 @@ pub struct Config {
 	pub openai_api_key: Option<String>,
 	pub models: Option<Vec<String>>,
 	pub max_steps: Option<usize>,
+	/// `RECODEX_HARNESS_DRIVER=minimal`: run turns without tools, approvals, or interruption.
+	pub minimal_driver: bool,
 }
 
 impl Config {
@@ -57,6 +59,7 @@ impl Config {
 					.collect()
 			}),
 			max_steps: var("RECODEX_HARNESS_MAX_STEPS").and_then(|value| value.parse().ok()),
+			minimal_driver: var("RECODEX_HARNESS_DRIVER").is_some_and(|value| value.eq_ignore_ascii_case("minimal")),
 		}
 	}
 
@@ -78,6 +81,7 @@ impl Config {
 pub fn open(path: &Path, config: Config) -> (Arc<Harness>, Arc<Connection>) {
 	let directory = path.parent().unwrap_or(Path::new("."));
 	let harness = Harness::new(path, config.max_steps);
+	harness.set_minimal_driver(config.minimal_driver);
 	let connection = Connection::new(harness.clone(), config, Store::new(directory));
 	(harness, connection)
 }

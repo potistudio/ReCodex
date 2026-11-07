@@ -13,8 +13,8 @@
 //! context of later turns.
 //!
 //! The caller must not start two turns on one chat at once. [`turn`] rejects a chat whose
-//! previous run is unfinished, but the check and the append are not atomic; `Host` serializes
-//! them.
+//! previous run is unfinished (see [`Harness::is_running`]), but the check and the append are
+//! not atomic; `Host` serializes them.
 use super::{context, ledger::kind, Harness, MODEL_PREFIX, THREAD_PREFIX};
 use crate::model::{Delta, ModelRequest};
 use serde_json::{json, Value};
@@ -31,20 +31,38 @@ struct Run {
 }
 
 /// Accept a prompt, record it, and start a run. Returns once the input is committed.
-#[cfg_attr(not(test), allow(dead_code))]
-pub(super) fn turn(harness: &Arc<Harness>, id: &str, text: &str) -> Result<Value, String> {
+///
+/// `model` and `effort` override the chat's saved choice; an empty value means no override.
+pub(super) fn turn(
+	harness: &Arc<Harness>,
+	id: &str,
+	text: &str,
+	model: Option<&str>,
+	effort: Option<&str>,
+) -> Result<Value, String> {
 	if text.trim().is_empty() {
 		return Err("A text message is required".into());
 	}
 	let ledger = harness.ledger()?;
 	let session = ledger.session(id)?.ok_or("This chat no longer exists")?;
-	let model = session.model.as_deref().ok_or("Choose a model for this chat")?;
+	let model = model
+		.filter(|model| !model.is_empty())
+		.map(str::to_owned)
+		.or(session.model.clone())
+		.ok_or("Choose a model for this chat")?;
 	let provider_model = model
 		.strip_prefix(MODEL_PREFIX)
 		.ok_or("This chat uses the ReCodex harness. Start a new chat to use another provider.")?
 		.to_owned();
-	if ledger.unfinished_runs()?.iter().any(|(chat, _)| chat == id) {
+	let effort = effort
+		.filter(|effort| !effort.is_empty())
+		.map(str::to_owned)
+		.or(session.effort.clone());
+	if harness.is_running(id)? {
 		return Err("This chat already has a running turn".into());
+	}
+	if session.model.as_deref() != Some(model.as_str()) || session.effort != effort {
+		ledger.append(id, None, kind::SESSION_MODEL, json!({"model":model,"effort":effort}))?;
 	}
 	let input_id = Uuid::new_v4().to_string();
 	let run_id = Uuid::new_v4().to_string();
@@ -53,7 +71,7 @@ pub(super) fn turn(harness: &Arc<Harness>, id: &str, text: &str) -> Result<Value
 		id,
 		None,
 		kind::RUN_STARTED,
-		json!({"runId":run_id,"inputId":input_id,"model":model,"effort":session.effort,"maxSteps":1}),
+		json!({"runId":run_id,"inputId":input_id,"model":model,"effort":effort,"maxSteps":1}),
 	)?;
 	let turn = json!({"id":run_id,"status":"inProgress","items":[]});
 	harness.emit(json!({"method":"turn/started","params":{"threadId":id,"turn":turn}}));
@@ -69,7 +87,7 @@ pub(super) fn turn(harness: &Arc<Harness>, id: &str, text: &str) -> Result<Value
 			run_id,
 			cwd: session.cwd,
 			model: provider_model,
-			effort: session.effort.filter(|effort| effort != "off"),
+			effort: effort.filter(|effort| effort != "off"),
 		},
 	));
 	Ok(json!({"turn": turn}))
@@ -233,7 +251,7 @@ mod tests {
 	#[tokio::test]
 	async fn a_prompt_gets_one_reply_and_the_run_is_closed() {
 		let mut setup = setup(vec![reply("hello", vec![])]);
-		turn(&setup.harness, "rx-1", "hi").unwrap();
+		turn(&setup.harness, "rx-1", "hi", None, None).unwrap();
 		let done = completed(&mut setup.events).await;
 		assert_eq!(done["params"]["turn"]["status"], "completed");
 		assert_eq!(
@@ -259,9 +277,9 @@ mod tests {
 			reply("", vec![tool_call("c1", "run_command", json!({"command":"echo"}))]),
 			reply("second", vec![]),
 		]);
-		turn(&setup.harness, "rx-1", "first").unwrap();
+		turn(&setup.harness, "rx-1", "first", None, None).unwrap();
 		completed(&mut setup.events).await;
-		turn(&setup.harness, "rx-1", "again").unwrap();
+		turn(&setup.harness, "rx-1", "again", None, None).unwrap();
 		let done = completed(&mut setup.events).await;
 		assert_eq!(done["params"]["turn"]["status"], "completed");
 		let requests = setup.model.requests.lock().unwrap();
@@ -273,7 +291,7 @@ mod tests {
 	#[tokio::test]
 	async fn a_model_failure_still_finishes_the_run() {
 		let mut setup = setup(vec![]);
-		turn(&setup.harness, "rx-1", "hi").unwrap();
+		turn(&setup.harness, "rx-1", "hi", None, None).unwrap();
 		let done = completed(&mut setup.events).await;
 		assert_eq!(done["params"]["turn"]["status"], "failed");
 		assert_eq!(done["params"]["turn"]["error"]["message"], "script exhausted");
@@ -284,9 +302,9 @@ mod tests {
 	#[tokio::test]
 	async fn a_second_turn_is_rejected_while_one_is_unfinished() {
 		let setup = setup(vec![crate::harness::testing::Step::Hang]);
-		turn(&setup.harness, "rx-1", "hi").unwrap();
+		turn(&setup.harness, "rx-1", "hi", None, None).unwrap();
 		assert_eq!(
-			turn(&setup.harness, "rx-1", "again").unwrap_err(),
+			turn(&setup.harness, "rx-1", "again", None, None).unwrap_err(),
 			"This chat already has a running turn"
 		);
 	}
@@ -294,15 +312,65 @@ mod tests {
 	#[tokio::test]
 	async fn empty_input_and_foreign_models_are_rejected() {
 		let setup = setup(vec![]);
-		assert!(turn(&setup.harness, "rx-1", "  ").is_err());
+		assert!(turn(&setup.harness, "rx-1", "  ", None, None).is_err());
 		setup
 			.harness
 			.start_session("rx-2", "/project", Some("other/model"), None)
 			.unwrap_err();
 		setup.harness.start_session("rx-3", "/project", None, None).unwrap();
 		assert_eq!(
-			turn(&setup.harness, "rx-3", "hi").unwrap_err(),
+			turn(&setup.harness, "rx-3", "hi", None, None).unwrap_err(),
 			"Choose a model for this chat"
+		);
+	}
+
+	#[tokio::test]
+	async fn a_model_override_is_recorded_and_used() {
+		let mut setup = setup(vec![reply("ok", vec![])]);
+		turn(&setup.harness, "rx-1", "hi", Some("recodex/other"), Some("high")).unwrap();
+		completed(&mut setup.events).await;
+		let events = setup.harness.ledger().unwrap().events("rx-1").unwrap();
+		let change = events.iter().find(|event| event.kind == "session.model").unwrap();
+		assert_eq!(change.payload["model"], "recodex/other");
+		assert_eq!(change.payload["effort"], "high");
+		let session = setup.harness.ledger().unwrap().session("rx-1").unwrap().unwrap();
+		assert_eq!(session.model.as_deref(), Some("recodex/other"));
+	}
+
+	#[tokio::test]
+	async fn the_harness_uses_the_minimal_driver_only_when_selected() {
+		let mut setup = setup(vec![reply("minimal", vec![]), reply("full", vec![])]);
+		setup.harness.set_minimal_driver(true);
+		setup.harness.turn("rx-1", "hi", None, None).unwrap();
+		completed(&mut setup.events).await;
+		assert!(!kinds(&setup.harness).contains(&"tool.started".to_owned()));
+		assert!(setup.model.requests.lock().unwrap()[0]
+			.iter()
+			.all(|m| m["role"] != "tool"));
+		assert_eq!(
+			setup.harness.interrupt("rx-1", "any").unwrap_err(),
+			"The minimal driver cannot interrupt a turn"
+		);
+		setup.harness.set_minimal_driver(false);
+		setup.harness.turn("rx-1", "again", None, None).unwrap();
+		let done = completed(&mut setup.events).await;
+		assert_eq!(done["params"]["turn"]["status"], "completed");
+		assert!(
+			kinds(&setup.harness)
+				.iter()
+				.filter(|kind| *kind == "step.started")
+				.count() == 2
+		);
+	}
+
+	#[tokio::test]
+	async fn a_chat_with_an_unfinished_minimal_run_cannot_be_deleted() {
+		let setup = setup(vec![crate::harness::testing::Step::Hang]);
+		setup.harness.set_minimal_driver(true);
+		setup.harness.turn("rx-1", "hi", None, None).unwrap();
+		assert_eq!(
+			setup.harness.delete("rx-1").unwrap_err(),
+			"Stop the running turn before deleting this chat"
 		);
 	}
 }
