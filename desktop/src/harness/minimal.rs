@@ -271,7 +271,8 @@ mod tests {
 		assert!(setup.harness.ledger().unwrap().unfinished_runs().unwrap().is_empty());
 		let requests = setup.model.requests.lock().unwrap();
 		assert_eq!(requests.len(), 1);
-		assert_eq!(requests[0].last().unwrap()["content"], "hi");
+		let content = requests[0].last().unwrap()["content"].as_str().unwrap().to_owned();
+		assert!(content.ends_with("\n\nhi"), "{content}");
 	}
 
 	#[tokio::test]

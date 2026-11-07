@@ -6,16 +6,22 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 
 /// Version of the event-to-message transformation; recorded with every step.
-pub const VERSION: u32 = 1;
+///
+/// - 2: the project root moved from the system prompt to the start of the first user message.
+pub const VERSION: u32 = 2;
 
-pub fn system_prompt(cwd: &str) -> String {
-	format!(
-		"You are a coding agent working in the project at {cwd}.\n\
-         Use the provided tools to inspect and change files and to run commands. Paths are \
-         relative to the project root. File changes and commands may require the user's \
-         approval; if a call is declined, do not retry it unchanged and explain what you \
-         would have done instead. Keep answers concise and report what you changed."
-	)
+/// The system prompt. It holds no per-project text: chat templates render the tool definitions
+/// right after it, so anything project-specific here would split the prefix cache before the
+/// tools, and every new chat in another project would miss on both.
+pub const SYSTEM_PROMPT: &str = "You are a coding agent working in a software project.\n\
+     Use the provided tools to inspect and change files and to run commands. Paths are \
+     relative to the project root. File changes and commands may require the user's \
+     approval; if a call is declined, do not retry it unchanged and explain what you \
+     would have done instead. Keep answers concise and report what you changed.";
+
+/// The chat's first user message: the project root, then the user's text.
+fn first_user_message(cwd: &str, text: &str) -> String {
+	format!("Project root: {cwd}\n\n{text}")
 }
 
 /// Model-visible messages for the events up to and including `through`.
@@ -40,13 +46,20 @@ pub fn build_messages(events: &[Event], cwd: &str, through: u64) -> Vec<Value> {
 			_ => {}
 		}
 	}
-	let mut messages = vec![json!({"role":"system","content":system_prompt(cwd)})];
+	let mut messages = vec![json!({"role":"system","content":SYSTEM_PROMPT})];
+	let mut first = true;
 	for event in &events {
 		match event.kind.as_str() {
 			kind::RUN_STARTED => {
 				let input = event.payload["inputId"].as_str().unwrap_or_default();
 				if let Some(text) = inputs.get(input) {
-					messages.push(json!({"role":"user","content":text}));
+					let content = if first {
+						first_user_message(cwd, text)
+					} else {
+						(*text).to_owned()
+					};
+					first = false;
+					messages.push(json!({"role":"user","content":content}));
 				}
 			}
 			kind::MESSAGE_ASSISTANT => {
@@ -197,6 +210,26 @@ mod tests {
 			payload,
 			at: seq,
 		}
+	}
+
+	/// Prefix caches can share the system prompt and the tools that follow it across projects
+	/// only if the project root first appears in the first user message.
+	#[test]
+	fn only_the_first_user_message_names_the_project_root() {
+		let events = vec![
+			event(1, kind::INPUT_ACCEPTED, json!({"inputId":"i1","text":"hi"})),
+			event(2, kind::RUN_STARTED, json!({"runId":"r1","inputId":"i1"})),
+			event(3, kind::RUN_FINISHED, json!({"runId":"r1","status":"completed"})),
+			event(4, kind::INPUT_ACCEPTED, json!({"inputId":"i2","text":"again"})),
+			event(5, kind::RUN_STARTED, json!({"runId":"r2","inputId":"i2"})),
+		];
+		let one = build_messages(&events, "/work/alpha", 5);
+		let other = build_messages(&events, "C:\\Users\\someone\\beta", 5);
+		assert_eq!(one[0], other[0]);
+		assert!(!SYSTEM_PROMPT.contains("alpha"));
+		assert_eq!(one[1]["content"], "Project root: /work/alpha\n\nhi");
+		assert_eq!(other[1]["content"], "Project root: C:\\Users\\someone\\beta\n\nhi");
+		assert_eq!(one[2]["content"], "again");
 	}
 
 	#[test]
