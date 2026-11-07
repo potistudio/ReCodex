@@ -7,12 +7,15 @@
 //! - `policy`: allow / ask / deny decisions and session grants.
 //! - `driver`: the run driver that owns agent invocation, step sequencing, approvals, and
 //!   recovery.
+//! - `minimal`: a single-request run driver with no tools or approvals; not wired into
+//!   [`Harness`].
 //!
 //! The harness talks to models only through [`crate::model::ModelClient`]. The client is
 //! installed with [`Harness::set_client`]; choosing and building it is not the harness's job.
 mod context;
 mod driver;
 mod ledger;
+mod minimal;
 mod policy;
 #[cfg(test)]
 pub(crate) mod testing;
