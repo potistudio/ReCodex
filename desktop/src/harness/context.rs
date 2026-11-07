@@ -231,4 +231,71 @@ mod tests {
 		assert_eq!(thread["turns"][0]["status"], "interrupted");
 		assert_eq!(thread["turns"][0]["items"].as_array().unwrap().len(), 2);
 	}
+
+	/// Prompt caching matches a request's leading bytes against earlier requests, so every
+	/// request must start with the whole previous one, including across a failed run.
+	#[test]
+	fn each_request_extends_the_previous_one_as_a_prefix() {
+		let events = vec![
+			event(1, kind::SESSION_CREATED, json!({})),
+			event(2, kind::INPUT_ACCEPTED, json!({"inputId":"i1","text":"read it"})),
+			event(3, kind::RUN_STARTED, json!({"runId":"r1","inputId":"i1"})),
+			event(
+				4,
+				kind::MESSAGE_ASSISTANT,
+				json!({"runId":"r1","text":"","reasoning":"thinking","toolCalls":[
+					{"id":"a","name":"read_file","arguments":"{\"path\":\"x\"}"},
+					{"id":"b","name":"list_directory","arguments":"{}"}
+				]}),
+			),
+			event(
+				5,
+				kind::TOOL_COMPLETED,
+				json!({"runId":"r1","callId":"b","content":"dir"}),
+			),
+			event(
+				6,
+				kind::TOOL_COMPLETED,
+				json!({"runId":"r1","callId":"a","content":"file"}),
+			),
+			event(
+				7,
+				kind::MESSAGE_ASSISTANT,
+				json!({"runId":"r1","text":"done","toolCalls":[]}),
+			),
+			event(8, kind::RUN_FINISHED, json!({"runId":"r1","status":"completed"})),
+			event(9, kind::INPUT_ACCEPTED, json!({"inputId":"i2","text":"again"})),
+			event(10, kind::RUN_STARTED, json!({"runId":"r2","inputId":"i2"})),
+			event(11, kind::ATTEMPT_FAILED, json!({"runId":"r2","partialText":"half"})),
+			event(12, kind::RUN_FINISHED, json!({"runId":"r2","status":"failed"})),
+			event(13, kind::INPUT_ACCEPTED, json!({"inputId":"i3","text":"once more"})),
+			event(14, kind::RUN_STARTED, json!({"runId":"r3","inputId":"i3"})),
+		];
+		// The `through` value of each request: first step, second step after the tool results,
+		// the next run, and the run after a failed one.
+		let requests: Vec<_> = [3, 6, 10, 14]
+			.iter()
+			.map(|through| build_messages(&events, "/p", *through))
+			.collect();
+		for pair in requests.windows(2) {
+			let (earlier, later) = (&pair[0], &pair[1]);
+			assert!(later.len() > earlier.len());
+			assert_eq!(&later[..earlier.len()], earlier.as_slice());
+		}
+		let roles: Vec<_> = requests[3].iter().map(|m| m["role"].as_str().unwrap()).collect();
+		// The failed run keeps its prompt, so two user messages follow each other.
+		assert_eq!(
+			roles,
+			[
+				"system",
+				"user",
+				"assistant",
+				"tool",
+				"tool",
+				"assistant",
+				"user",
+				"user"
+			]
+		);
+	}
 }
