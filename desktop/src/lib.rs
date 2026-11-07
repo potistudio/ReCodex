@@ -1,8 +1,13 @@
+mod connection;
 mod discovery;
 mod harness;
 mod host;
 mod lan;
 mod lan_store;
+mod model;
+mod provider;
+#[cfg(test)]
+mod test_support;
 mod web;
 mod workspace;
 use host::{Host, LOCAL};

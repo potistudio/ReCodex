@@ -16,7 +16,7 @@ use tokio::{
 	sync::{mpsc, watch},
 };
 
-use super::model::ToolCallRequest;
+use crate::model::ToolCallRequest;
 
 const MAX_FILE: u64 = 2 * 1024 * 1024;
 const MAX_OUTPUT: usize = 1024 * 1024;

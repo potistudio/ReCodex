@@ -2,10 +2,8 @@
 //!
 //! Extended thinking is not requested: continuing a tool loop with thinking enabled requires
 //! replaying signed thinking blocks, which the ledger does not keep.
-use super::model::{
-	arguments_object, error_message, function_tools, read_stream, send, turns, Delta, ModelError, ModelRequest,
-	ModelResponse, OnDelta, SseDecoder, ToolCallRequest, Turn, Usage,
-};
+use super::gateway::{arguments_object, error_message, function_tools, read_stream, send, turns, SseDecoder, Turn};
+use crate::model::{Delta, ModelError, ModelRequest, ModelResponse, OnDelta, ToolCallRequest, Usage};
 use serde_json::{json, Value};
 
 pub const VERSION: &str = "2023-06-01";

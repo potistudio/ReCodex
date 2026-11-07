@@ -1,10 +1,8 @@
 //! OpenAI Responses adapter (`POST {base}/responses`).
 //!
 //! Requests are stateless (`store: false`); reasoning items are not replayed between steps.
-use super::model::{
-	error_message, function_tools, read_stream, send, turns, Delta, ModelError, ModelRequest, ModelResponse, OnDelta,
-	SseDecoder, ToolCallRequest, Turn, Usage,
-};
+use super::gateway::{error_message, function_tools, read_stream, send, turns, SseDecoder, Turn};
+use crate::model::{Delta, ModelError, ModelRequest, ModelResponse, OnDelta, ToolCallRequest, Usage};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 

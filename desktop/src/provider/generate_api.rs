@@ -4,10 +4,8 @@
 //! can still generate through it. It is not publicly documented. The request and stream
 //! formats follow the community pi-commandcode-provider (MIT): AI SDK model messages in, AI
 //! SDK stream parts out. Treat it as best-effort compatibility that may break.
-use super::model::{
-	arguments_object, error_message, function_tools, read_stream, send, turns, Delta, Lines, ModelError, ModelRequest,
-	ModelResponse, OnDelta, ToolCallRequest, Turn, Usage,
-};
+use super::gateway::{arguments_object, error_message, function_tools, read_stream, send, turns, Lines, Turn};
+use crate::model::{Delta, ModelError, ModelRequest, ModelResponse, OnDelta, ToolCallRequest, Usage};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -110,9 +108,7 @@ pub(super) fn body(request: &ModelRequest, date: &str) -> Value {
 	if let Some(effort) = &request.effort {
 		params["reasoning_effort"] = json!(effort);
 	}
-	let thread = request
-		.session
-		.strip_prefix(super::THREAD_PREFIX)
+	let thread = Some(request.session.as_str())
 		.filter(|id| uuid::Uuid::parse_str(id).is_ok())
 		.map(str::to_owned)
 		.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
@@ -339,7 +335,7 @@ mod tests {
 				],
 				effort: Some("high".into()),
 				cwd: "/Users/me/My Project".into(),
-				session: format!("rx-{}", uuid::Uuid::nil()),
+				session: uuid::Uuid::nil().to_string(),
 			},
 			"2026-11-04",
 		);

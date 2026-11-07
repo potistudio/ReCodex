@@ -1,6 +1,7 @@
 //! Transport-independent owner of a PC's workspace and agent harness.
 use crate::{
-	harness::{Harness, HarnessConfig},
+	connection::{self, Config, Connection},
+	harness::Harness,
 	workspace::{self, Workspace},
 };
 use serde_json::{json, Value};
@@ -33,6 +34,7 @@ pub struct Host {
 	pub workspace: Workspace,
 	pub events: broadcast::Sender<Value>,
 	harness: Arc<Harness>,
+	connection: Arc<Connection>,
 	// Serialize operation acceptance, including same-chat starts, saves, and approval answers.
 	gate: Mutex<()>,
 	runtime: StdMutex<Runtime>,
@@ -45,7 +47,7 @@ pub fn project_id(path: &str) -> String {
 
 impl Host {
 	pub fn new(directory: PathBuf) -> Result<Arc<Self>, String> {
-		Self::build(directory, |path| Harness::new(path, HarnessConfig::from_env()))
+		Self::build(directory, |path| connection::open(path, Config::from_env()))
 	}
 
 	#[cfg(test)]
@@ -53,20 +55,27 @@ impl Host {
 		directory: PathBuf,
 		harness: impl FnOnce(&std::path::Path) -> Arc<Harness>,
 	) -> Result<Arc<Self>, String> {
-		Self::build(directory, harness)
+		Self::build(directory, |path| {
+			let harness = harness(path);
+			(harness.clone(), Connection::disabled(harness))
+		})
 	}
 
-	fn build(directory: PathBuf, harness: impl FnOnce(&std::path::Path) -> Arc<Harness>) -> Result<Arc<Self>, String> {
+	fn build(
+		directory: PathBuf,
+		open: impl FnOnce(&std::path::Path) -> (Arc<Harness>, Arc<Connection>),
+	) -> Result<Arc<Self>, String> {
 		let workspace = Workspace::default();
 		workspace::projects_load(&directory, &workspace)?;
 		let (events, _) = broadcast::channel(2048);
-		let harness = harness(&directory.join("harness.sqlite3"));
+		let (harness, connection) = open(&directory.join("harness.sqlite3"));
 		let host = Arc::new(Self {
 			lan: crate::lan_store::LanStore::load(&directory)?,
 			directory,
 			workspace,
 			events,
 			harness: harness.clone(),
+			connection,
 			gate: Mutex::new(()),
 			runtime: StdMutex::new(Runtime {
 				epoch: Uuid::new_v4().to_string(),
@@ -393,14 +402,14 @@ impl Host {
 			}
 			"model/list" => self.model_list().await,
 			"provider/list" => Ok(json!(self.provider_status().await)),
-			"account/read" => Ok(self.harness.account()),
+			"account/read" => Ok(self.connection.account()),
 			// Sign-in stores credentials on the host, so only the host's own UI may change it.
-			"account/login/start" if !remote => Ok(json!({"authUrl":self.harness.login_start().await?})),
+			"account/login/start" if !remote => Ok(json!({"authUrl":self.connection.login_start().await?})),
 			"account/login/cancel" if !remote => {
-				self.harness.login_cancel();
+				self.connection.login_cancel();
 				Ok(Value::Null)
 			}
-			"account/logout" if !remote => self.harness.logout(),
+			"account/logout" if !remote => self.connection.logout(),
 			"thread/list" => {
 				let root = self.root(&string("cwd")?, remote)?;
 				let mut data = self.harness.list_threads(&root).await?;

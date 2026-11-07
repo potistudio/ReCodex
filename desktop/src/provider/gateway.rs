@@ -1,73 +1,38 @@
-//! Model Gateway: a normalized streaming request and the wire adapters behind it.
-//! Provider-specific formats stay inside adapters; the run driver only sees `ModelRequest`,
-//! `Delta`, and `ModelResponse`.
-//!
-//! The canonical request uses Chat Completions messages (`system`, `user`, `assistant` with
-//! `tool_calls`, and `tool`). Other adapters convert it through [`turns`] and
-//! [`function_tools`].
+//! Model Gateway helpers shared by the provider adapters: HTTP and SSE plumbing, the
+//! conversion from the canonical request through [`turns`] and [`function_tools`], and the
+//! Chat Completions adapter. The contract these adapters implement is `crate::model`.
+use crate::model::{
+	BoxFuture, Delta, ModelClient, ModelError, ModelInfo, ModelRequest, ModelResponse, OnDelta, ToolCallRequest, Usage,
+};
 use futures_util::StreamExt;
 use serde_json::{json, Value};
-use std::{future::Future, pin::Pin, time::Duration};
+use std::time::Duration;
 
 const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
-pub struct ModelRequest {
-	pub model: String,
-	pub messages: Vec<Value>,
-	pub tools: Vec<Value>,
-	pub effort: Option<String>,
-	/// Project root of the chat; some providers attach it to the request.
-	pub cwd: String,
-	/// Chat ID, used as a conversation identifier by providers that accept one.
-	pub session: String,
+/// The wire protocol that serves a model.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum Route {
+	#[default]
+	ChatCompletions,
+	Responses,
+	AnthropicMessages,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ToolCallRequest {
+/// A model listed by a provider's catalog, with the wire protocol that serves it.
+pub(super) struct CatalogModel {
 	pub id: String,
-	pub name: String,
-	pub arguments: String,
+	pub context_window: Option<u64>,
+	pub route: Route,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Usage {
-	pub input: u64,
-	pub cached: u64,
-	pub output: u64,
-	pub reasoning: u64,
-	pub total: u64,
-}
-
-impl Usage {
-	pub fn to_value(self) -> Value {
-		json!({
-			"input": self.input,
-			"cached": self.cached,
-			"output": self.output,
-			"reasoning": self.reasoning,
-			"total": self.total
-		})
-	}
-
-	pub fn from_value(value: &Value) -> Self {
-		let number = |key: &str| value[key].as_u64().unwrap_or_default();
+impl From<CatalogModel> for ModelInfo {
+	fn from(model: CatalogModel) -> Self {
 		Self {
-			input: number("input"),
-			cached: number("cached"),
-			output: number("output"),
-			reasoning: number("reasoning"),
-			total: number("total"),
+			id: model.id,
+			context_window: model.context_window,
 		}
 	}
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct ModelResponse {
-	pub text: String,
-	pub reasoning: String,
-	pub tool_calls: Vec<ToolCallRequest>,
-	pub finish_reason: Option<String>,
-	pub usage: Option<Usage>,
 }
 
 impl ModelResponse {
@@ -84,60 +49,6 @@ impl ModelResponse {
 		}
 		self
 	}
-}
-
-pub enum Delta {
-	Text(String),
-	Reasoning(String),
-}
-
-#[derive(Debug)]
-pub struct ModelError {
-	pub message: String,
-	/// True only when no output reached the caller, so a new attempt cannot duplicate it.
-	pub retryable: bool,
-	/// HTTP status of a rejected request.
-	pub status: Option<u16>,
-	/// Provider error code from the response body, such as `upgrade_required`.
-	pub code: Option<String>,
-}
-
-impl ModelError {
-	pub(super) fn new(message: impl Into<String>, retryable: bool) -> Self {
-		Self {
-			message: message.into(),
-			retryable,
-			status: None,
-			code: None,
-		}
-	}
-}
-
-/// The wire protocol that serves a model.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Route {
-	#[default]
-	ChatCompletions,
-	Responses,
-	AnthropicMessages,
-}
-
-pub struct ModelInfo {
-	pub id: String,
-	pub context_window: Option<u64>,
-	pub route: Route,
-}
-
-pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-pub type OnDelta<'a> = &'a (dyn Fn(Delta) + Send + Sync);
-
-pub trait ModelClient: Send + Sync {
-	fn models(&self) -> BoxFuture<'_, Result<Vec<ModelInfo>, String>>;
-	fn stream<'a>(
-		&'a self,
-		request: &'a ModelRequest,
-		on_delta: OnDelta<'a>,
-	) -> BoxFuture<'a, Result<ModelResponse, ModelError>>;
 }
 
 pub(super) fn http_client() -> Result<reqwest::Client, String> {
@@ -375,7 +286,6 @@ impl OpenAiCompatible {
 				.map(|id| ModelInfo {
 					id: id.clone(),
 					context_window: None,
-					route: Route::ChatCompletions,
 				})
 				.collect());
 		}
@@ -383,13 +293,13 @@ impl OpenAiCompatible {
 		if let Some(key) = &self.api_key {
 			request = request.bearer_auth(key);
 		}
-		list_models(request).await
+		Ok(list_models(request).await?.into_iter().map(ModelInfo::from).collect())
 	}
 }
 
 /// Read an OpenAI-style `GET /models` catalog. `supported_endpoints`, when present, selects
 /// the route; Claude models are served only through Anthropic Messages.
-pub(super) async fn list_models(request: reqwest::RequestBuilder) -> Result<Vec<ModelInfo>, String> {
+pub(super) async fn list_models(request: reqwest::RequestBuilder) -> Result<Vec<CatalogModel>, String> {
 	let response = request
 		.timeout(Duration::from_secs(30))
 		.send()
@@ -403,7 +313,7 @@ pub(super) async fn list_models(request: reqwest::RequestBuilder) -> Result<Vec<
 	if !status.is_success() {
 		return Err(format!("Model list failed with {status}: {}", error_message(&body)));
 	}
-	let mut models: Vec<ModelInfo> = body["data"]
+	let mut models: Vec<CatalogModel> = body["data"]
 		.as_array()
 		.map(Vec::as_slice)
 		.unwrap_or_default()
@@ -423,7 +333,7 @@ pub(super) async fn list_models(request: reqwest::RequestBuilder) -> Result<Vec<
 			} else {
 				Route::ChatCompletions
 			};
-			Some(ModelInfo {
+			Some(CatalogModel {
 				id,
 				context_window: model["context_length"]
 					.as_u64()
@@ -576,6 +486,8 @@ impl ChatAccumulator {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use std::sync::Mutex;
+	use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 	#[test]
 	fn stream_chunks_accumulate_text_reasoning_tools_and_usage() {
@@ -651,5 +563,110 @@ mod tests {
 		assert_eq!(events[0].event, "message_start");
 		assert_eq!(events[1].event, "");
 		assert_eq!(events[1].data, "x");
+	}
+
+	/// Serve one HTTP request with a canned response and return the raw request text.
+	async fn serve_once(response: String) -> (String, tokio::task::JoinHandle<String>) {
+		let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+		let address = format!("http://{}/v1", listener.local_addr().unwrap());
+		let handle = tokio::spawn(async move {
+			let (mut socket, _) = listener.accept().await.unwrap();
+			let mut request = Vec::new();
+			let mut buffer = [0u8; 4096];
+			loop {
+				let read = socket.read(&mut buffer).await.unwrap();
+				request.extend_from_slice(&buffer[..read]);
+				let text = String::from_utf8_lossy(&request);
+				if let Some(end) = text.find("\r\n\r\n") {
+					let length = text[..end]
+						.lines()
+						.find_map(|line| {
+							line.to_ascii_lowercase()
+								.strip_prefix("content-length:")
+								.map(|value| value.trim().parse::<usize>().unwrap())
+						})
+						.unwrap_or(0);
+					if request.len() >= end + 4 + length {
+						break;
+					}
+				}
+				if read == 0 {
+					break;
+				}
+			}
+			socket.write_all(response.as_bytes()).await.unwrap();
+			socket.shutdown().await.unwrap();
+			String::from_utf8_lossy(&request).into_owned()
+		});
+		(address, handle)
+	}
+
+	#[tokio::test]
+	async fn openai_compatible_adapter_streams_over_http() {
+		let body = concat!(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c\",\"function\":{\"name\":\"list_directory\",\"arguments\":\"{\\\"path\\\":\\\".\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n",
+        "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2,\"total_tokens\":5}}\n\n",
+        "data: [DONE]\n\n"
+    );
+		let (address, request) = serve_once(format!(
+		"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+		body.len()
+	))
+		.await;
+		let client = OpenAiCompatible::new(address, Some("test-key".into()), None).unwrap();
+		let deltas = Mutex::new(Vec::new());
+		let response = client
+			.stream(
+				&ModelRequest {
+					model: "m".into(),
+					messages: vec![json!({"role":"user","content":"hello"})],
+					tools: crate::test_support::tool_schemas(),
+					effort: Some("low".into()),
+					cwd: "/p".into(),
+					session: "rx-1".into(),
+				},
+				&|delta| {
+					if let Delta::Text(text) = delta {
+						deltas.lock().unwrap().push(text);
+					}
+				},
+			)
+			.await
+			.unwrap();
+		assert_eq!(*deltas.lock().unwrap(), ["Hi"]);
+		assert_eq!(response.tool_calls[0].name, "list_directory");
+		assert_eq!(response.usage.unwrap().total, 5);
+		let request = request.await.unwrap();
+		assert!(request.starts_with("POST /v1/chat/completions"));
+		assert!(request.to_ascii_lowercase().contains("authorization: bearer test-key"));
+		let json: Value = serde_json::from_str(&request[request.find("\r\n\r\n").unwrap() + 4..]).unwrap();
+		assert_eq!(json["stream"], true);
+		assert_eq!(json["reasoning_effort"], "low");
+		assert_eq!(json["tools"].as_array().unwrap().len(), 5);
+
+		let body = r#"{"error":{"message":"bad api key"}}"#;
+		let (address, _) = serve_once(format!(
+        "HTTP/1.1 401 Unauthorized\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    ))
+    .await;
+		let client = OpenAiCompatible::new(address, None, None).unwrap();
+		let error = client
+			.stream(
+				&ModelRequest {
+					model: "m".into(),
+					messages: vec![],
+					tools: vec![],
+					effort: None,
+					cwd: "/p".into(),
+					session: "rx-1".into(),
+				},
+				&|_| {},
+			)
+			.await
+			.unwrap_err();
+		assert!(!error.retryable);
+		assert!(error.message.contains("bad api key"), "{}", error.message);
 	}
 }

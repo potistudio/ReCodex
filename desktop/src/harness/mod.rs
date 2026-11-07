@@ -1,37 +1,27 @@
 //! ReCodex's agent harness: the run loop, the session ledger, tool execution, and
 //! authorization run inside the host process.
 //!
-//! - `account`: model connection selection and Command Code sign-in.
-//! - `command_code`: Command Code browser sign-in and credential storage.
 //! - `ledger`: SQLite (WAL) session ledger; the only source of truth for harness chats.
 //! - `context`: model-visible messages and UI transcripts projected from ledger events.
-//! - `model`: Model Gateway, shared streaming helpers, and the Chat Completions adapter.
-//! - `messages_api`, `responses_api`, `generate_api`: Anthropic Messages, OpenAI Responses,
-//!   and Command Code CLI generation adapters.
-//! - `command_code_client`: per-model routing and plan fallback for Command Code.
 //! - `tools`: tool registry, effect-based scheduler, and local execution environment.
 //! - `policy`: allow / ask / deny decisions and session grants.
 //! - `driver`: the run driver that owns agent invocation, step sequencing, approvals, and
 //!   recovery.
-mod account;
-pub mod command_code;
-mod command_code_client;
+//!
+//! The harness talks to models only through [`crate::model::ModelClient`]. The client is
+//! installed with [`Harness::set_client`]; choosing and building it is not the harness's job.
 mod context;
 mod driver;
-mod generate_api;
 mod ledger;
-mod messages_api;
-mod model;
 mod policy;
-mod responses_api;
 #[cfg(test)]
 pub(crate) mod testing;
 #[cfg(test)]
 mod tests;
 mod tools;
 
+use crate::model::ModelClient;
 use ledger::Ledger;
-use model::{ModelClient, OpenAiCompatible};
 use serde_json::{json, Value};
 use std::{
 	path::Path,
@@ -47,7 +37,6 @@ pub const PROVIDER: &str = "recodex";
 pub const PROVIDER_LABEL: &str = "ReCodex";
 pub const THREAD_PREFIX: &str = "rx-";
 pub const MODEL_PREFIX: &str = "recodex/";
-const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_MAX_STEPS: usize = 64;
 const CATALOG_TTL: Duration = Duration::from_secs(60);
 const EFFORTS: [(&str, &str); 4] = [
@@ -59,60 +48,11 @@ const EFFORTS: [(&str, &str); 4] = [
 
 type Emit = Arc<dyn Fn(Value) + Send + Sync>;
 
-/// Connection settings read from the environment. An explicit OpenAI-compatible endpoint
-/// (`RECODEX_OPENAI_BASE_URL` or `RECODEX_OPENAI_API_KEY`) takes precedence over a Command
-/// Code sign-in; `OPENAI_API_KEY` is used only when neither is configured.
-#[derive(Clone, Default)]
-pub struct HarnessConfig {
-	pub base_url: Option<String>,
-	pub api_key: Option<String>,
-	pub openai_api_key: Option<String>,
-	pub models: Option<Vec<String>>,
-	pub max_steps: Option<usize>,
-}
-
-impl HarnessConfig {
-	pub fn from_env() -> Self {
-		let var = |key: &str| {
-			std::env::var(key)
-				.ok()
-				.map(|value| value.trim().to_owned())
-				.filter(|value| !value.is_empty())
-		};
-		Self {
-			base_url: var("RECODEX_OPENAI_BASE_URL"),
-			api_key: var("RECODEX_OPENAI_API_KEY"),
-			openai_api_key: var("OPENAI_API_KEY"),
-			models: var("RECODEX_OPENAI_MODELS").map(|models| {
-				models
-					.split(',')
-					.map(|model| model.trim().to_owned())
-					.filter(|model| !model.is_empty())
-					.collect()
-			}),
-			max_steps: var("RECODEX_HARNESS_MAX_STEPS").and_then(|value| value.parse().ok()),
-		}
-	}
-
-	fn explicit(&self) -> bool {
-		self.base_url.is_some() || self.api_key.is_some()
-	}
-
-	fn openai(&self, api_key: Option<String>) -> Result<Arc<dyn ModelClient>, String> {
-		Ok(Arc::new(OpenAiCompatible::new(
-			self.base_url.clone().unwrap_or_else(|| DEFAULT_BASE_URL.into()),
-			api_key,
-			self.models.clone(),
-		)?))
-	}
-}
-
 pub struct Harness {
 	ledger: Result<Ledger, String>,
 	model: StdMutex<Result<Arc<dyn ModelClient>, String>>,
 	/// Label of the active model connection, e.g. "Command Code".
 	connection: StdMutex<String>,
-	account: account::Account,
 	driver: driver::Driver,
 	emit: StdMutex<Option<Emit>>,
 	catalog: Mutex<Option<(Instant, Vec<Value>, u64)>>,
@@ -122,39 +62,14 @@ pub struct Harness {
 }
 
 impl Harness {
-	/// `path` is the ledger file; Command Code credentials are stored next to it.
-	pub fn new(path: &Path, config: HarnessConfig) -> Arc<Self> {
-		let directory = path.parent().unwrap_or(Path::new("."));
-		let account = account::Account::new(config, command_code::Store::new(directory));
-		let harness = Self::build(path, account, None);
-		harness.reconnect();
-		harness
-	}
-
-	#[cfg(test)]
-	pub(crate) fn with_client(path: &Path, client: Arc<dyn ModelClient>, max_steps: Option<usize>) -> Arc<Self> {
-		let harness = Self::build(path, account::Account::disabled(), max_steps);
-		harness.set_client(Ok(client), "Test".into());
-		harness
-	}
-
-	#[cfg(test)]
-	pub(crate) fn with_account(path: &Path, account: account::Account) -> Arc<Self> {
-		let harness = Self::build(path, account, None);
-		harness.reconnect();
-		harness
-	}
-
-	fn build(path: &Path, account: account::Account, max_steps: Option<usize>) -> Arc<Self> {
-		let max_steps = max_steps
-			.or(account.config.max_steps)
-			.unwrap_or(DEFAULT_MAX_STEPS)
-			.max(1);
+	/// `path` is the ledger file. The model connection is supplied afterwards through
+	/// [`Harness::set_client`].
+	pub fn new(path: &Path, max_steps: Option<usize>) -> Arc<Self> {
+		let max_steps = max_steps.unwrap_or(DEFAULT_MAX_STEPS).max(1);
 		let harness = Arc::new(Self {
 			ledger: Ledger::open(path),
 			model: StdMutex::new(Err("No model connection is configured".into())),
 			connection: StdMutex::new(String::new()),
-			account,
 			driver: driver::Driver::new(max_steps),
 			emit: StdMutex::new(None),
 			catalog: Mutex::new(None),
@@ -168,11 +83,18 @@ impl Harness {
 		harness
 	}
 
+	#[cfg(test)]
+	pub(crate) fn with_client(path: &Path, client: Arc<dyn ModelClient>, max_steps: Option<usize>) -> Arc<Self> {
+		let harness = Self::new(path, max_steps);
+		harness.set_client(Ok(client), "Test".into());
+		harness
+	}
+
 	pub fn set_emit(&self, emit: Emit) {
 		*self.emit.lock().unwrap() = Some(emit);
 	}
 
-	fn emit(&self, event: Value) {
+	pub fn emit(&self, event: Value) {
 		let emit = self.emit.lock().unwrap().clone();
 		if let Some(emit) = emit {
 			emit(event);
@@ -193,7 +115,7 @@ impl Harness {
 	}
 
 	/// Replace the model connection. Running steps keep the client they started with.
-	fn set_client(&self, client: Result<Arc<dyn ModelClient>, String>, label: String) {
+	pub fn set_client(&self, client: Result<Arc<dyn ModelClient>, String>, label: String) {
 		*self.model.lock().unwrap() = client;
 		*self.connection.lock().unwrap() = label;
 		self.connection_generation.fetch_add(1, Ordering::SeqCst);

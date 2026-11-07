@@ -195,7 +195,7 @@ fn percent_decode(value: &str) -> String {
 	String::from_utf8_lossy(&out).into_owned()
 }
 
-pub(super) fn parse_query(query: &str) -> HashMap<String, String> {
+pub(crate) fn parse_query(query: &str) -> HashMap<String, String> {
 	query
 		.split('&')
 		.filter(|pair| !pair.is_empty())

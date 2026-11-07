@@ -1,10 +1,7 @@
 //! Test doubles for the Model Gateway, shared by harness, host, LAN, and Web UI tests.
-use super::{
-	model::{
-		BoxFuture, Delta, ModelClient, ModelError, ModelInfo, ModelRequest, ModelResponse, OnDelta, ToolCallRequest,
-		Usage,
-	},
-	Harness,
+use super::Harness;
+use crate::model::{
+	BoxFuture, Delta, ModelClient, ModelError, ModelInfo, ModelRequest, ModelResponse, OnDelta, ToolCallRequest, Usage,
 };
 use serde_json::{json, Value};
 use std::{
@@ -40,7 +37,6 @@ impl ModelClient for Scripted {
 			Ok(vec![ModelInfo {
 				id: "test-model".into(),
 				context_window: Some(1000),
-				route: Default::default(),
 			}])
 		})
 	}
@@ -99,7 +95,6 @@ impl ModelClient for ApprovalModel {
 			Ok(vec![ModelInfo {
 				id: "test-model".into(),
 				context_window: None,
-				route: Default::default(),
 			}])
 		})
 	}
@@ -131,80 +126,4 @@ impl ModelClient for ApprovalModel {
 /// A harness whose every turn waits for one command approval.
 pub(crate) fn approval_harness(path: &Path) -> Arc<Harness> {
 	Harness::with_client(path, Arc::new(ApprovalModel), None)
-}
-
-/// A recorded HTTP request: request line, lowercased headers, and body.
-#[derive(Clone, Debug)]
-pub(crate) struct Recorded {
-	pub method: String,
-	pub path: String,
-	pub headers: String,
-	pub body: String,
-}
-
-/// A local HTTP server answering each request with `handler(method, path) -> (status line,
-/// content type, body)` and recording what it received.
-pub(crate) async fn mock_http(
-	handler: impl Fn(&str, &str) -> (&'static str, &'static str, String) + Send + Sync + 'static,
-) -> (String, Arc<Mutex<Vec<Recorded>>>) {
-	use tokio::io::{AsyncReadExt, AsyncWriteExt};
-	let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-	let address = format!("http://{}", listener.local_addr().unwrap());
-	let seen = Arc::new(Mutex::new(Vec::new()));
-	let log = seen.clone();
-	let handler = Arc::new(handler);
-	tokio::spawn(async move {
-		loop {
-			let Ok((mut socket, _)) = listener.accept().await else {
-				return;
-			};
-			let handler = handler.clone();
-			let log = log.clone();
-			tokio::spawn(async move {
-				let mut request = Vec::new();
-				let mut buffer = [0u8; 8192];
-				let (head, length) = loop {
-					let read = socket.read(&mut buffer).await.unwrap_or(0);
-					if read == 0 {
-						return;
-					}
-					request.extend_from_slice(&buffer[..read]);
-					if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
-						let head = String::from_utf8_lossy(&request[..end]).to_lowercase();
-						let length = head
-							.lines()
-							.find_map(|line| line.strip_prefix("content-length:"))
-							.and_then(|value| value.trim().parse::<usize>().ok())
-							.unwrap_or(0);
-						break (end, length);
-					}
-				};
-				while request.len() < head + 4 + length {
-					let read = socket.read(&mut buffer).await.unwrap_or(0);
-					if read == 0 {
-						break;
-					}
-					request.extend_from_slice(&buffer[..read]);
-				}
-				let text = String::from_utf8_lossy(&request).into_owned();
-				let mut start = text.lines().next().unwrap_or_default().split(' ');
-				let method = start.next().unwrap_or_default().to_owned();
-				let path = start.next().unwrap_or_default().to_owned();
-				log.lock().unwrap().push(Recorded {
-					method: method.clone(),
-					path: path.clone(),
-					headers: text[..head].to_lowercase(),
-					body: text[head + 4..].to_owned(),
-				});
-				let (status, content_type, body) = handler(&method, &path);
-				let response = format!(
-                    "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                    body.len()
-                );
-				let _ = socket.write_all(response.as_bytes()).await;
-				let _ = socket.shutdown().await;
-			});
-		}
-	});
-	(address, seen)
 }

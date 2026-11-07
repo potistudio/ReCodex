@@ -1,7 +1,7 @@
 //! Context Engine and projections. Both the model-visible messages and the UI transcript are
 //! derived from ledger events, so a request can be reconstructed from the events it cites.
 use super::ledger::{kind, Event};
-use super::model::Usage;
+use crate::model::Usage;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 

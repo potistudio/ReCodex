@@ -4,11 +4,11 @@
 use super::{
 	context,
 	ledger::{kind, Ledger},
-	model::{Delta, ModelRequest, ModelResponse, ToolCallRequest, Usage},
 	policy::{self, ApprovalKind, Decision, Grants},
 	tools::{self, Outcome, PreparedCall},
-	Harness, MODEL_PREFIX,
+	Harness, MODEL_PREFIX, THREAD_PREFIX,
 };
+use crate::model::{Delta, ModelRequest, ModelResponse, ToolCallRequest, Usage};
 use futures_util::future::join_all;
 use serde_json::{json, Value};
 use std::{
@@ -277,7 +277,11 @@ async fn drive(harness: &Arc<Harness>, spec: &RunSpec) -> Result<Finish, String>
 			tools: schemas.clone(),
 			effort: spec.effort.clone(),
 			cwd: spec.cwd.clone(),
-			session: spec.session.clone(),
+			session: spec
+				.session
+				.strip_prefix(THREAD_PREFIX)
+				.unwrap_or(&spec.session)
+				.to_owned(),
 		};
 		let item_id = format!("{}-{index}-message", spec.run_id);
 		let Some((attempt_id, response)) = request_model(harness, ledger, spec, &step_id, &item_id, &request).await?

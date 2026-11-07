@@ -102,7 +102,7 @@ pub fn authorize(call: &PreparedCall, grants: &Grants) -> Decision {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::harness::{model::ToolCallRequest, tools::prepare};
+	use crate::{harness::tools::prepare, model::ToolCallRequest};
 	use serde_json::json;
 
 	#[test]
