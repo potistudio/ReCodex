@@ -19,6 +19,8 @@ use std::{
 };
 
 #[cfg(test)]
+mod cache_probe;
+#[cfg(test)]
 mod tests;
 
 pub const COMMAND_CODE: &str = "Command Code";

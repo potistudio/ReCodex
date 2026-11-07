@@ -12,5 +12,7 @@ pub(crate) mod command_code;
 pub(crate) mod command_code_client;
 pub(crate) mod gateway;
 mod generate_api;
+#[cfg(test)]
+mod generate_probe;
 mod messages_api;
 mod responses_api;
