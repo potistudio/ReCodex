@@ -273,7 +273,7 @@ async fn drive(harness: &Arc<Harness>, spec: &RunSpec) -> Result<Finish, String>
 		)?;
 		let request = ModelRequest {
 			model: spec.model.clone(),
-			messages: context::messages(&events, &spec.cwd, through),
+			messages: context::build_messages(&events, &spec.cwd, through),
 			tools: schemas.clone(),
 			effort: spec.effort.clone(),
 			cwd: spec.cwd.clone(),

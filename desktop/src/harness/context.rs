@@ -19,7 +19,7 @@ pub fn system_prompt(cwd: &str) -> String {
 }
 
 /// Model-visible messages for the events up to and including `through`.
-pub fn messages(events: &[Event], cwd: &str, through: u64) -> Vec<Value> {
+pub fn build_messages(events: &[Event], cwd: &str, through: u64) -> Vec<Value> {
 	let events: Vec<&Event> = events.iter().filter(|e| e.seq <= through).collect();
 	let mut inputs = HashMap::new();
 	let mut results = HashMap::new();
@@ -96,7 +96,7 @@ pub fn usage_total(events: &[Event]) -> Usage {
 }
 
 /// The ReCodex transcript view: one turn per run.
-pub fn thread(id: &str, cwd: &str, name: Option<&str>, model: Option<&str>, events: &[Event]) -> Value {
+pub fn build_thread(id: &str, cwd: &str, name: Option<&str>, model: Option<&str>, events: &[Event]) -> Value {
 	let mut inputs = HashMap::new();
 	let mut turns: Vec<Value> = Vec::new();
 	let mut runs: HashMap<String, usize> = HashMap::new();
@@ -220,13 +220,13 @@ mod tests {
 			),
 			event(6, kind::RUN_FINISHED, json!({"runId":"r","status":"interrupted"})),
 		];
-		let messages = messages(&events, "/p", 6);
+		let messages = build_messages(&events, "/p", 6);
 		let roles: Vec<_> = messages.iter().map(|m| m["role"].as_str().unwrap()).collect();
 		assert_eq!(roles, ["system", "user", "assistant", "tool", "tool"]);
 		assert_eq!(messages[3]["content"], "file");
 		assert_eq!(messages[4]["content"], "This tool call was not executed.");
-		assert_eq!(super::messages(&events, "/p", 3).len(), 2);
-		let thread = thread("rx-1", "/p", None, None, &events);
+		assert_eq!(super::build_messages(&events, "/p", 3).len(), 2);
+		let thread = build_thread("rx-1", "/p", None, None, &events);
 		assert_eq!(thread["preview"], "hi");
 		assert_eq!(thread["turns"][0]["status"], "interrupted");
 		assert_eq!(thread["turns"][0]["items"].as_array().unwrap().len(), 2);

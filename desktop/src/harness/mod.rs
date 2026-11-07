@@ -255,7 +255,7 @@ impl Harness {
 		let session = ledger.session(id)?.ok_or("This chat no longer exists")?;
 		let events = ledger.events(id)?;
 		Ok(json!({
-			"thread": context::thread(
+			"thread": context::build_thread(
 				id,
 				&session.cwd,
 				session.name.as_deref(),

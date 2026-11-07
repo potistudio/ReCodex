@@ -43,6 +43,7 @@ pub(super) fn turn(
 	if text.trim().is_empty() {
 		return Err("A text message is required".into());
 	}
+
 	let ledger = harness.ledger()?;
 	let session = ledger.session(id)?.ok_or("This chat no longer exists")?;
 	let model = model
@@ -66,6 +67,7 @@ pub(super) fn turn(
 	}
 	let input_id = Uuid::new_v4().to_string();
 	let run_id = Uuid::new_v4().to_string();
+
 	ledger.append(id, None, kind::INPUT_ACCEPTED, json!({"inputId":input_id,"text":text}))?;
 	ledger.append(
 		id,
@@ -73,6 +75,7 @@ pub(super) fn turn(
 		kind::RUN_STARTED,
 		json!({"runId":run_id,"inputId":input_id,"model":model,"effort":effort,"maxSteps":1}),
 	)?;
+
 	let turn = json!({"id":run_id,"status":"inProgress","items":[]});
 	harness.emit(json!({"method":"turn/started","params":{"threadId":id,"turn":turn}}));
 	harness.emit(json!({"method":"item/completed","params":{
@@ -141,7 +144,7 @@ async fn step(harness: &Arc<Harness>, run: &Run) -> Result<(), String> {
 	)?;
 	let request = ModelRequest {
 		model: run.model.clone(),
-		messages: context::messages(&events, &run.cwd, through),
+		messages: context::build_messages(&events, &run.cwd, through),
 		tools: Vec::new(),
 		effort: run.effort.clone(),
 		cwd: run.cwd.clone(),

@@ -307,7 +307,7 @@ async fn recovery_closes_runs_left_open_by_a_previous_process() {
 	let events = harness.ledger().unwrap().events("rx-old").unwrap();
 	let result = events.iter().find(|event| event.kind == kind::TOOL_COMPLETED).unwrap();
 	assert_eq!(result.payload["status"], "outcomeUnknown");
-	let messages = super::context::messages(&events, "/project", u64::MAX);
+	let messages = super::context::build_messages(&events, "/project", u64::MAX);
 	assert!(messages.last().unwrap()["content"]
 		.as_str()
 		.unwrap()
