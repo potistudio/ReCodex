@@ -52,7 +52,10 @@ Biome handles frontend formatting and linting. Use `pnpm format`, `pnpm format:c
 
 - `desktop/` is the Tauri shell and Rust host: the window, IPC commands, bundle, and harness process.
 - `desktop/src/host.rs` owns the transport-independent workspace, operation ordering, pending approvals, and bounded event replay.
-- `desktop/src/harness/` is ReCodex's own agent harness: the SQLite session ledger, run driver, OpenAI-compatible model gateway, tool scheduler, and approval policy.
+- `desktop/src/harness/` is ReCodex's own agent harness: the SQLite session ledger, run driver, tool scheduler, and approval policy.
+- `desktop/src/model.rs` is the model contract (`ModelClient` and the request and response types) that the harness consumes and the providers implement.
+- `desktop/src/provider/` holds the model providers: the gateway helpers, the Anthropic Messages, OpenAI Responses, and Chat Completions adapters, and Command Code sign-in. It does not depend on the harness.
+- `desktop/src/connection/` joins the two: it chooses the model client from the environment and the Command Code sign-in and installs it into the harness.
 - `desktop/src/discovery.rs` browses and advertises LAN hosts using mDNS/DNS-SD; `lan_store.rs` persists trust and hosting preferences with atomic file replacement.
 - `desktop/src/lan.rs` provides certificate-verified TLS WebSockets, single-use pairing invitations, persistent device credentials, revocation, and remote request correlation.
 - `desktop/src/workspace.rs` stores project registrations in the supplied app-data directory and restricts editor paths to registered roots, including resolved symbolic links.

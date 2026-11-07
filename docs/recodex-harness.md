@@ -2,9 +2,9 @@
 
 The ReCodex harness is the app's agent runtime. It does not delegate to another agent
 product: the run loop, session history, tool execution, and authorization run inside the
-Rust host process (`desktop/src/harness/`). It implements the core of the contracts proposed in
-[harness-design.md](harness-design.md); branches, compaction, memory, plugins, and multiple
-agents are not implemented.
+Rust host process (`desktop/src/harness/`, with model connections in `desktop/src/provider/`).
+It implements the core of the contracts proposed in [harness-design.md](harness-design.md);
+branches, compaction, memory, plugins, and multiple agents are not implemented.
 
 ## Model connection
 
@@ -61,11 +61,11 @@ but never writes it.
 `CommandCodeClient` sends each model to the wire that serves it, using the
 `supported_endpoints` field of `GET /provider/v1/models`:
 
-| Model                                      | Wire                              | Endpoint                        |
-| ------------------------------------------ | --------------------------------- | ------------------------------- |
-| `claude-*`, or only `/messages` advertised | Anthropic Messages                | `/provider/v1/messages`         |
-| `/responses` advertised                    | OpenAI Responses (`store: false`) | `/provider/v1/responses`        |
-| Everything else                            | Chat Completions                  | `/provider/v1/chat/completions` |
+| Model                                      | Wire                              |
+| ------------------------------------------ | --------------------------------- |
+| `claude-*`, or only `/messages` advertised | Anthropic Messages                |
+| `/responses` advertised                    | OpenAI Responses (`store: false`) |
+| Everything else                            | Chat Completions                  |
 
 All three use `Authorization: Bearer <key>`; Messages also sends `anthropic-version:
 2023-06-01`. Messages requests do not enable extended thinking, because continuing a tool loop
@@ -92,19 +92,35 @@ without notice.
 
 ## Components
 
-| Module                                                   | Role (design-document service)                                                                                     |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `ledger.rs`                                              | Session Ledger. SQLite in WAL mode with `synchronous=FULL`, stored as `harness.sqlite3` in the app-data directory. |
-| `context.rs`                                             | Context Engine and Projection Engine. Builds model messages and the UI transcript from ledger events.              |
-| `model.rs`                                               | Model Gateway. `ModelClient` trait, shared HTTP/SSE helpers, and the Chat Completions adapter.                     |
-| `tools.rs`                                               | Tool Registry, Tool Scheduler, and the local Execution Environment.                                                |
-| `policy.rs`                                              | Authorization Service with session grants.                                                                         |
-| `driver.rs`                                              | Run Driver: agent invocation, active-run registry, cancellation, approval waits, step loop, and crash recovery.    |
-| `account.rs`                                             | Model connection selection and the Command Code account.                                                           |
-| `command_code.rs`                                        | Command Code browser sign-in, key validation, and credential storage.                                              |
-| `command_code_client.rs`                                 | Per-model routing and the generation fallback for Command Code.                                                    |
-| `messages_api.rs`, `responses_api.rs`, `generate_api.rs` | Anthropic Messages, OpenAI Responses, and Command Code generation wire adapters.                                   |
-| `mod.rs`                                                 | Harness Coordinator: session lifecycle, model catalog, and the public API.                                         |
+The modules sit in four layers. Only `connection` knows both the harness and the providers.
+
+Harness (`desktop/src/harness/`) talks to models only through the contract below:
+
+| Module       | Role (design-document service)                                                                                         |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `ledger.rs`  | Session Ledger. SQLite in WAL mode with `synchronous=FULL`, stored as `harness.sqlite3` in the app-data directory.     |
+| `context.rs` | Context Engine and Projection Engine. Builds model messages and the UI transcript from ledger events.                  |
+| `tools.rs`   | Tool Registry, Tool Scheduler, and the local Execution Environment.                                                    |
+| `policy.rs`  | Authorization Service with session grants.                                                                             |
+| `driver.rs`  | Run Driver: agent invocation, active-run registry, cancellation, approval waits, step loop, and crash recovery.        |
+| `mod.rs`     | Harness Coordinator: session lifecycle, model catalog, and the public API. The model client is installed from outside. |
+
+Model contract (`desktop/src/model.rs`): the `ModelClient` trait and the normalized request,
+response, and error types. The harness consumes it and the providers implement it; it depends
+on neither.
+
+Model providers (`desktop/src/provider/`) implement the contract and do not depend on the harness:
+
+| Module                                                   | Role (design-document service)                                                                    |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `gateway.rs`                                             | Model Gateway helpers shared by the adapters: HTTP/SSE plumbing and the Chat Completions adapter. |
+| `command_code.rs`                                        | Command Code browser sign-in, key validation, and credential storage.                             |
+| `command_code_client.rs`                                 | Per-model routing and the generation fallback for Command Code.                                   |
+| `messages_api.rs`, `responses_api.rs`, `generate_api.rs` | Anthropic Messages, OpenAI Responses, and Command Code generation wire adapters.                  |
+
+Connection (`desktop/src/connection/`) reads the environment, chooses the model client from the
+explicit endpoint, the Command Code sign-in, or `OPENAI_API_KEY`, runs the sign-in flow, and
+installs the client into the harness with `Harness::set_client`.
 
 `host.rs` exposes the harness to local, LAN, and Web UI clients, orders operations, and relays
 approval answers. Events use the `thread/*`, `turn/*`, and `item/*` vocabulary the UI
@@ -148,13 +164,13 @@ failed attempt is recorded.
 
 ## Tools
 
-| Tool             | Effect              | Default policy    |
-| ---------------- | ------------------- | ----------------- |
-| `read_file`      | read `file:<path>`  | allow             |
-| `list_directory` | read `file:<path>`  | allow             |
-| `write_file`     | write `file:<path>` | ask (file change) |
-| `edit_file`      | write `file:<path>` | ask (file change) |
-| `run_command`    | exclusive           | ask (command)     |
+| Tool             | Effect              |
+| ---------------- | ------------------- |
+| `read_file`      | read `file:<path>`  |
+| `list_directory` | read `file:<path>`  |
+| `write_file`     | write `file:<path>` |
+| `edit_file`      | write `file:<path>` |
+| `run_command`    | exclusive           |
 
 The pipeline for each call is: schema validation and path normalization, authorization,
 approval when requested, revalidation, dispatch, and commit of the result.
