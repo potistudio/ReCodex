@@ -3,10 +3,11 @@
 //! ledger before they are broadcast.
 use super::{
 	context,
+	ids::ThreadId,
 	ledger::{kind, Ledger},
 	policy::{self, ApprovalKind, Decision, Grants},
 	tools::{self, Outcome, PreparedCall},
-	Harness, MODEL_PREFIX, THREAD_PREFIX,
+	Harness, MODEL_PREFIX,
 };
 use crate::model::{Delta, ModelRequest, ModelResponse, ToolCallRequest, Usage};
 use futures_util::future::join_all;
@@ -28,7 +29,7 @@ struct ActiveRun {
 }
 
 struct PendingApproval {
-	session: String,
+	session: ThreadId,
 	run: String,
 	answer: oneshot::Sender<String>,
 }
@@ -37,7 +38,7 @@ struct PendingApproval {
 /// step loop. Every agent turn enters and leaves through this type.
 pub(super) struct Driver {
 	max_steps: usize,
-	runs: StdMutex<HashMap<String, ActiveRun>>,
+	runs: StdMutex<HashMap<ThreadId, ActiveRun>>,
 	approvals: StdMutex<HashMap<String, PendingApproval>>,
 }
 
@@ -50,15 +51,15 @@ impl Driver {
 		}
 	}
 
-	pub(super) fn is_running(&self, session: &str) -> bool {
-		self.runs.lock().unwrap().contains_key(session)
+	pub(super) fn is_running(&self, session: ThreadId) -> bool {
+		self.runs.lock().unwrap().contains_key(&session)
 	}
 
 	/// Accept a prompt, record it, and start a run. Returns once the input is committed.
 	pub(super) fn turn(
 		&self,
 		harness: &Arc<Harness>,
-		id: &str,
+		id: ThreadId,
 		text: &str,
 		model: Option<&str>,
 		effort: Option<&str>,
@@ -82,7 +83,7 @@ impl Driver {
 			.map(str::to_owned)
 			.or(session.effort.clone());
 		let mut runs = self.runs.lock().unwrap();
-		if runs.contains_key(id) {
+		if runs.contains_key(&id) {
 			return Err("This chat already has a running turn".into());
 		}
 		if session.model.as_deref() != Some(model.as_str()) || session.effort != effort {
@@ -99,7 +100,7 @@ impl Driver {
 		)?;
 		let (cancel, cancelled) = watch::channel(false);
 		runs.insert(
-			id.to_owned(),
+			id,
 			ActiveRun {
 				run_id: run_id.clone(),
 				cancel,
@@ -116,7 +117,7 @@ impl Driver {
 		tokio::spawn(run(
 			harness.clone(),
 			RunSpec {
-				session: id.to_owned(),
+				session: id,
 				run_id,
 				cwd: session.cwd,
 				model: provider_model,
@@ -128,9 +129,9 @@ impl Driver {
 	}
 
 	/// Request cancellation. The run reports `turn/completed` once it has actually stopped.
-	pub(super) fn interrupt(&self, harness: &Harness, id: &str, turn_id: &str) -> Result<(), String> {
+	pub(super) fn interrupt(&self, harness: &Harness, id: ThreadId, turn_id: &str) -> Result<(), String> {
 		let runs = self.runs.lock().unwrap();
-		let run = runs.get(id).ok_or("This chat has no running turn")?;
+		let run = runs.get(&id).ok_or("This chat has no running turn")?;
 		if run.run_id != turn_id {
 			return Err("This turn is not running in this chat".into());
 		}
@@ -167,12 +168,12 @@ impl Driver {
 		}
 	}
 
-	fn register_approval(&self, request_id: &str, session: &str, run: &str) -> oneshot::Receiver<String> {
+	fn register_approval(&self, request_id: &str, session: ThreadId, run: &str) -> oneshot::Receiver<String> {
 		let (answer, receiver) = oneshot::channel();
 		self.approvals.lock().unwrap().insert(
 			request_id.to_owned(),
 			PendingApproval {
-				session: session.to_owned(),
+				session,
 				run: run.to_owned(),
 				answer,
 			},
@@ -180,10 +181,10 @@ impl Driver {
 		receiver
 	}
 
-	fn release_run(&self, session: &str, run: &str) {
+	fn release_run(&self, session: ThreadId, run: &str) {
 		let mut runs = self.runs.lock().unwrap();
-		if runs.get(session).is_some_and(|active| active.run_id == run) {
-			runs.remove(session);
+		if runs.get(&session).is_some_and(|active| active.run_id == run) {
+			runs.remove(&session);
 		}
 		self.approvals
 			.lock()
@@ -193,7 +194,7 @@ impl Driver {
 }
 
 pub(super) struct RunSpec {
-	pub session: String,
+	pub session: ThreadId,
 	pub run_id: String,
 	pub cwd: String,
 	/// Provider-native model ID (without the ReCodex prefix).
@@ -216,7 +217,7 @@ pub(super) async fn run(harness: Arc<Harness>, spec: RunSpec) {
 	};
 	let recorded = harness.ledger().and_then(|ledger| {
 		ledger.append(
-			&spec.session,
+			spec.session,
 			None,
 			kind::RUN_FINISHED,
 			json!({"runId":spec.run_id,"status":status,"error":error}),
@@ -226,7 +227,7 @@ pub(super) async fn run(harness: Arc<Harness>, spec: RunSpec) {
 		Ok(_) => (status, error),
 		Err(e) => ("failed", Some(format!("{}; {e}", error.unwrap_or_default()))),
 	};
-	harness.driver.release_run(&spec.session, &spec.run_id);
+	harness.driver.release_run(spec.session, &spec.run_id);
 	let mut turn = json!({"id":spec.run_id,"status":status,"items":[]});
 	if let Some(error) = error {
 		turn["error"] = json!({"message":error});
@@ -252,11 +253,11 @@ async fn drive(harness: &Arc<Harness>, spec: &RunSpec) -> Result<Finish, String>
 		if cancelled(spec) {
 			return Ok(Finish::Interrupted);
 		}
-		let events = ledger.events(&spec.session)?;
+		let events = ledger.events(spec.session)?;
 		let through = events.last().map_or(0, |event| event.seq);
 		let step_id = Uuid::new_v4().to_string();
 		ledger.append(
-			&spec.session,
+			spec.session,
 			None,
 			kind::STEP_STARTED,
 			json!({
@@ -277,11 +278,7 @@ async fn drive(harness: &Arc<Harness>, spec: &RunSpec) -> Result<Finish, String>
 			tools: schemas.clone(),
 			effort: spec.effort.clone(),
 			cwd: spec.cwd.clone(),
-			session: spec
-				.session
-				.strip_prefix(THREAD_PREFIX)
-				.unwrap_or(&spec.session)
-				.to_owned(),
+			session: spec.session.uuid().to_string(),
 		};
 		let item_id = format!("{}-{index}-message", spec.run_id);
 		let Some((attempt_id, response)) = request_model(harness, ledger, spec, &step_id, &item_id, &request).await?
@@ -290,7 +287,7 @@ async fn drive(harness: &Arc<Harness>, spec: &RunSpec) -> Result<Finish, String>
 		};
 		let usage = response.usage.unwrap_or_default();
 		ledger.append(
-			&spec.session,
+			spec.session,
 			None,
 			kind::MESSAGE_ASSISTANT,
 			json!({
@@ -376,7 +373,7 @@ async fn request_model(
 		match result {
 			None => {
 				ledger.append(
-					&spec.session,
+					spec.session,
 					None,
 					kind::ATTEMPT_FAILED,
 					failure("The turn was interrupted", false, true),
@@ -386,7 +383,7 @@ async fn request_model(
 			Some(Ok(response)) => return Ok(Some((attempt_id, response))),
 			Some(Err(error)) => {
 				ledger.append(
-					&spec.session,
+					spec.session,
 					None,
 					kind::ATTEMPT_FAILED,
 					failure(&error.message, error.retryable, false),
@@ -447,7 +444,7 @@ impl Tools<'_> {
 	fn record(&self, kind: &str, mut payload: Value) -> Result<(), String> {
 		payload["runId"] = json!(self.spec.run_id);
 		payload["stepId"] = json!(self.step_id);
-		self.ledger.append(&self.spec.session, None, kind, payload).map(|_| ())
+		self.ledger.append(self.spec.session, None, kind, payload).map(|_| ())
 	}
 
 	fn item_event(&self, method: &str, item: &Value) {
@@ -490,7 +487,7 @@ impl Tools<'_> {
 		let receiver = self
 			.harness
 			.driver
-			.register_approval(&request_id, &self.spec.session, &self.spec.run_id);
+			.register_approval(&request_id, self.spec.session, &self.spec.run_id);
 		self.record(
 			kind::APPROVAL_REQUESTED,
 			json!({
@@ -618,7 +615,7 @@ async fn run_tools(
 		slots.push(slot);
 	}
 
-	let mut grants = Grants::from_events(&ledger.events(&spec.session)?);
+	let mut grants = Grants::from_events(&ledger.events(spec.session)?);
 	let mut approved = Vec::new();
 	let mut waiting = Vec::new();
 	for (position, slot) in slots.iter().enumerate() {
@@ -747,7 +744,7 @@ async fn run_tools(
 /// result has an unknown outcome; it is reported as such and never re-executed.
 pub(super) fn recover(ledger: &Ledger) -> Result<(), String> {
 	for (session, run) in ledger.unfinished_runs()? {
-		let events = ledger.events(&session)?;
+		let events = ledger.events(session)?;
 		let of_run = |event: &&super::ledger::Event| event.payload["runId"] == run;
 		let mut started: Vec<(String, Value)> = Vec::new();
 		let mut finished = Vec::new();
@@ -771,7 +768,7 @@ pub(super) fn recover(ledger: &Ledger) -> Result<(), String> {
 			let id = request["requestId"].as_str().unwrap_or_default();
 			if !resolved.iter().any(|resolved| resolved == id) {
 				ledger.append(
-					&session,
+					session,
 					None,
 					kind::APPROVAL_RESOLVED,
 					json!({"runId":run,"callId":request["callId"],"requestId":id,
@@ -786,7 +783,7 @@ pub(super) fn recover(ledger: &Ledger) -> Result<(), String> {
 			let unknown = dispatched.contains(&call);
 			item["status"] = json!(if unknown { "failed" } else { "cancelled" });
 			ledger.append(
-				&session,
+				session,
 				None,
 				kind::TOOL_COMPLETED,
 				json!({
@@ -803,7 +800,7 @@ pub(super) fn recover(ledger: &Ledger) -> Result<(), String> {
 			)?;
 		}
 		ledger.append(
-			&session,
+			session,
 			None,
 			kind::RUN_FINISHED,
 			json!({"runId":run,"status":"interrupted","error":"ReCodex stopped before this turn finished"}),

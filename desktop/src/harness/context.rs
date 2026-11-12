@@ -1,6 +1,9 @@
 //! Context Engine and projections. Both the model-visible messages and the UI transcript are
 //! derived from ledger events, so a request can be reconstructed from the events it cites.
-use super::ledger::{kind, Event};
+use super::{
+	ids::ThreadId,
+	ledger::{kind, Event},
+};
 use crate::model::Usage;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -109,7 +112,7 @@ pub fn usage_total(events: &[Event]) -> Usage {
 }
 
 /// The ReCodex transcript view: one turn per run.
-pub fn build_thread(id: &str, cwd: &str, name: Option<&str>, model: Option<&str>, events: &[Event]) -> Value {
+pub fn build_thread(id: ThreadId, cwd: &str, name: Option<&str>, model: Option<&str>, events: &[Event]) -> Value {
 	let mut inputs = HashMap::new();
 	let mut turns: Vec<Value> = Vec::new();
 	let mut runs: HashMap<String, usize> = HashMap::new();

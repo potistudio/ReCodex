@@ -24,6 +24,7 @@ pub(crate) mod testing;
 mod tests;
 mod tools;
 
+pub use ids::ThreadId;
 use crate::model::ModelClient;
 use ledger::Ledger;
 use serde_json::{json, Value};
@@ -39,7 +40,6 @@ use tokio::sync::Mutex;
 
 pub const PROVIDER: &str = "recodex";
 pub const PROVIDER_LABEL: &str = "ReCodex";
-pub const THREAD_PREFIX: &str = "rx-";
 pub const MODEL_PREFIX: &str = "recodex/";
 const DEFAULT_MAX_STEPS: usize = 64;
 const CATALOG_TTL: Duration = Duration::from_secs(60);
@@ -110,10 +110,6 @@ impl Harness {
 
 	fn ledger(&self) -> Result<&Ledger, String> {
 		self.ledger.as_ref().map_err(Clone::clone)
-	}
-
-	pub fn is_thread(id: &str) -> bool {
-		id.starts_with(THREAD_PREFIX)
 	}
 
 	/// The active model client, if a connection is configured.
@@ -214,13 +210,13 @@ impl Harness {
 			.collect())
 	}
 
-	pub fn thread_root(&self, id: &str) -> Result<Option<String>, String> {
+	pub fn thread_root(&self, id: ThreadId) -> Result<Option<String>, String> {
 		Ok(self.ledger()?.session(id)?.map(|session| session.cwd))
 	}
 
 	pub fn start_session(
 		&self,
-		id: &str,
+		id: ThreadId,
 		cwd: &str,
 		model: Option<&str>,
 		effort: Option<&str>,
@@ -251,7 +247,7 @@ impl Harness {
 		}))
 	}
 
-	pub fn read_thread(&self, id: &str) -> Result<Value, String> {
+	pub fn read_thread(&self, id: ThreadId) -> Result<Value, String> {
 		let ledger = self.ledger()?;
 		let session = ledger.session(id)?.ok_or("This chat no longer exists")?;
 		let events = ledger.events(id)?;
@@ -272,7 +268,7 @@ impl Harness {
 	/// committed.
 	pub fn turn(
 		self: &Arc<Self>,
-		id: &str,
+		id: ThreadId,
 		text: &str,
 		model: Option<&str>,
 		effort: Option<&str>,
@@ -292,19 +288,19 @@ impl Harness {
 
 	/// Whether the chat has a turn in flight. The ledger is consulted too, because the minimal
 	/// driver keeps no active-run registry.
-	fn is_running(&self, id: &str) -> Result<bool, String> {
-		Ok(self.driver.is_running(id) || self.ledger()?.unfinished_runs()?.iter().any(|(chat, _)| chat == id))
+	fn is_running(&self, id: ThreadId) -> Result<bool, String> {
+		Ok(self.driver.is_running(id) || self.ledger()?.unfinished_runs()?.iter().any(|(chat, _)| *chat == id))
 	}
 
 	/// Request cancellation. The run reports `turn/completed` once it has actually stopped.
-	pub fn interrupt(&self, id: &str, turn_id: &str) -> Result<(), String> {
+	pub fn interrupt(&self, id: ThreadId, turn_id: &str) -> Result<(), String> {
 		if self.minimal.load(Ordering::SeqCst) {
 			return Err("The minimal driver cannot interrupt a turn".into());
 		}
 		self.driver.interrupt(self, id, turn_id)
 	}
 
-	pub fn delete(&self, id: &str) -> Result<(), String> {
+	pub fn delete(&self, id: ThreadId) -> Result<(), String> {
 		if self.is_running(id)? {
 			return Err("Stop the running turn before deleting this chat".into());
 		}

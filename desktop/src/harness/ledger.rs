@@ -3,6 +3,7 @@
 //! Every fact the harness relies on (accepted input, model requests, assistant messages,
 //! authorization decisions, tool receipts, run outcomes) is committed here before it is
 //! broadcast. Transcripts, model context, and usage are projections of these events.
+use super::ids::ThreadId;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde_json::Value;
 use std::{fs, path::Path, sync::Mutex};
@@ -39,7 +40,7 @@ pub struct Event {
 
 #[derive(Clone, Debug)]
 pub struct SessionRow {
-	pub id: String,
+	pub id: ThreadId,
 	pub cwd: String,
 	pub name: Option<String>,
 	pub model: Option<String>,
@@ -120,7 +121,7 @@ impl Ledger {
 
 	pub fn create_session(
 		&self,
-		id: &str,
+		id: ThreadId,
 		cwd: &str,
 		model: Option<&str>,
 		effort: Option<&str>,
@@ -145,7 +146,13 @@ impl Ledger {
 
 	/// Append one event. `expected` is the last sequence the writer observed; a different
 	/// current sequence means another writer advanced the stream and the append is rejected.
-	pub fn append(&self, session: &str, expected: Option<u64>, kind: &str, payload: Value) -> Result<Event, String> {
+	pub fn append(
+		&self,
+		session: ThreadId,
+		expected: Option<u64>,
+		kind: &str,
+		payload: Value,
+	) -> Result<Event, String> {
 		let mut connection = self.connection.lock().unwrap();
 		let transaction = connection
 			.transaction_with_behavior(TransactionBehavior::Immediate)
@@ -186,7 +193,7 @@ impl Ledger {
 		Ok(event)
 	}
 
-	pub fn events(&self, session: &str) -> Result<Vec<Event>, String> {
+	pub fn events(&self, session: ThreadId) -> Result<Vec<Event>, String> {
 		let connection = self.connection.lock().unwrap();
 		let mut statement = connection
 			.prepare_cached("SELECT seq, kind, payload, at FROM events WHERE session_id = ?1 ORDER BY seq")
@@ -214,7 +221,7 @@ impl Ledger {
 		Ok(events)
 	}
 
-	pub fn session(&self, id: &str) -> Result<Option<SessionRow>, String> {
+	pub fn session(&self, id: ThreadId) -> Result<Option<SessionRow>, String> {
 		let connection = self.connection.lock().unwrap();
 		connection
 			.query_row(
@@ -239,7 +246,7 @@ impl Ledger {
 	}
 
 	/// Runs that started but never recorded an outcome, as (session, runId) pairs.
-	pub fn unfinished_runs(&self) -> Result<Vec<(String, String)>, String> {
+	pub fn unfinished_runs(&self) -> Result<Vec<(ThreadId, String)>, String> {
 		let connection = self.connection.lock().unwrap();
 		let mut statement = connection
 			.prepare(
@@ -262,7 +269,7 @@ impl Ledger {
 		rows.collect::<Result<_, _>>().map_err(error)
 	}
 
-	pub fn delete(&self, id: &str) -> Result<(), String> {
+	pub fn delete(&self, id: ThreadId) -> Result<(), String> {
 		self.connection
 			.lock()
 			.unwrap()
@@ -286,7 +293,7 @@ fn session_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRow> {
 
 fn insert(
 	transaction: &rusqlite::Transaction<'_>,
-	session: &str,
+	session: ThreadId,
 	last: u64,
 	kind: &str,
 	payload: Value,
@@ -331,36 +338,37 @@ mod tests {
 	fn appends_are_ordered_fenced_and_survive_reopen() {
 		let directory = tempfile::tempdir().unwrap();
 		let path = directory.path().join("ledger.sqlite3");
+		let chat = ThreadId::new();
 		{
 			let ledger = Ledger::open(&path).unwrap();
 			assert!(Ledger::open(&path).is_err(), "a second writer must be fenced");
 			ledger
-				.create_session("rx-1", "/project", Some("m"), None, json!({}))
+				.create_session(chat, "/project", Some("m"), None, json!({}))
 				.unwrap();
 			let input = ledger
-				.append("rx-1", Some(1), kind::INPUT_ACCEPTED, json!({"text":"hello"}))
+				.append(chat, Some(1), kind::INPUT_ACCEPTED, json!({"text":"hello"}))
 				.unwrap();
 			assert_eq!(input.seq, 2);
 			assert!(ledger
-				.append("rx-1", Some(1), kind::RUN_STARTED, json!({"runId":"r"}))
+				.append(chat, Some(1), kind::RUN_STARTED, json!({"runId":"r"}))
 				.is_err());
 			ledger
-				.append("rx-1", None, kind::RUN_STARTED, json!({"runId":"r"}))
+				.append(chat, None, kind::RUN_STARTED, json!({"runId":"r"}))
 				.unwrap();
 			assert_eq!(
 				ledger.unfinished_runs().unwrap(),
-				vec![("rx-1".to_owned(), "r".to_owned())]
+				vec![(chat, "r".to_owned())]
 			);
 		}
 		let ledger = Ledger::open(&path).unwrap();
-		let events = ledger.events("rx-1").unwrap();
+		let events = ledger.events(chat).unwrap();
 		assert_eq!(
 			events.iter().map(|e| e.kind.as_str()).collect::<Vec<_>>(),
 			[kind::SESSION_CREATED, kind::INPUT_ACCEPTED, kind::RUN_STARTED]
 		);
 		assert_eq!(ledger.sessions("/project").unwrap()[0].preview, "hello");
-		ledger.delete("rx-1").unwrap();
-		assert!(ledger.events("rx-1").unwrap().is_empty());
-		assert!(ledger.session("rx-1").unwrap().is_none());
+		ledger.delete(chat).unwrap();
+		assert!(ledger.events(chat).unwrap().is_empty());
+		assert!(ledger.session(chat).unwrap().is_none());
 	}
 }
